@@ -1,0 +1,15 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefineConstants>$(DefineConstants);PORTABLE_CLIENT</DefineConstants>
+    <NoWarn>$(NoWarn);CS8600;CS8602;CS8604;CS8625</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Shared/Mir2.Shared.csproj" />
+    <ProjectReference Include="../Client.Core/Mir2.Client.Core.csproj" />
+    <ProjectReference Include="../Resources/Mir2.Resources.csproj" />
+  </ItemGroup>
+</Project>

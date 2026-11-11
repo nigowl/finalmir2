@@ -1,0 +1,84 @@
+<AdminDialog Busy="regenerating">
+    <DialogContent>
+        @if (loading)
+        {
+            <MudText role="status">正在加载资源预览…</MudText>
+            <MudProgressLinear Indeterminate="true" Class="my-4" />
+        }
+        else if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
+        else if (Entry.Kind == "libraries")
+        {
+            @if (frameCount == 0) { <MudText>此素材库没有帧图片。</MudText> }
+            else
+            {
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
+                    <MudText Typo="Typo.body2">共 @frameCount 帧 · 每页 20 张 · 第 @(page) / @PageCount 页</MudText>
+                    <MudSpacer />
+                    <MudPagination Count="PageCount" Selected="page" SelectedChanged="ChangePage" ShowFirstButton="true" ShowLastButton="true" Size="Size.Small" />
+                </MudStack>
+                @if (frameFailed) { <MudAlert Severity="Severity.Warning" Class="mb-3">部分帧图片加载失败，请重新打开预览重试。</MudAlert> }
+                <div @key="page" class="resource-frame-scroll">
+                    <div class="resource-frame-gallery">
+                        @for (var index = (page - 1) * 20; index < Math.Min(page * 20, frameCount); index++)
+                        {
+                            <div class="resource-frame" @key="index"><img src="@($"/asset-preview?library={Uri.EscapeDataString(Entry.Path[..^4])}&index={index}")" alt="@($"帧 {index}")" loading="lazy" decoding="async" @onerror="@(() => frameFailed = true)" /></div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+        else if (map != null)
+        {
+            <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-3">
+                <MudText>原始 48×32 像素比例 · 最长边 1024 像素</MudText><MudSpacer />
+            </MudStack>
+            @if (regenerating || !mapLoaded) { <MudProgressLinear Indeterminate="true" Class="mb-3" /> }
+            @if (mapNotice != null) { <MudAlert Severity="Severity.Info" Class="mb-3">@mapNotice</MudAlert> }
+            @if (mapError != null) { <MudAlert Severity="Severity.Warning" Class="mb-3">@mapError</MudAlert> }
+            <img @key="mapRevision" class="resource-map-preview" src="@($"/resource-map-preview?name={Uri.EscapeDataString(Entry.Path)}&revision={mapRevision}")" alt="@($"{Entry.Path} 地图缩略图")" @onload="@(() => mapLoaded = true)" @onerror="@(() => { mapLoaded = true; mapError = "缩略图加载失败，请重新生成后重试。"; })" />
+            <MudText GutterBottom="true">地图格数：@map.Width × @map.Height</MudText>
+            <MudText GutterBottom="true">原始像素尺寸：@(map.Width * 48) × @(map.Height * 32) · 地图代码：@Entry.Path[..^4]</MudText>
+            <MudText GutterBottom="true">阻挡格数：@map.BlockedCells（@((map.BlockedCells / (double)(map.Width * map.Height)).ToString("P1"))） · 文件大小：@((Entry.Size / 1024d).ToString("N1")) KiB</MudText>
+            <MudText GutterBottom="true">文件路径：@Entry.Path · 修改时间：@Entry.LastWriteUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudText>
+            @if (map.Maps is { Length: > 0 })
+            {
+                <MudTable T="MapAssetUsage" Items="map.Maps" Dense="true" RowsPerPage="50" aria-label="使用此资源的游戏地图">
+                    <HeaderContent><MudTh>代码 / 编号</MudTh><MudTh>地图名称</MudTh><MudTh>小 / 大地图图号</MudTh><MudTh>音乐 / 光照</MudTh><MudTh>NPC / 刷怪点</MudTh></HeaderContent>
+                    <RowTemplate><MudTd>@context.Code（#@context.Id）</MudTd><MudTd>@context.Name</MudTd><MudTd>@context.MiniMap / @context.BigMap</MudTd><MudTd>@context.Music / @context.Light</MudTd><MudTd>@context.Npcs / @context.Spawns</MudTd></RowTemplate>
+                </MudTable>
+            }
+            else { <MudText Class="mb-2">尚未配置为游戏地图。</MudText> }
+            <MudText Typo="Typo.body2" Class="path">SHA-256：@map.Sha256</MudText>
+        }
+    </DialogContent>
+    <DialogActions>@if (map != null) { <MudButton OnClick="Regenerate" Disabled="regenerating" Variant="Variant.Outlined" Color="Color.Primary">重新生成缩略图</MudButton> }</DialogActions>
+</AdminDialog>
+@code {
+    [Parameter, EditorRequired] public AssetEntry Entry { get; set; } = null!;
+    private int frameCount, page = 1, mapRevision;
+    private int PageCount => (frameCount + 19) / 20;
+    private MapInspection? map;
+    private string? error, mapNotice, mapError;
+    private bool loading = true, frameFailed, regenerating, mapLoaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (Entry.Kind == "libraries")
+                frameCount = (await Api.Get<System.Text.Json.JsonElement>("management/resources/inspect-library/" + AdminApi.Escape(Entry.Path[..^4]))).GetProperty("count").GetInt32();
+            else if (Entry.Kind == "maps")
+                map = await Api.Get<MapInspection>("management/resources/inspect-map/" + AdminApi.Escape(Entry.Path));
+        }
+        catch (Exception e) { error = e.Message; }
+        finally { loading = false; }
+    }
+    private void ChangePage(int value) { page = value; frameFailed = false; }
+    private async Task Regenerate()
+    {
+        regenerating = true; mapError = mapNotice = null;
+        try { mapNotice = (await Api.Post<ActionResult>("management/resources/map-thumbnail/" + AdminApi.Escape(Entry.Path))).Message; mapLoaded = false; mapRevision++; }
+        catch (Exception e) { mapError = e.Message; }
+        finally { regenerating = false; }
+    }
+}

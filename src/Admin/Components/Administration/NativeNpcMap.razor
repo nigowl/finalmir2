@@ -1,0 +1,78 @@
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+@* shortcut: 运营视图显示静态地形和 NPC 站立首帧，需要实时游戏场景预览时再接入动画与光照。 *@
+<MudText Typo="Typo.body2" Class="mb-2">原始 1:1 比例 · 每格 48 × 32 像素 · 滚动或点击小地图定位 · 点击 NPC 管理，点击空地新建</MudText>
+<div class="native-map-layout">
+    <div @ref="scroll" class="native-map-scroll" tabindex="0" aria-label="NPC 原始比例大地图">
+        <div class="native-map-world" style="@($"width:{Map.Width * 48}px;height:{Map.Height * 32}px")">
+            <div class="native-map-tiles" aria-hidden="true"></div>
+            @foreach (var npc in Map.Npcs.OrderBy(n => n.Y).ThenBy(n => n.X))
+            {
+                if (sprites.TryGetValue(npc.Image, out var sprite) && sprite.Width > 0 && sprite.Height > 0)
+                {
+                    <button class="native-npc" data-npc="@npc.Id" style="@($"left:{npc.X * 48 + sprite.OffsetX}px;top:{npc.Y * 32 + sprite.OffsetY}px;z-index:{npc.Y + 1}")" aria-label="@($"NPC {npc.Name}，坐标 {npc.X},{npc.Y}")" @onclick="@(() => MarkerChosen.InvokeAsync(new PopulationMarker("npc", npc.Id, npc.Name, npc.X, npc.Y, Image: npc.Image)))">
+                        <img src="@PopulationMarker.NpcImage(npc.Image)" alt="" width="@sprite.Width" height="@sprite.Height" draggable="false" /><span>@npc.Name</span>
+                    </button>
+                }
+            }
+        </div>
+    </div>
+    <div class="native-minimap">
+        <MudText Typo="Typo.caption">小地图 · 点击定位</MudText>
+        <svg @ref="minimap" preserveAspectRatio="none" style="@($"aspect-ratio:{Map.Width * 48}/{Map.Height * 32}")" viewBox="@($"0 0 {Map.Width} {Map.Height}")" role="button" tabindex="0" aria-label="小地图快速定位，点击或使用方向键移动大地图视口">
+            <image data-map-thumbnail="@Map.Id" href="@($"/map-preview/{Map.Id}?version={Map.ImageVersion}")" width="@Map.Width" height="@Map.Height" preserveAspectRatio="none" />
+            @foreach (var npc in Map.Npcs) { <circle cx="@(npc.X + .5)" cy="@(npc.Y + .5)" r="@(Map.Width / 80d)" fill="#67c8b4" /> }
+            <rect data-viewport="true" class="population-viewport" />
+        </svg>
+    </div>
+    <output @ref="coordinates" class="native-map-coordinate" aria-label="鼠标地图坐标">移入地图显示坐标</output>
+</div>
+<div @ref="tileError" class="native-map-error" hidden>地图块加载失败。<button type="button">重新加载地图块</button></div>
+@if (error != null) { <MudAlert Severity="Severity.Warning" Class="my-2">@error</MudAlert> }
+@code {
+    [Parameter, EditorRequired] public MapOverview Map { get; set; } = null!;
+    [Parameter] public int? FocusNpcId { get; set; }
+    [Parameter] public EventCallback<MapPoint> PointChosen { get; set; }
+    [Parameter] public EventCallback<PopulationMarker> MarkerChosen { get; set; }
+    private ElementReference scroll, minimap, coordinates, tileError;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<NativeNpcMap>? self;
+    private readonly Dictionary<int, SpriteFrameInfo> sprites = new();
+    private byte[] mask = [];
+    private bool loadingSprites;
+    private string? error;
+    protected override async Task OnParametersSetAsync()
+    {
+        mask = Convert.FromBase64String(Map.Walkable);
+        loadingSprites = true;
+        foreach (var image in Map.Npcs.Select(n => n.Image).Distinct().Where(image => !sprites.ContainsKey(image)))
+        {
+            try
+            {
+                var library = image >= 1000 ? $"Flag/{image - 1000:00}" : $"NPC/{image:00}";
+                sprites[image] = await Api.Get<SpriteFrameInfo>("management/resources/frame-info/" + AdminApi.Escape(library) + "?index=0");
+            }
+            catch (Exception e) { error = $"NPC 形象 {image} 加载失败：{e.Message}"; }
+        }
+        loadingSprites = false;
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (module != null || loadingSprites) return;
+        module = await Js.InvokeAsync<IJSObjectReference>("import", "./native-npc-map.js"); self = DotNetObjectReference.Create(this);
+        await module.InvokeVoidAsync("attach", scroll, minimap, coordinates, tileError, self, Map.Id, Map.ImageVersion, Map.Width, Map.Height, FocusNpcId);
+    }
+    [JSInvokable] public async Task Pick(int x, int y)
+    {
+        var index = y * Map.Width + x;
+        if (x < 0 || y < 0 || x >= Map.Width || y >= Map.Height || index / 8 >= mask.Length || (mask[index / 8] & (1 << (index % 8))) == 0)
+        { error = $"({x},{y}) 是阻挡或地图外位置，请选择可行走格。"; StateHasChanged(); return; }
+        error = null; await PointChosen.InvokeAsync(new(x, y));
+    }
+    public async ValueTask DisposeAsync()
+    {
+        try { if (module != null) { await module.InvokeVoidAsync("detach", scroll); await module.DisposeAsync(); } } catch (JSDisconnectedException) { }
+        self?.Dispose();
+    }
+}

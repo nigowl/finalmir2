@@ -9,10 +9,10 @@ under a choice of MIT or GPL for every file.
 
 Scope (paths are relative to the repository root):
 
-* Server/**, Server.MirForms/**, Server.Console/** and Tests/**: GNU General Public License,
+* src/Game/**, src/Server/**, src/Admin/** and tests/**: GNU General Public License,
   version 3 only (SPDX-License-Identifier: GPL-3.0-only).
   The full licence text is in LICENSE-GPL-3.0.txt.
-* Client/**, Client.Godot/** and Shared/**: MIT (SPDX-License-Identifier: MIT).
+* src/Client/**, src/Client.Core/**, src/Resources/** and src/Shared/**: MIT (SPDX-License-Identifier: MIT).
   The full licence text is in LICENSE-MIT.txt.
 * Other original Crystal source code, tools, build files and documentation:
   MIT, unless an explicit file or component notice states otherwise.

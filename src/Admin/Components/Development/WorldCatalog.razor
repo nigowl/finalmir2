@@ -1,0 +1,156 @@
+@inject IDialogService Dialogs
+@using System.Text.Json
+<MudStack Row="true" Wrap="Wrap.Wrap" Class="mb-4" AlignItems="AlignItems.Center">
+    <MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="string" Label="定义类型" Value="catalogKind" ValueChanged="ChangeKind" Disabled="busy">
+        <MudSelectItem Value="@("items")">物品</MudSelectItem><MudSelectItem Value="@("monsters")">怪物</MudSelectItem><MudSelectItem Value="@("maps")">地图</MudSelectItem><MudSelectItem Value="@("npcs")">NPC</MudSelectItem><MudSelectItem Value="@("quests")">任务</MudSelectItem>
+    </MudSelect>
+    <MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="string" Label="名称 / 编号" @bind-Value="search" Disabled="busy" /><MudButton Disabled="busy" OnClick="Load">查询</MudButton>
+</MudStack>
+@if (error != null) { <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert> }
+@if (notice != null) { <MudAlert Severity="Severity.Success" Class="mb-4">@notice</MudAlert> }
+@if (busy) { <MudProgressLinear Indeterminate="true" Class="mb-3" /> }
+<MudTable T="CatalogRow" Items="rows" Dense="true" Hover="true" RowsPerPage="10" aria-label="游戏定义列表">
+    <HeaderContent><MudTh>编号</MudTh><MudTh>名称</MudTh><MudTh>属性</MudTh><MudTh>操作</MudTh></HeaderContent>
+    <RowTemplate><MudTd DataLabel="编号">@context.Id</MudTd><MudTd DataLabel="名称">@context.Name</MudTd><MudTd DataLabel="属性">@context.Details</MudTd><MudTd DataLabel="操作"><MudButton Disabled="busy" Size="Size.Small" OnClick="@(() => Edit(context.Id))">编辑</MudButton></MudTd></RowTemplate>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+@if (definition != null || map != null || npc != null || quest != null)
+{
+    <AdminDialog Visible="true" Title="编辑游戏定义" OnClose="Cancel" OnSave="Save" Busy="busy" Dirty="@(Draft != original)" SaveText="备份并保存定义" SaveConfirmation="保存定义将备份并重启游戏引擎，在线玩家需要重新连接。确认保存？">
+    <DialogContent>
+        @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
+        <MudText Typo="Typo.h6">编辑 @catalogKind #@(definition?.Id ?? map?.Id ?? npc?.Id ?? quest!.Id)</MudText>
+        <MudGrid Spacing="2" Class="my-2">
+            <MudItem xs="12" sm="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="string" Label="@(map != null ? "地图标题" : "名称")" @bind-Value="name" Disabled="busy" /></MudItem>
+            @if (definition != null)
+            {
+                <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="等级 / 要求等级" @bind-Value="level" Min="0" Max="@(definition.Kind == "items" ? 255 : 65535)" /></MudItem>
+                <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="HP" @bind-Value="hp" Min="0" Max="100000000" /></MudItem>
+                <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最小 DC" @bind-Value="minDc" Min="0" /></MudItem><MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最大 DC" @bind-Value="maxDc" Min="0" Max="1000000" /></MudItem>
+                @if (definition.Kind == "items")
+                {
+                    <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="uint" Label="价格" @bind-Value="price" /></MudItem><MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="堆叠上限" @bind-Value="stack" Min="1" Max="65535" /></MudItem>
+                }
+                else { <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="uint" Label="经验奖励" @bind-Value="experience" /></MudItem> }
+            }
+            else
+            {
+                <MudItem xs="12" sm="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="string" Label="@(map != null ? "地图资源名（不含 .map）" : "脚本路径（不含 .txt）")" @bind-Value="fileName" /></MudItem>
+            }
+            @if (map != null)
+            {
+                <MudItem xs="12" sm="6"><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="int" Label="光照" @bind-Value="light"><MudSelectItem Value="0">正常</MudSelectItem><MudSelectItem Value="1">黎明</MudSelectItem><MudSelectItem Value="2">白天</MudSelectItem><MudSelectItem Value="3">黄昏</MudSelectItem><MudSelectItem Value="4">夜晚</MudSelectItem></MudSelect></MudItem>
+                <MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="音乐编号" @bind-Value="music" Min="0" Max="65535" /></MudItem>
+                <MudItem xs="6" sm="3"><MudCheckBox Dense="true" T="bool" @bind-Value="noFight" Label="禁止战斗" /></MudItem><MudItem xs="6" sm="3"><MudCheckBox Dense="true" T="bool" @bind-Value="noTeleport" Label="禁止传送" /></MudItem>
+                <MudItem xs="6" sm="3"><MudCheckBox Dense="true" T="bool" @bind-Value="noDropPlayer" Label="禁止玩家掉落" /></MudItem><MudItem xs="6" sm="3"><MudCheckBox Dense="true" T="bool" @bind-Value="noDropMonster" Label="禁止怪物掉落" /></MudItem>
+            }
+            @if (npc != null)
+            {
+                <MudItem xs="12" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="地图编号" @bind-Value="mapId" Min="1" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="X" @bind-Value="x" Min="0" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="Y" @bind-Value="y" Min="0" /></MudItem>
+                <MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="外观编号" @bind-Value="image" Min="0" Max="65535" /></MudItem><MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="交易倍率（100 为原价）" @bind-Value="rate" Min="1" Max="65535" /></MudItem>
+            }
+            @if (quest != null)
+            {
+                <MudItem xs="12" sm="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="string" Label="任务分组" @bind-Value="group" /></MudItem>
+                <MudItem xs="6" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最低等级" @bind-Value="minLevel" Min="0" Max="65535" /></MudItem><MudItem xs="6" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最高等级" @bind-Value="maxLevel" Min="1" Max="65535" /></MudItem>
+                <MudItem xs="12" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="前置任务编号（0 为无）" @bind-Value="prerequisite" Min="0" /></MudItem>
+                <MudItem xs="12" sm="4"><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="int" Label="任务类型" @bind-Value="questType"><MudSelectItem Value="0">普通</MudSelectItem><MudSelectItem Value="1">每日</MudSelectItem><MudSelectItem Value="2">重复</MudSelectItem><MudSelectItem Value="3">剧情</MudSelectItem></MudSelect></MudItem>
+                <MudItem xs="12" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="限时秒数（0 为不限）" @bind-Value="timeLimit" Min="0" /></MudItem>
+                <MudItem xs="12"><MudText Typo="Typo.subtitle2">允许职业</MudText><MudStack Row="true" Wrap="Wrap.Wrap"><MudCheckBox Dense="true" T="bool" @bind-Value="warrior" Label="战士" /><MudCheckBox Dense="true" T="bool" @bind-Value="wizard" Label="法师" /><MudCheckBox Dense="true" T="bool" @bind-Value="taoist" Label="道士" /><MudCheckBox Dense="true" T="bool" @bind-Value="assassin" Label="刺客" /><MudCheckBox Dense="true" T="bool" @bind-Value="archer" Label="弓箭手" /></MudStack></MudItem>
+            }
+        </MudGrid>
+        <MudAlert Severity="Severity.Warning" Class="my-3">保存会检查读取版本、备份世界定义并重启引擎，在线玩家需要重新连接。修改内部名称会影响引用它的脚本；其他原始属性和关联列表保持原样。</MudAlert>
+        <MudStack Row="true" Wrap="Wrap.Wrap">
+            @if (npc != null || quest != null) { <MudButton Disabled="busy" OnClick="OpenAssociatedScript">编辑关联脚本</MudButton> }
+        </MudStack>
+        @if (definition != null)
+        {
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle1">复制为新定义</MudText>
+            <MudText Typo="Typo.body2">复制已保存的原始外观和规则；新物品不会自动发给新角色，怪物沿用源掉落脚本，不会自动加入刷怪列表。</MudText>
+            <MudStack Row="true" Class="mt-2"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="string" Label="新定义的唯一名称" @bind-Value="copyName" Disabled="busy" /><MudButton Disabled="busy || string.IsNullOrWhiteSpace(copyName)" OnClick="Clone">复制并保存</MudButton></MudStack>
+        }
+    </DialogContent>
+    </AdminDialog>
+}
+@code {
+    [Parameter] public EventCallback<string> OpenScript { get; set; }
+    private CatalogRow[] rows = []; private DefinitionEdit? definition; private MapDefinition? map; private NpcDefinition? npc; private QuestDefinition? quest;
+    private string catalogKind = "items", search = "", name = "", fileName = "", group = "", copyName = "";
+    private string? error, notice; private bool busy, noFight, noTeleport, noDropPlayer, noDropMonster, warrior, wizard, taoist, assassin, archer;
+    private int level, hp, minDc, maxDc, stack, light, music, mapId, x, y, image, rate, minLevel, maxLevel, prerequisite, questType, timeLimit;
+    private uint price, experience; private int request;
+    private string original = "";
+    private string Draft => JsonSerializer.Serialize(new { name, fileName, group, level, hp, minDc, maxDc, stack, light, music, mapId, x, y, image, rate, minLevel, maxLevel, prerequisite, questType, timeLimit, price, experience, noFight, noTeleport, noDropPlayer, noDropMonster, warrior, wizard, taoist, assassin, archer, copyName });
+    protected override Task OnInitializedAsync() => Load();
+    private void Cancel() { definition = null; map = null; npc = null; quest = null; copyName = ""; }
+    private async Task ChangeKind(string value) { catalogKind = value; search = ""; rows = []; error = null; notice = null; Cancel(); await Load(); }
+    private async Task Load()
+    {
+        Cancel(); var kind = catalogKind; var generation = ++request;
+        try { var result = await Api.Get<CatalogRow[]>($"management/development/catalog/{kind}?search={Uri.EscapeDataString(search)}"); if (generation == request && kind == catalogKind) { rows = result; error = null; } }
+        catch (Exception e) { if (generation == request) error = e.Message; }
+    }
+    private async Task Edit(int id)
+    {
+        busy = true; Cancel(); error = null;
+        try
+        {
+            if (catalogKind is "items" or "monsters")
+            {
+                definition = await Api.Get<DefinitionEdit>($"management/development/definition/{catalogKind}/{id}");
+                name = definition.Name; level = definition.Level; hp = definition.Hp; minDc = definition.MinDc; maxDc = definition.MaxDc; experience = definition.Experience; price = definition.Price; stack = definition.StackSize;
+            }
+            else if (catalogKind == "maps")
+            {
+                map = await Api.Get<MapDefinition>($"management/development/maps/{id}"); name = map.Title; fileName = map.FileName; light = map.Light; music = map.Music;
+                noFight = map.NoFight; noTeleport = map.NoTeleport; noDropPlayer = map.NoDropPlayer; noDropMonster = map.NoDropMonster;
+            }
+            else if (catalogKind == "npcs")
+            {
+                npc = await Api.Get<NpcDefinition>($"management/development/npcs/{id}"); name = npc.Name; fileName = npc.FileName; mapId = npc.MapId; x = npc.X; y = npc.Y; image = npc.Image; rate = npc.Rate;
+            }
+            else
+            {
+                quest = await Api.Get<QuestDefinition>($"management/development/quests/{id}"); name = quest.Name; fileName = quest.FileName; group = quest.Group; minLevel = quest.MinLevel; maxLevel = quest.MaxLevel; prerequisite = quest.Prerequisite; questType = quest.Type; timeLimit = quest.TimeLimitSeconds;
+                warrior = (quest.RequiredClass & 1) != 0; wizard = (quest.RequiredClass & 2) != 0; taoist = (quest.RequiredClass & 4) != 0; assassin = (quest.RequiredClass & 8) != 0; archer = (quest.RequiredClass & 16) != 0;
+            }
+            original = Draft;
+        }
+        catch (Exception e) { error = e.Message; Cancel(); }
+        finally { busy = false; }
+    }
+    private async Task Save()
+    {
+        busy = true; error = null; notice = null;
+        try
+        {
+            ActionResult result;
+            if (definition != null) result = await Api.Put<ActionResult>("management/development/definition", definition with { Name = name, Level = level, Hp = hp, MinDc = minDc, MaxDc = maxDc, Experience = experience, Price = price, StackSize = stack });
+            else if (map != null) result = await Api.Put<ActionResult>("management/development/maps", map with { Title = name, FileName = fileName, Light = light, Music = music, NoFight = noFight, NoTeleport = noTeleport, NoDropPlayer = noDropPlayer, NoDropMonster = noDropMonster });
+            else if (npc != null) result = await Api.Put<ActionResult>("management/development/npcs", npc with { Name = name, FileName = fileName, MapId = mapId, X = x, Y = y, Image = image, Rate = rate });
+            else if (quest != null) result = await Api.Put<ActionResult>("management/development/quests", quest with { Name = name, Group = group, FileName = fileName, MinLevel = minLevel, MaxLevel = maxLevel, Prerequisite = prerequisite, RequiredClass = (warrior ? 1 : 0) | (wizard ? 2 : 0) | (taoist ? 4 : 0) | (assassin ? 8 : 0) | (archer ? 16 : 0), Type = questType, TimeLimitSeconds = timeLimit });
+            else return;
+            notice = "定义已备份并保存，游戏引擎已重启。请重新连接游戏客户端。"; await Load();
+        }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; }
+    }
+    private async Task Clone()
+    {
+        if (definition == null || busy || !await AdminDialog.Confirm(Dialogs, "确认创建定义", $"复制已保存定义为「{copyName}」并重启游戏？", "确认保存")) return; busy = true; error = null; notice = null;
+        try
+        {
+            var created = await Api.Post<DefinitionEdit>("management/development/definition/copy", new DefinitionClone(definition.Kind, definition.Id, copyName, definition.Version));
+            search = created.Name; await Load(); await Edit(created.Id); notice = $"已创建 {created.Name}，编号 {created.Id}，并重启游戏引擎。";
+        }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; }
+    }
+    private async Task OpenAssociatedScript()
+    {
+        if (Draft != original && !await AdminDialog.Confirm(Dialogs, "放弃未保存修改", "打开脚本将关闭当前定义编辑。", "放弃修改")) return;
+        var file = $"Envir/{(npc != null ? "NPCs" : "Quests")}/{fileName.Replace('\\', '/')}.txt";
+        Cancel(); await OpenScript.InvokeAsync(file);
+    }
+}

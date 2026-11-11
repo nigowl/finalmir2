@@ -4,8 +4,8 @@
 
 Read the component mapping in [LICENSE](LICENSE) before contributing:
 
-- Client, shared code and other original tools/documentation: MIT.
-- Server, server Windows Forms application and tests: GPL-3.0-only.
+- `src/Client`, `src/Client.Core`, `src/Resources`, `src/Shared` and original documentation: MIT.
+- `src/Game`, `src/Server`, `src/Admin` and tests: GPL-3.0-only.
 - Material carrying an explicit third-party notice retains its existing terms.
 
 By submitting a new contribution for inclusion, you agree to license your

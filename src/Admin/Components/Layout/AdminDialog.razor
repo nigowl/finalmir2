@@ -1,0 +1,72 @@
+@inject IDialogService Dialogs
+@implements IAsyncDisposable
+<MudDialog @ref="native" Visible="Visible" VisibleChanged="VisibleChanged" Options="StandardOptions" Class="admin-dialog" TitleClass="admin-dialog-title" ContentClass="admin-dialog-content" ActionsClass="admin-dialog-footer">
+    <TitleContent>
+        <div class="admin-dialog-heading">
+            <MudText Typo="Typo.h6" HtmlTag="h2">@(Title ?? Instance?.Title)</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="Close" aria-label="关闭弹窗" />
+        </div>
+    </TitleContent>
+    <DialogContent>@DialogContent</DialogContent>
+    <DialogActions>
+        <div class="admin-dialog-actions">
+            @DialogActions
+            @if (OnSave.HasDelegate)
+            {
+                <MudButton Class="admin-dialog-save" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(!CanSave || Busy || pending)" OnClick="Save">@SaveText</MudButton>
+            }
+        </div>
+    </DialogActions>
+</MudDialog>
+@code {
+    public static readonly DialogOptions StandardOptions = new() { FullWidth = true, MaxWidth = MaxWidth.Large, CloseButton = false, BackdropClick = false, CloseOnEscapeKey = false };
+    [CascadingParameter] private IMudDialogInstance? Instance { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public RenderFragment? DialogContent { get; set; }
+    [Parameter] public RenderFragment? DialogActions { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public bool CanSave { get; set; } = true;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool Dirty { get; set; }
+    [Parameter] public string SaveText { get; set; } = "保存";
+    [Parameter] public string SaveConfirmation { get; set; } = "确认保存当前修改？";
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    private bool pending;
+    private MudDialog? native;
+
+    public async ValueTask DisposeAsync()
+    {
+        // inline 弹窗的浮层由 Provider 持有，移除编辑组件时也必须主动关闭。
+        if (Instance == null && native != null) await native.CloseAsync();
+    }
+
+    public static async Task<bool> Confirm(IDialogService dialogs, string title, string message, string confirmText)
+    {
+        var parameters = new DialogParameters<ConfirmDialog> { { dialog => dialog.Title, title }, { dialog => dialog.Message, message }, { dialog => dialog.ConfirmText, confirmText } };
+        var dialog = await dialogs.ShowAsync<ConfirmDialog>(title, parameters, StandardOptions with { MaxWidth = MaxWidth.Small });
+        return (await dialog.Result)?.Canceled == false;
+    }
+    private async Task Save()
+    {
+        if (Busy || pending || !CanSave) return;
+        pending = true;
+        try { if (await Confirm(Dialogs, "确认保存", SaveConfirmation, "确认保存")) await OnSave.InvokeAsync(); }
+        finally { pending = false; }
+    }
+    private async Task Close()
+    {
+        // 允许关闭仍在读取/预览的窗口；已开始的保存和确认流程由 pending 保护。
+        if (pending) return;
+        pending = true;
+        try
+        {
+            if (Dirty && !await Confirm(Dialogs, "放弃未保存修改", "关闭将放弃当前未保存的修改。", "放弃修改")) return;
+            if (OnClose.HasDelegate) await OnClose.InvokeAsync();
+            else if (Instance != null) Instance.Cancel();
+            else await VisibleChanged.InvokeAsync(false);
+        }
+        finally { pending = false; }
+    }
+}

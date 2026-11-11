@@ -1,0 +1,65 @@
+@page "/population"
+@attribute [Authorize]
+@using Mir2.Admin.Components.Administration
+@inject IDialogService Dialogs
+<PageTitle>刷怪管理 · Mir2</PageTitle>
+<NavigationLock ConfirmExternalNavigation="@Editing" OnBeforeInternalNavigation="BeforeNavigation" />
+<MudText Typo="Typo.h4" HtmlTag="h1">刷怪管理</MudText>
+<MudText Class="my-3" Color="Color.Secondary">选择地图，点击地图布点，可选阻挡格；引擎自动调整到最近可行走位置。点击标记打开弹窗编辑，保存后更新游戏世界。</MudText>
+@if (error != null) { <MudAlert Severity="Severity.Warning" Class="my-3">@error</MudAlert> }
+<MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-4">
+    <MapPicker Maps="maps" Value="mapId" ValueChanged="SelectMap" Disabled="@(busy || Editing || EditorBusy)" Npcs="false" />
+    <MudButton OnClick="Load" Disabled="@(busy || Editing || EditorBusy)">刷新地图</MudButton>
+    <MudButton OnClick="ShowMonsters" Disabled="@(busy || Editing || EditorBusy)">怪物列表</MudButton>
+</MudStack>
+@if (busy) { <MudProgressLinear Indeterminate="true" /> }
+@if (map != null)
+{
+    <MudGrid Spacing="2">
+        <MudItem xs="12" lg="7"><MudPaper Class="pa-3" Elevation="1">
+            <PopulationMap @key="map.Id" Map="map" Markers="Markers" Point="point" Disabled="@(busy || EditorBusy)" PointChosen="Pick" MarkerChosen="SelectMarker" AllowBlockedPoints="true" />
+        </MudPaper></MudItem>
+        <MudItem xs="12" lg="5"><div class="population-inspector">
+            @if (Editing) { <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">有待保存的编辑。保存或取消后可切换地图和对象。</MudAlert> }
+            <Spawns @key="map.Id" @ref="spawns" Map="map" Changed="Changed" Saved="Load" />
+        </div></MudItem>
+    </MudGrid>
+}
+@code {
+    private MapChoice[] maps = []; private MapOverview? map; private MapPoint? point;
+    private Spawns? spawns; private int mapId; private bool busy; private string? error;
+    private bool Editing => spawns?.IsEditing == true;
+    private bool EditorBusy => spawns?.IsBusy == true;
+    private PopulationMarker[] Drafts => spawns?.Markers ?? [];
+    private PopulationMarker[] Markers => map == null ? [] : map.Spawns.Where(s => !Drafts.Any(d => d.Kind == "draft-spawn" && d.Id == s.Id))
+        .Select(s => new PopulationMarker("spawn", s.Id, s.MonsterName, s.X, s.Y, s.Count, s.Spread))
+        .Concat(Drafts).ToArray();
+    protected override async Task OnInitializedAsync()
+    {
+        try { maps = await Api.Get<MapChoice[]>("management/admin/maps"); mapId = maps.FirstOrDefault()?.Id ?? 0; if (mapId != 0) await Load(); }
+        catch (Exception e) { error = e.Message; }
+    }
+    private async Task SelectMap(int id) { mapId = id; map = null; point = null; spawns = null; await Load(); }
+    private async Task Load()
+    {
+        busy = true; error = null;
+        try { maps = await Api.Get<MapChoice[]>("management/admin/maps"); map = await Api.Get<MapOverview>($"management/admin/maps/{mapId}"); point = null; }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; }
+    }
+    private Task Changed() { StateHasChanged(); return Task.CompletedTask; }
+    private async Task ShowMonsters() => await Dialogs.ShowAsync<WorldFigureDialog>("全部怪物", new DialogParameters<WorldFigureDialog> { { dialog => dialog.Kind, "monsters" } }, AdminDialog.StandardOptions);
+    private async Task Pick(MapPoint value)
+    {
+        point = value; error = null;
+        if (spawns != null) await spawns.Place(value);
+    }
+    private async Task SelectMarker(PopulationMarker marker)
+    {
+        if (marker.Kind == "draft-spawn" && spawns != null) { await spawns.SelectDraft(marker.Id); return; }
+        if (Editing) { error = "请先保存或取消当前编辑，再选择其他对象。"; return; }
+        error = null; point = new(marker.X, marker.Y);
+        if (spawns != null) await spawns.Edit(map!.Spawns.Single(s => s.Id == marker.Id));
+    }
+    private void BeforeNavigation(LocationChangingContext context) { if (Editing) { context.PreventNavigation(); error = "请先保存或取消地图编辑，再离开此页。"; StateHasChanged(); } }
+}

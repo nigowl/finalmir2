@@ -1,0 +1,32 @@
+@inherits LayoutComponentBase
+@inject Mir2.Hosting.ProjectPaths Paths
+<MudThemeProvider Theme="theme" IsDarkMode="true" />
+<MudPopoverProvider /><MudDialogProvider /><MudSnackbarProvider />
+<MudLayout>
+    <MudAppBar Elevation="0" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" OnClick="@(() => drawer = !drawer)" aria-label="打开导航" />
+        <MudText Typo="Typo.h6">Mir2 · 开发控制台</MudText><MudSpacer />
+        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">版本：@Paths.VersionName</MudChip>
+        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Blazor · MudBlazor</MudChip>
+        <form action="/auth/logout" method="post"><AntiforgeryToken /><button class="logout" type="submit">退出</button></form>
+    </MudAppBar>
+    <MudDrawer @bind-Open="drawer" Elevation="1" Variant="DrawerVariant.Responsive">
+        <MudNavMenu>
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.MonitorHeart">运行监控</MudNavLink>
+            <MudNavLink Href="/accounts" Icon="@Icons.Material.Filled.ManageAccounts">游戏账户</MudNavLink>
+            <MudNavLink Href="/characters" Icon="@Icons.Material.Filled.Person">角色管理</MudNavLink>
+            <MudNavLink Href="/guilds" Icon="@Icons.Material.Filled.Groups">行会管理</MudNavLink>
+            <MudNavLink Href="/population" Icon="@Icons.Material.Filled.Pets">刷怪管理</MudNavLink>
+            <MudNavLink Href="/npcs" Icon="@Icons.Material.Filled.PersonPinCircle">NPC 管理</MudNavLink>
+            <MudNavLink Href="/resources" Icon="@Icons.Material.Filled.Folder">资源管理</MudNavLink>
+            <MudNavLink Href="/development" Icon="@Icons.Material.Filled.Code">游戏开发</MudNavLink>
+
+        </MudNavMenu>
+        <MudText Class="pa-4" Typo="Typo.caption">同一游戏引擎 · 同一资源仓库<br />SQLite 持久化 · Godot 原生微端</MudText>
+    </MudDrawer>
+    <MudMainContent Class="admin-compact"><MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-6">@Body</MudContainer></MudMainContent>
+</MudLayout>
+@code {
+    private bool drawer = true;
+    private readonly MudTheme theme = new() { PaletteDark = new PaletteDark { Primary = "#67c8b4", Secondary = "#d3ac69", Background = "#11181d", Surface = "#1a252c", AppbarBackground = "#1a252c", DrawerBackground = "#172027" } };
+}

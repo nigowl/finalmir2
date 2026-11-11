@@ -1,0 +1,130 @@
+using System.Diagnostics;
+using Mir2.Hosting;
+using Mir2.Management;
+using Server.MirEnvir;
+
+namespace Server.ConsoleHost;
+
+public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHostedService
+{
+    private readonly SemaphoreSlim lifecycle = new(1);
+    private readonly Stopwatch uptime = Stopwatch.StartNew();
+    public SemaphoreSlim Changes { get; } = new(1);
+    public int GamePort { get; private set; } = 7000;
+    public bool Ready => Envir.Main.Running && Envir.Main.NetworkStarted;
+    public DateTimeOffset? LastSave { get; private set; }
+    public Task StartAsync(CancellationToken cancellationToken) => Start(cancellationToken);
+    public Task StopAsync(CancellationToken cancellationToken) => Stop(cancellationToken);
+    public async Task Start(CancellationToken cancellation)
+    {
+        await lifecycle.WaitAsync(cancellation);
+        try
+        {
+            if (Ready) return;
+            Settings.MapPath = Path.Combine(paths.Assets, "maps");
+            Settings.Load();
+            Settings.IPAddress = Environment.GetEnvironmentVariable("MIR2_BIND_ADDRESS") ?? "127.0.0.1";
+            Settings.Port = ushort.Parse(Environment.GetEnvironmentVariable("MIR2_GAME_PORT") ?? Settings.Port.ToString());
+            Settings.CheckVersion = Settings.StartHTTPService = Settings.Multithreaded = false;
+            Settings.AllowStartGame = true; GamePort = Settings.Port;
+            var environment = Envir.Main; environment.StatusPortEnabled = false; environment.Start();
+            var deadline = Stopwatch.StartNew();
+            while (!Ready && environment.Running && deadline.Elapsed < TimeSpan.FromMinutes(2)) await Task.Delay(100, cancellation);
+            if (!Ready) throw new InvalidOperationException("Game engine failed to start; inspect server logs.");
+            Console.WriteLine($"Game server ready on {Settings.IPAddress}:{GamePort}.");
+        }
+        finally { lifecycle.Release(); }
+    }
+    public async Task Stop(CancellationToken cancellation)
+    {
+        await lifecycle.WaitAsync(cancellation);
+        try { await Task.Run(() => Envir.Main.Stop(), CancellationToken.None); LastSave = DateTimeOffset.UtcNow; }
+        finally { lifecycle.Release(); }
+    }
+    public async Task<T> Invoke<T>(Func<T> action, CancellationToken cancellation = default)
+    {
+        if (!Ready) throw new InvalidOperationException("Game engine is offline.");
+        var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        var token = timeout.Token; var state = 0;
+        using var registration = token.Register(() =>
+        {
+            if (Interlocked.CompareExchange(ref state, 2, 0) == 0) completion.TrySetCanceled(token);
+        });
+        Envir.Main.HostActions.Enqueue(() =>
+        {
+            // Cancellation can remove queued work, but must not detach an active save.
+            if (Interlocked.CompareExchange(ref state, 1, 0) != 0) return;
+            try { completion.TrySetResult(action()); } catch (Exception error) { completion.TrySetException(error); }
+        });
+        return await completion.Task;
+    }
+    public async Task Save(CancellationToken cancellation)
+    {
+        await Invoke(() => { Envir.Main.SaveAll(); return true; }, cancellation); LastSave = DateTimeOffset.UtcNow;
+    }
+    public async Task Restart(CancellationToken cancellation) { await Stop(cancellation); await Start(cancellation); }
+    public async Task<ServerStatus> Status(CancellationToken cancellation)
+    {
+        var data = Ready ? await Invoke(() => new
+        {
+            Counts = new WorldCounts(Envir.Main.MapList.Count, Envir.Main.ItemInfoList.Count, Envir.Main.MonsterInfoList.Count, Envir.Main.NPCInfoList.Count, Envir.Main.QuestInfoList.Count, Envir.Main.AccountList.Count),
+            Players = Envir.Main.Players.Select(p => new PlayerStatus(p.Name, p.Class.ToString(), p.Level, p.CurrentMap?.Info.Title ?? "", p.CurrentLocation.X, p.CurrentLocation.Y,
+                p.GroupMembers?.FirstOrDefault()?.Name ?? "", p.GroupMembers?.Count ?? 0, p.TradePartner?.Name ?? "", p.TradeLocked, p.MyGuild?.Name ?? "", p.MyGuildRank?.Name ?? "")).ToArray(),
+            Objects = Envir.Main.Objects.Count
+        }, cancellation) : null;
+        using var process = Process.GetCurrentProcess();
+        return new(Envir.Main.Running, Ready, Environment.ProcessId, uptime.Elapsed.TotalSeconds, process.WorkingSet64 / 1048576d,
+            process.TotalProcessorTime.TotalSeconds, Envir.LastRunTime, data?.Objects ?? 0, data?.Counts ?? new(0, 0, 0, 0, 0, 0), data?.Players ?? [],
+            assets.Version, assets.Files.Length, assets.Files.Sum(f => f.Size), paths.Database, LastSave, DateTimeOffset.UtcNow);
+    }
+}
+
+public sealed class ServerLogs : BackgroundService
+{
+    private readonly object gate = new();
+    private readonly Queue<LogEntry> entries = new();
+    private long sequence;
+    public LogEntry[] Read(long after = 0) { lock (gate) return entries.Where(e => e.Id > after).ToArray(); }
+    public void Add(string category, string message)
+    {
+        lock (gate)
+        {
+            entries.Enqueue(new(++sequence, DateTimeOffset.UtcNow, category, message.TrimEnd()));
+            while (entries.Count > 500) entries.Dequeue();
+        }
+        Console.Write(message);
+    }
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
+        try
+        {
+            do
+            {
+                var queue = MessageQueue.Instance;
+                foreach (var (category, log) in new[] { ("server", queue.MessageLog), ("debug", queue.DebugLog), ("chat", queue.ChatLog) })
+                    while (log.TryDequeue(out var message)) Add(category, message);
+            } while (await timer.WaitForNextTickAsync(stoppingToken));
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+    }
+}
+
+public static class OperationsModule
+{
+    public static void MapOperations(this RouteGroupBuilder group)
+    {
+        group.MapGet("/status", (GameRuntime runtime, CancellationToken token) => runtime.Status(token));
+        group.MapGet("/logs", (ServerLogs logs, long? after) => logs.Read(after ?? 0));
+        group.MapPost("/save", async (GameRuntime runtime, CancellationToken token) => { await runtime.Save(token); return new ActionResult("World and player data saved to SQLite."); });
+        group.MapPost("/start", async (GameRuntime runtime, CancellationToken token) => { await runtime.Start(token); return new ActionResult("Game engine started."); });
+        group.MapPost("/stop", async (GameRuntime runtime, CancellationToken token) => { await runtime.Stop(token); return new ActionResult("Game engine stopped and saved."); });
+        group.MapPost("/restart", async (GameRuntime runtime, CancellationToken token) => { await runtime.Restart(token); return new ActionResult("Game engine restarted."); });
+        group.MapPost("/reload-scripts", async (GameRuntime runtime, CancellationToken token) =>
+        {
+            await runtime.Invoke(() => { Envir.Main.ReloadNPCs(); Envir.Main.ReloadDrops(); return true; }, token);
+            return new ActionResult("NPC scripts and drops reloaded. Quest/config changes require an engine restart.");
+        });
+    }
+}

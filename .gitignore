@@ -362,15 +362,19 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /Build
+/build/
 /.idea/.idea.Legend of Mir/.idea
 /.idea/config
 
 
 #
-/Data/ref/
-/Data/runtime/
+/Data/
+/data/
+!/data/README.md
 .DS_Store
 
 # Godot generated imports and build cache
 **/.godot/
 **/.mono/
+
+*.pid

@@ -1,0 +1,6 @@
+<MudTable T="ManagedItem" Items="Items" Dense="true" RowsPerPage="8" Class="my-3">
+    <HeaderContent><MudTh>容器 / 格</MudTh><MudTh>物品</MudTh><MudTh>数量</MudTh><MudTh>耐久</MudTh><MudTh>唯一编号</MudTh></HeaderContent>
+    <RowTemplate><MudTd DataLabel="容器 / 格">@context.Grid / @context.Slot</MudTd><MudTd DataLabel="物品">#@context.ItemId @context.Name</MudTd><MudTd DataLabel="数量">@context.Count</MudTd><MudTd DataLabel="耐久">@context.Durability / @context.MaxDurability</MudTd><MudTd DataLabel="唯一编号">@context.UniqueId</MudTd></RowTemplate>
+    <NoRecordsContent><MudText Class="pa-3">没有物品</MudText></NoRecordsContent><PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+@code { [Parameter] public ManagedItem[] Items { get; set; } = []; }

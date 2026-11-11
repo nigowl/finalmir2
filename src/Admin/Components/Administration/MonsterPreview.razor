@@ -1,0 +1,19 @@
+@if (appearance != null)
+{
+    <div class="npc-appearance"><img src="@($"/asset-preview?library={Uri.EscapeDataString(appearance.Library)}&index={appearance.Frame}")" alt="@($"怪物形象：{appearance.Name}")" @onerror="@(() => error = "怪物形象加载失败，请检查对应素材。")" /></div>
+    <MudText Typo="Typo.caption">@appearance.Name · @appearance.Library</MudText>
+}
+@if (error != null) { <MudText Color="Color.Warning" Typo="Typo.caption">@error</MudText> }
+@code {
+    [Parameter] public int MonsterId { get; set; }
+    private int lastId;
+    private SpriteAppearance? appearance;
+    private string? error;
+    protected override async Task OnParametersSetAsync()
+    {
+        if (lastId == MonsterId) return;
+        var id = lastId = MonsterId; appearance = null; error = null;
+        try { var value = await Api.Get<SpriteAppearance>($"management/admin/monsters/{id}/appearance"); if (id == lastId) appearance = value; }
+        catch (Exception e) { if (id == lastId) error = e.Message; }
+    }
+}

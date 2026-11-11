@@ -1,8 +1,47 @@
-# Crystal server tests
+# 验证
 
-Original tests in this directory are licensed under GPL v3 only
-(`GPL-3.0-only`), matching the server they exercise. See the
-[server distribution guidance](../Server/README.md), the
-[full licence text](../LICENSE-GPL-3.0.txt), and the root
-[licensing scope](../LICENSE), including its historical and contributor
-permission qualifications.
+这些测试与服务端一起使用 GPL-3.0-only，见根目录 LICENSE。默认不修改正式运行数据。
+
+```bash
+dotnet build Mir2.sln -c Release
+MIR2_DATA_ROOT="$PWD/data/versions/default" dotnet run --project tests/Compatibility/Compatibility.csproj
+dotnet run --project tests/ItemSecurity/ItemSecurity.csproj -c Release
+./tests/Compatibility/smoke.sh
+./tests/Compatibility/trade-recovery.sh
+./tests/Management/smoke.sh
+./tests/Management/administration.sh
+# 已安装 Playwright 与 Chromium 后：
+./tests/Management/ui.sh
+```
+
+- Compatibility：SQLite 导入/重开/备份、协议、原生游戏状态、任务、仓库、资源清单/读取排空、路径/密钥边界、文本冲突、PNG 预览、定义写入失败撤回与备份、复制 ID/初始标记，以及排队取消/活动写入完成。新增本地真实 TCP 的分包/粘包、并发写、重连隔离、损坏包/超长帧拒绝，服务端 2 MB 连续发送顺序与慢客户端积压限制；组队许可/邀请/移交/单人地图限制和状态清理。新增多快照原子提交与回滚、旧审计表自动移除、完整备份、升级前备份、旧/新角色格式、禁言、重复配置载入和行会职位/排行榜回归；交易托管快照/恢复、报价更新解锁、邀请状态检查、退款上限、客户端回执状态；本轮无外部资源运行通过 251 项（实际执行记录）。
+- ItemSecurity：原物品安全回归，358 项。
+- Compatibility/smoke.sh：临时世界、真实后端和真实 Godot；96 项管理 API 检查五类定义编辑、复制、冲突、坐标/脚本/前置校验、独立备份与发布恢复，然后真实 Godot 登录改密、游玩、换角、保存/重启；双 TCP 会话覆盖组队同意/拒绝、队长顺序、队员地图、队聊、移除/解散、队友掉线，以及管理 API 的队长/人数快照；复用同一双会话验证原双面板交易、物品放入/取回、金币追加、改价解锁、唯一编号/堆叠计数/金币守恒、取消及交易中掉线、管理交易快照，并验证重叠出生格能走开；专用离线会长测试数据验证真实行会邀请/公告/职位/权限/会聊/移除/离会和重启保存，并与管理监控核对；故意损坏缓存再检查恢复。使用 Python 3。默认 TCP 17010、资源 15090。
+- Management/smoke.sh：三端根脚本，从其他工作目录启动、重复启动替换、旧 PID 指向无关进程时不误杀、Blazor 登录/防伪/静态资源及账户/角色/行会/刷怪/NPC 页面；重启后保留登录，两个本机管理端共用浏览器 Cookie 容器时登录互不覆盖。默认 TCP 17030、资源 15110、管理 15111。
+- Management/ui.sh：隔离版本、真实 Chromium 与 Blazor，验证资源类型筛选、每页 20 张图片、0/1/20/21/41 帧边界、桌面多列和窄屏布局、1024 像素地图缩略图及重新生成，以及独立 NPC 地图、小地图定位、形象、脚本读取/保存/备份/缺失创建/重载、关闭草稿保护、属性热保存，以及刷怪管理弹窗/怪物形象/阻挡格点击/多点保存。默认 TCP 17240、资源 15320、管理 15321；使用系统 Node.js 与已安装的 Playwright，不新增项目 npm 依赖。可通过 NODE_PATH 指向已有包目录，通过 MIR2_BROWSER_EXECUTABLE 指定已有 Chromium；MIR2_TEST_KEEP=1 或失败时保留截图与日志。
+- MapRenderingChecks：仅临时版本的合成地图与原格式素材，验证横图/竖图最长边 1024、重建与缓存、每格 48×32 的原尺寸像素、越界与旧版本拒绝；不读取或改写正式地图和存档。
+
+- Management/administration.sh：331 项运营 API/校验/故障回滚与真实 TCP 会话检查，加 16 项完整宿主重启检查。覆盖无角色账户保留、密码/强制改密、在线保护、踢下线/传送、角色存档/禁言/物品/恢复、行会成员/会长/职位/解散、地图预览 PNG/碰撞/版本、多点刷怪原子回滚/冲突、阻挡点保存及真实引擎补怪、NPC 热移动/外观/可见性/跨图/删除不中断在线连接、脚本替换安全重启和完整备份、审计 API/表移除。默认 TCP 17050、资源 15130。通过 SQLite 触发器注入写失败，检查内存和跨账户/行会快照一起回滚。
+
+脚本都可以通过对应 MIR2_*_PORT 变量改变端口。临时目录使用受保护的测试数据；退出时正常停止其进程，清理时不跟随指向只读素材库的符号链接。先确保正式数据已完成首次统一导入，再运行真实素材测试。
+
+调试原生场景时可设置 `MIR2_TEST_KEEP=1` 保留 Compatibility/smoke.sh 的隔离数据、日志和缓存；脚本仍停止自己启动的服务端。测试危险怪使用正常移动间隔，避免原引擎游走同时推迟攻击而导致随机的死亡检查超时。
+
+- Compatibility/trade-recovery.sh：TCP 17080、资源 15160，临时账户各持物品和金币，真实协议放入双方托管后保存，SIGKILL 只结束脚本自身启动的独立服务端；连续两次重启核对两边物品编号/数量和金币、已有行会与会长保留，并执行 SQLite integrity_check。可用 MIR2_TEST_KEEP=1 留存日志/库。此测试证明已保存托管恢复，未证明每笔成交即时落盘。
+
+GuildChecks 验证职位越权、同级/上级修改拒绝、重复权限关闭、负权限位、非成员改名、成员列表变更失效、公告长度/权限、失效邀请、离线成员编号清理及原生状态清理。原生 smoke 和交易崩溃测试使用 --guild-fixture 准备测试行会，运营管理测试沿用自己的独立 fixture。
+
+GuildStorageChecks 验证捐献/取款金币守恒、会长权限与溢出拒绝、存取/交换的唯一编号和多人竞争、绑定/租用限制、越界格位、安全区/死亡拒绝、失败回执、列表快照隔离，以及账户/行会联合写失败回滚和重试。真实 Godot smoke 同时验证 112 格滚动、双人存取和管理 API 核对；换角与完整宿主重启后比对行会资金及仓库物品编号/数量。专用行会 fixture 使用相邻安全格，避免重叠出生的测试角色挡住回程；不修改正式地图。
+
+Deployment/smoke.py：先执行 ./publish.sh，再运行 python3 tests/Deployment/smoke.py。将发布目录搬到项目外，在 PATH 不含 dotnet/Godot 的环境启动两套复制版本，验证 SQLite/怪物/NPC 脚本/地图隔离、并行运行、Blazor 登录与静态资源、版本错配拒绝、发布中进程保护、发布微端完整游玩/重启恢复、SQLite 完整性和重复发布保留配置。正常完成清理自己的临时目录；失败或 MIR2_TEST_KEEP=1 时保留。详见 docs/DEPLOYMENT.md。
+
+RespawnLocationChecks：验证阻挡中心最近可行走格、原布点坐标保留、修正后的刷怪范围、普通范围保持、地图边界及全图阻挡。运营集成同时验证阻挡格保存和真实引擎补怪。
+
+
+2026-11-11 前一阶段验证：Release 零警告/零错误、251 项隔离兼容性；331 项运营/TCP 与 16 项完整宿主重启；Godot 完整游玩/小地图缓存与 SQLite 重启；本机 Metal 2× Retina 实窗、登录/选角/游戏/背包/装备截图。随后应用前一阶段改动时，已在无玩家在线的情况下正常保存、备份并重启本地 default 实例，核对世界数量、账户编号、素材版本和 SQLite 完整性不变。
+
+UI 驱动沿用单个临时世界和顺序步骤，避免反复启动服务端及丢失前一步草稿/版本状态；通过 `ui.sh` 运行。新增检查涵盖统一弹窗分割线/底栏、取消确认不写入、账户创建/编辑/空账户删除及资产拒绝、角色创建、行会创建/公告/解散、文本/定义弹窗、NPC 拼音自动路径/手动覆盖/已存在提示、地图模糊搜索/统计，以及注入旧缓存后已打开小地图随重新生成刷新；客户端和管理端 PNG 字节及 SHA-256 必须一致。
+
+最新 UI 隔离 fixture 含 55 个怪物和 54 个 NPC：验证固定 50 条分页及末页 5/4 条，怪物左右栏原生属性、NPC 多列瀑布流、图鉴关闭、创建/编辑/嵌套确认的关闭图标、取消保留草稿，以及地图关联名称/代码/原像素等预览信息。兼容性新增 INI 读取不创建目录、保存创建正确父目录；回归完成后项目根目录无 Configs。
+
+2026-11-11 刷怪/NPC 界面收尾：Release 零警告/零错误、258 项兼容性、331 项运营/TCP 与 16 项完整宿主重启检查通过。Chromium 完整回归新增地图文字原比例/零字距/不缩放描边、创建/管理字段一致、怪物选择器取消及选择后关闭/回填、单点创建/修改/删除和取消不写入，并继续覆盖阻挡格多点保存、账户/角色/行会自动目标名称提交。怪物图鉴与嵌套选择器均验证 4:6 宽度、2px 分割线和双组属性键值（包括奇数属性末行）；NPC 验证末页卡片“查看”、跨图、同图不同 NPC 及重复查看同一 NPC 的重新居中/焦点。测量同帧读取左右尺寸，脚本保存等待实际文件落盘，避免弹窗动画或请求尚在进行时误判。测试数据均位于隔离版本，不向 default 写入测试对象。

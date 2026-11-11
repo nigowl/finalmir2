@@ -1,0 +1,59 @@
+@page "/resources"
+@attribute [Authorize]
+@using Mir2.Admin.Components.Resources
+@inject IDialogService Dialogs
+<PageTitle>资源管理 · Mir2</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1" GutterBottom="true">统一资源仓库</MudText>
+<MudText Color="Color.Secondary" Class="mb-5">引擎与微端读取相同的地图、素材和声音。按类型和路径查找资源，预览或下载当前版本文件。</MudText>
+@if (error != null) { <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert> }
+@if (listing != null)
+{
+    <MudPaper Class="pa-4 mb-5" Elevation="0">
+        <MudText Class="path">版本 @listing.Version</MudText>
+    </MudPaper>
+    <MudExpansionPanels Class="mb-5"><MudExpansionPanel Text="@($"导入时地图冲突：{listing.Conflicts.Length} 项（统一采用服务端版本）")">@foreach (var conflict in listing.Conflicts) { <MudText Typo="Typo.body2" Class="path">@conflict</MudText> }</MudExpansionPanel></MudExpansionPanels>
+}
+<MudGrid Spacing="2" Class="mb-4">
+    <MudItem xs="12" sm="3">
+        <MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="string" Label="类型筛选" Value="kind" ValueChanged="FilterKind">
+            <MudSelectItem Value="@string.Empty">全部类型</MudSelectItem>
+            <MudSelectItem Value="@("libraries")">素材库</MudSelectItem>
+            <MudSelectItem Value="@("maps")">地图</MudSelectItem>
+            <MudSelectItem Value="@("sounds")">声音</MudSelectItem>
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="7"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="string" @bind-Value="search" Label="搜索资源路径" /></MudItem>
+    <MudItem xs="12" sm="2"><MudButton OnClick="Load" Disabled="busy" Class="mt-4">搜索 / 刷新</MudButton></MudItem>
+</MudGrid>
+@if (listing != null)
+{
+    <MudTable @ref="table" T="AssetEntry" Items="listing.Files.Where(file => kind.Length == 0 || file.Kind == kind)" Dense="true" Hover="true" RowsPerPage="10" Loading="busy">
+        <HeaderContent><MudTh>类型</MudTh><MudTh>路径</MudTh><MudTh>大小</MudTh><MudTh>SHA-256</MudTh><MudTh>操作</MudTh></HeaderContent>
+        <RowTemplate>
+            <MudTd>@(context.Kind switch { "libraries" => "素材库", "maps" => "地图", "sounds" => "声音", _ => context.Kind })</MudTd><MudTd Class="path">@context.Path</MudTd><MudTd>@((context.Size / 1024d).ToString("N1")) KiB</MudTd><MudTd><MudTooltip Text="@context.Sha256"><span class="path">@context.Sha256[..12]</span></MudTooltip></MudTd>
+            <MudTd>
+                @if (context.Kind is "libraries" or "maps") { <MudButton Size="Size.Small" OnClick="@(() => Inspect(context))">预览</MudButton> }
+                <MudLink Href="@($"/asset-download/{context.Kind}/{AdminApi.Escape(context.Path)}")">下载</MudLink>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText>没有符合条件的资源。</MudText></NoRecordsContent>
+        <PagerContent><MudTablePager /></PagerContent>
+    </MudTable>
+}
+@code {
+    private ResourceListing? listing; private MudTable<AssetEntry>? table;
+    private string search = "", kind = ""; private string? error; private bool busy;
+    protected override Task OnInitializedAsync() => Load();
+    private async Task Load()
+    {
+        busy = true;
+        try { listing = await Api.Get<ResourceListing>("management/resources?search=" + Uri.EscapeDataString(search)); table?.NavigateTo(0); error = null; }
+        catch (Exception e) { error = e.Message; } finally { busy = false; }
+    }
+    private void FilterKind(string value) { kind = value; table?.NavigateTo(0); }
+    private async Task Inspect(AssetEntry entry)
+    {
+        var parameters = new DialogParameters<ResourcePreview> { { preview => preview.Entry, entry } };
+        await Dialogs.ShowAsync<ResourcePreview>(entry.Path, parameters, AdminDialog.StandardOptions);
+    }
+}

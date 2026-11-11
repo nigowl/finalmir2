@@ -1,0 +1,17 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@layout LoginLayout
+<PageTitle>登录 · Mir2 管理端</PageTitle>
+<MudPaper Class="pa-8" Elevation="2">
+    <MudText Typo="Typo.h4" HtmlTag="h1" GutterBottom="true">Mir2 开发控制台</MudText>
+    <MudText Color="Color.Secondary" Class="mb-6">服务端监控、统一资源和游戏开发工具</MudText>
+    <MudAlert Severity="Severity.Info" Class="mb-4">使用所选版本目录 <code>runtime/admin.key</code> 中的管理密钥登录。密钥不会下发给浏览器。</MudAlert>
+    @if (Error == "1") { <MudAlert Severity="Severity.Error">密钥错误，请重新输入。</MudAlert> }
+    <form action="/auth/login" method="post">
+        <AntiforgeryToken />
+        <label class="field-label" for="key">管理密钥</label>
+        <input id="key" name="key" type="password" autocomplete="current-password" required class="key-input" />
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Class="mt-4">登录控制台</MudButton>
+    </form>
+</MudPaper>
+@code { [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; } }

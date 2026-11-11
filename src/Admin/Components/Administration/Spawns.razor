@@ -1,0 +1,112 @@
+@inject IDialogService Dialogs
+@if (error != null && !dialogOpen) { <MudAlert Severity="Severity.Error" Class="my-3">@error</MudAlert> }
+@if (notice != null && !dialogOpen) { <MudAlert Severity="Severity.Success" Class="my-3">@notice</MudAlert> }
+@if (busy) { <MudProgressLinear Indeterminate="true" /> }
+<MudButton Color="Color.Primary" OnClick="New" Disabled="@(busy || editing)" Class="mb-3">新增刷怪点</MudButton>
+<MudTable T="SpawnDefinition" Items="Map.Spawns" Dense="true" Hover="true" RowsPerPage="5">
+    <HeaderContent><MudTh>刷怪点</MudTh><MudTh>数量 / 存活</MudTh><MudTh>操作</MudTh></HeaderContent>
+    <RowTemplate><MudTd>#@context.Id @context.MonsterName (@context.X,@context.Y)</MudTd><MudTd>@context.Count / @context.Alive</MudTd><MudTd><MudButton Size="Size.Small" Disabled="@(busy || editing)" OnClick="@(() => Edit(context))">管理</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+@if (editing && !dialogOpen)
+{
+    <MudAlert Severity="Severity.Info" Class="my-3">继续点击地图添加点（含阻挡格）。已有 @drafts.Count 个待保存点，参数在弹窗中编辑。</MudAlert>
+    <MudButton Disabled="@(busy || drafts.Count == 0)" OnClick="@(() => dialogOpen = true)">编辑并保存批次</MudButton>
+    <MudButton Disabled="busy" OnClick="RequestClose">取消本批次</MudButton>
+}
+<AdminDialog @bind-Visible="dialogOpen" Title="@(current == null ? "新增刷怪点" : $"刷怪点 #{current.Id}")" OnClose="RequestClose" OnSave="Save" CanSave="CanSubmit" Busy="busy" SaveText="@(current == null ? "创建刷怪点" : "保存刷怪点")" SaveConfirmation="@($"确认保存「{Map.Title}」的刷怪配置？保存后立即更新游戏世界，已有怪物不会被强制清除。")">
+<DialogContent>
+@if (error != null) { <MudAlert Severity="Severity.Error" Class="mb-3">@error</MudAlert> }
+@if (busy) { <MudProgressLinear Indeterminate="true" Class="mb-3" /> }
+<fieldset disabled="@busy" style="border:0;padding:0;min-width:0">
+@if (editing)
+{
+    <MudPaper Elevation="0">
+        <MonsterPreview MonsterId="monsterId" />
+        @if (current == null && drafts.Count > 1)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="my-2">下方参数作用于选中的点；点击“继续地图布点”返回地图添加下一个点。新点沿用当前参数，黄色标记为未保存。</MudAlert>
+            <MudTable T="SpawnDefinition" Items="drafts" Dense="true" Hover="true" RowsPerPage="5"><HeaderContent><MudTh>待保存坐标</MudTh><MudTh>怪物 / 数量 / 范围</MudTh><MudTh>操作</MudTh></HeaderContent><RowTemplate><MudTd>(@context.X,@context.Y)</MudTd><MudTd>#@context.MonsterId · @context.Count 只 / @context.Spread 格</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Choose(context))">选中</MudButton><MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => Remove(context))">移除</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager /></PagerContent></MudTable>
+            <MudText Typo="Typo.body2" Class="mt-2">已选 @drafts.Count 个点，合计 @drafts.Sum(d => d.Count) 只。@(selected < 0 ? "点击地图放置第一个点。" : $"正在编辑第 {selected + 1} 个点。")</MudText>
+        }
+        <MudGrid Spacing="2" Class="my-3"><MudItem xs="12"><MudStack Row="true" AlignItems="AlignItems.Center"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="怪物定义编号" @bind-Value="monsterId" @bind-Value:after="Preview" Min="1" /><MudButton OnClick="FindMonsters" Disabled="busy" Variant="Variant.Outlined">查找怪物</MudButton></MudStack></MudItem>
+        <MudItem xs="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="X" @bind-Value="x" @bind-Value:after="Preview" Min="0" /></MudItem><MudItem xs="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="Y" @bind-Value="y" @bind-Value:after="Preview" Min="0" /></MudItem><MudItem xs="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="范围（格）" @bind-Value="spread" @bind-Value:after="Preview" Min="0" Max="500" /></MudItem>
+        <MudItem xs="12" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="基础数量（0 停刷）" @bind-Value="count" @bind-Value:after="Preview" Min="0" Max="1000" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="间隔（分钟）" @bind-Value="delay" @bind-Value:after="Preview" Min="1" Max="65535" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="随机浮动（±分钟）" @bind-Value="randomDelay" @bind-Value:after="Preview" Min="0" Max="65535" /></MudItem>
+        <MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="朝向（0–7，8 随机）" @bind-Value="direction" @bind-Value:after="Preview" Min="0" Max="8" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="Tick 间隔（0 使用分钟）" @bind-Value="ticks" @bind-Value:after="Preview" Min="0" Max="65535" /></MudItem><MudItem xs="12" sm="4"><MudCheckBox Dense="true" T="bool" Label="保存 Tick 刷怪时间" @bind-Value="saveTime" @bind-Value:after="Preview" /></MudItem>
+        <MudItem xs="12"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="巡逻路线（Envir/Routes 内，不含 .txt，可空）" @bind-Value="route" @bind-Value:after="Preview" /></MudItem></MudGrid>
+        <MudAlert Severity="Severity.Warning" Class="my-3">阻挡中心由引擎调整到最近可行走格，再按范围生成；原布点坐标保留。保存后立即更新刷怪配置。减少数量或删除刷怪点不会强制清除已生成的怪物。立即补怪使用已保存配置，每次最多补 500 只。</MudAlert>
+    </MudPaper>
+}
+</fieldset>
+</DialogContent>
+<DialogActions>
+        <MudStack Row="true" Wrap="Wrap.Wrap">@if (current != null) { <MudButton Disabled="@(busy || !CanSubmit)" OnClick="Refill">立即补怪</MudButton><MudButton Disabled="@(busy || !CanSubmit)" Color="Color.Error" OnClick="Delete">删除刷怪点</MudButton> }</MudStack>
+    @if (current == null) { <MudButton Disabled="busy" OnClick="@(() => dialogOpen = false)">继续地图布点</MudButton> }
+</DialogActions>
+</AdminDialog>
+@code {
+    [Parameter, EditorRequired] public MapOverview Map { get; set; } = null!;
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    public bool IsEditing => editing;
+    public bool IsBusy => busy;
+    public PopulationMarker[] Markers => !editing ? [] : current != null
+        ? [Marker(Build(), current.Id)] : drafts.Select((d, i) => Marker(d, -(i + 1))).ToArray();
+    private PopulationMarker Marker(SpawnDefinition d, int id) => new("draft-spawn", id, d.MonsterName == "" ? $"怪物#{d.MonsterId}" : d.MonsterName, d.X, d.Y, d.Count, d.Spread);
+    private SpawnDefinition? current, initialDraft; private readonly Dictionary<int,string> monsterNames = new(); private readonly List<SpawnDefinition> drafts = [];
+    private bool busy, editing, saveTime, dialogOpen;
+    private int monsterId, x, y, count = 1, spread, delay = 5, randomDelay, direction = 8, ticks, selected = -1;
+    private string route = ""; private string? error, notice;
+    private string Target => current == null ? Map.Title : Map.Title + "/" + current.Id;
+    private bool CanSubmit => monsterId > 0 && (current != null || drafts.Count > 0);
+    private Task New() => Begin(new MapPoint(0, 0));
+    private async Task Begin(MapPoint point)
+    {
+        current = null; editing = dialogOpen = true; drafts.Clear(); selected = 0;
+        monsterId = Map.Spawns.FirstOrDefault()?.MonsterId ?? 1; x = point.X; y = point.Y;
+        spread = randomDelay = ticks = 0; count = 1; delay = 5; direction = 8; saveTime = false; route = ""; error = notice = null;
+        initialDraft = Build(); drafts.Add(initialDraft); await Changed.InvokeAsync();
+    }
+    public async Task Edit(SpawnDefinition value) { if (busy || editing) return; current = value; editing = dialogOpen = true; Fill(value); error = notice = null; await Changed.InvokeAsync(); }
+    public async Task Place(MapPoint point)
+    {
+        if (busy) return;
+        if (!editing) { await Begin(point); StateHasChanged(); return; }
+        if (current == null && drafts.FirstOrDefault(d => d.X == point.X && d.Y == point.Y) is { } found) { await Choose(found); StateHasChanged(); return; }
+        if (current == null && drafts.Count >= 100) { error = "每次最多保存 100 个刷怪点。"; return; }
+        x = point.X; y = point.Y;
+        if (current == null) { drafts.Add(Build()); selected = drafts.Count - 1; }
+        dialogOpen = true; await Preview(); StateHasChanged();
+    }
+    public async Task SelectDraft(int id) { if (id < 0 && -id <= drafts.Count) await Choose(drafts[-id - 1]); }
+    private void Fill(SpawnDefinition v) { monsterId = v.MonsterId; x = v.X; y = v.Y; count = v.Count; spread = v.Spread; delay = v.DelayMinutes; randomDelay = v.RandomDelayMinutes; direction = v.Direction; route = v.Route; saveTime = v.SaveTime; ticks = v.Ticks; }
+    private SpawnDefinition Build() => new(current?.Id ?? 0, Map.Id, Map.Title, monsterId, monsterNames.GetValueOrDefault(monsterId) ?? Map.Spawns.FirstOrDefault(s => s.MonsterId == monsterId)?.MonsterName ?? "", x, y, count, spread, delay, randomDelay, direction, route, saveTime, ticks, 0, 0, current?.Version ?? "");
+    private async Task Preview() { if (current == null && selected >= 0) drafts[selected] = Build(); await Changed.InvokeAsync(); }
+    private async Task Choose(SpawnDefinition v) { dialogOpen = true; selected = drafts.IndexOf(v); Fill(v); await Changed.InvokeAsync(); }
+    private async Task Remove(SpawnDefinition v) { drafts.Remove(v); selected = drafts.Count - 1; if (selected >= 0) Fill(drafts[selected]); await Changed.InvokeAsync(); }
+    private bool Dirty => current == null ? drafts.Count > 1 || (drafts.Count == 1 && drafts[0] != initialDraft) : Build() != (current with { Alive = 0, SecondsUntilSpawn = 0 });
+    private async Task RequestClose()
+    {
+        if (!Dirty || await AdminDialog.Confirm(Dialogs, "放弃未保存修改", "关闭将放弃当前刷怪编辑和多点草稿。", "放弃修改")) await Close();
+    }
+    private async Task Close() { dialogOpen = editing = false; drafts.Clear(); selected = -1; await Changed.InvokeAsync(); }
+    private async Task Run(Func<Task<ActionResult>> action)
+    {
+        if (busy || !CanSubmit) return;
+        busy = true; error = notice = null; await Changed.InvokeAsync();
+        try { notice = (await action()).Message; await Close(); await Saved.InvokeAsync(); }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; await Changed.InvokeAsync(); }
+    }
+    private Task Save() => Run(() => current == null
+        ? Api.Post<ActionResult>("management/admin/spawns/batch", new SpawnBatch(Map.Id, drafts.ToArray(), Map.SpawnVersion, Target))
+        : Api.Put<ActionResult>("management/admin/spawns", new SpawnMutation(Build(), Target)));
+    private Task Refill() => Run(() => Api.Post<ActionResult>($"management/admin/spawns/{Map.Id}/{current!.Id}/refill", new AdminCommand(Target, current.Version)));
+    private async Task Delete() { if (current == null || busy || !await AdminDialog.Confirm(Dialogs, "确认删除刷怪点", $"删除「{Map.Title}」的刷怪点 #{current.Id}？已有怪物不会被强制清除。", "确认删除")) return; await Run(() => Api.Post<ActionResult>($"management/admin/spawns/{Map.Id}/{current!.Id}/delete", new AdminCommand(Target, current.Version))); }
+    private async Task FindMonsters()
+    {
+        var picker = await Dialogs.ShowAsync<WorldFigureDialog>("选择怪物", new DialogParameters<WorldFigureDialog>
+            { { dialog => dialog.Kind, "monsters" }, { dialog => dialog.SelectMode, true } }, AdminDialog.StandardOptions);
+        if ((await picker.Result) is { Canceled: false, Data: CatalogFigure chosen })
+        { monsterId = chosen.Id; monsterNames[chosen.Id] = chosen.Name; await Preview(); }
+    }
+}

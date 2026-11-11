@@ -1,0 +1,65 @@
+@page "/"
+@attribute [Authorize]
+@implements IAsyncDisposable
+<PageTitle>运行监控 · Mir2</PageTitle>
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-5">
+    <div><MudText Typo="Typo.h4" HtmlTag="h1">运行监控</MudText><MudText Color="Color.Secondary">原游戏引擎实时状态，每 3 秒刷新</MudText></div><MudSpacer />
+    <MudChip T="string" Color="@(status?.Ready == true ? Color.Success : Color.Warning)">@(status?.Ready == true ? "游戏在线" : "离线 / 启动中")</MudChip>
+</MudStack>
+@if (error != null) { <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert> }
+@if (notice != null) { <MudAlert Severity="Severity.Success" Class="mb-4">@notice</MudAlert> }
+@if (status != null)
+{
+    <MudGrid Spacing="2" Class="mb-5">
+        @foreach (var metric in new[] { ("在线玩家", status.Players.Length.ToString()), ("内存", $"{status.MemoryMiB:N0} MiB"), ("地图 / 场景对象", $"{status.Counts.Maps} / {status.Objects:N0}"), ("资源文件", $"{status.AssetFiles:N0}"), ("运行时长", TimeSpan.FromSeconds(status.UptimeSeconds).ToString(@"hh\:mm\:ss")), ("游戏循环", $"{status.LoopMilliseconds} ms"), ("物品 / 怪物", $"{status.Counts.Items} / {status.Counts.Monsters}"), ("NPC / 任务", $"{status.Counts.Npcs} / {status.Counts.Quests}") })
+        {
+            <MudItem xs="12" sm="6" lg="3"><MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.body2" Color="Color.Secondary">@metric.Item1</MudText><MudText Typo="Typo.h4" Class="metric-value">@metric.Item2</MudText></MudPaper></MudItem>
+        }
+    </MudGrid>
+    <MudPaper Class="pa-4 mb-5" Elevation="0">
+        <MudText Typo="Typo.h6" GutterBottom="true">运行操作</MudText>
+        <MudStack Row="true" Wrap="Wrap.Wrap">
+            <MudButton Disabled="busy || !status.Ready" Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Run("save"))">立即保存</MudButton>
+            <MudButton Disabled="busy" Variant="Variant.Outlined" OnClick="@(() => Run(status.Ready ? "stop" : "start"))">@(status.Ready ? "保存并停止游戏" : "启动游戏")</MudButton>
+            <MudButton Disabled="busy" Color="Color.Warning" Variant="Variant.Outlined" OnClick="@(() => Run("restart"))">保存并重启游戏</MudButton>
+            <MudButton Disabled="busy || !status.Ready" Variant="Variant.Outlined" OnClick="@(() => Run("reload-scripts"))">重载 NPC / 掉落脚本</MudButton>
+        </MudStack>
+        <MudText Typo="Typo.caption" Class="mt-3 path">SQLite：@status.DatabasePath<br />资源版本：@status.AssetVersion · 上次手动保存：@(status.LastSaveUtc?.ToLocalTime().ToString("G") ?? "—")</MudText>
+    </MudPaper>
+    <MudTable T="PlayerStatus" Items="status.Players" Dense="true" Hover="true" Class="mb-5">
+        <ToolBarContent><MudText Typo="Typo.h6">在线玩家</MudText></ToolBarContent>
+        <HeaderContent><MudTh>角色</MudTh><MudTh>职业</MudTh><MudTh>等级</MudTh><MudTh>地图</MudTh><MudTh>位置</MudTh><MudTh>队长 / 人数</MudTh><MudTh>交易对象 / 确认</MudTh><MudTh>行会 / 职位</MudTh></HeaderContent>
+        <RowTemplate><MudTd>@context.Name</MudTd><MudTd>@context.Class</MudTd><MudTd>@context.Level</MudTd><MudTd>@context.Map</MudTd><MudTd>@context.X,@context.Y</MudTd><MudTd>@(context.GroupSize > 0 ? $"{context.GroupLeader} / {context.GroupSize}" : "—")</MudTd><MudTd>@(context.TradePartner.Length > 0 ? $"{context.TradePartner} / {(context.TradeLocked ? "已确认" : "未确认")}" : "—")</MudTd><MudTd>@(context.GuildName.Length > 0 ? $"{context.GuildName} / {context.GuildRank}" : "—")</MudTd></RowTemplate>
+        <NoRecordsContent><MudText Class="pa-4">暂无在线玩家</MudText></NoRecordsContent>
+    </MudTable>
+}
+<MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.h6" GutterBottom="true">引擎日志</MudText><div class="logs" aria-live="polite">@foreach (var entry in logs) { <div>@entry.Time.ToLocalTime().ToString("HH:mm:ss") [@entry.Category] @entry.Message</div> }</div></MudPaper>
+@code {
+    private ServerStatus? status; private string? error, notice; private bool busy;
+    private readonly List<LogEntry> logs = new(); private readonly CancellationTokenSource cancellation = new(); private Task? polling;
+    protected override async Task OnInitializedAsync() { await Refresh(); polling = Poll(); }
+    private async Task Poll()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try { while (await timer.WaitForNextTickAsync(cancellation.Token)) await InvokeAsync(async () => { await Refresh(); StateHasChanged(); }); }
+        catch (OperationCanceledException) { }
+    }
+    private async Task Refresh()
+    {
+        try
+        {
+            var latest = await Api.Get<ServerStatus>("management/status", cancellation.Token);
+            if (status?.ProcessId != latest.ProcessId) logs.Clear();
+            status = latest;
+            var recent = await Api.Get<LogEntry[]>($"management/logs?after={logs.LastOrDefault()?.Id ?? 0}", cancellation.Token);
+            logs.AddRange(recent); if (logs.Count > 200) logs.RemoveRange(0, logs.Count - 200); error = null;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) { error = "服务端未连接：" + exception.Message; }
+    }
+    private async Task Run(string action)
+    {
+        busy = true; try { notice = (await Api.Post<ActionResult>("management/" + action)).Message; await Refresh(); }
+        catch (Exception exception) { error = exception.Message; } finally { busy = false; }
+    }
+    public async ValueTask DisposeAsync() { cancellation.Cancel(); if (polling != null) await polling; cancellation.Dispose(); }
+}

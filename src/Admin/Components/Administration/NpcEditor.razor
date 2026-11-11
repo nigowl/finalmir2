@@ -1,0 +1,157 @@
+@inject IDialogService Dialogs
+<NavigationLock ConfirmExternalNavigation="@Dirty" OnBeforeInternalNavigation="BeforeNavigation" />
+<AdminDialog OnClose="Close" OnSave="SaveCurrentTab" CanSave="CanSaveCurrentTab" Busy="busy" SaveText="@(activeTab == 0 ? "备份并保存 NPC" : "保存脚本")" SaveConfirmation="@(activeTab == 0 ? $"确认保存 NPC「{name}」的属性及对应脚本？更换脚本路径会重启引擎。" : $"确认保存脚本「{document?.Path}」？已有文件将保留备份。")">
+<DialogContent>
+@if (error != null) { <MudAlert Severity="Severity.Error" Class="my-3">@error</MudAlert> }
+@if (notice != null) { <MudAlert Severity="Severity.Success" Class="my-3">@notice</MudAlert> }
+@if (busy) { <MudProgressLinear Indeterminate="true" /> }
+<fieldset disabled="@busy" style="border:0;padding:0;min-width:0">
+<MudTabs ActivePanelIndex="activeTab" ActivePanelIndexChanged="SelectTab" KeepPanelsAlive="true" PanelClass="py-2">
+    <MudTabPanel Text="属性" Disabled="busy">
+        <div class="npc-appearance"><img src="@PopulationMarker.NpcImage(image)" alt="@($"NPC 形象 {image}")" @key="image" @onerror="@(() => imageFailed = true)" /></div>
+        @if (imageFailed) { <MudText Color="Color.Warning" Typo="Typo.caption">当前形象无法预览，请检查外观编号和对应素材。</MudText> }
+        <MudGrid Spacing="2" Class="my-3"><MudItem xs="12" sm="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="NPC 名称" Value="name" ValueChanged="NameChanged" /></MudItem><MudItem xs="12" sm="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="脚本路径（Envir/NPCs，不含 .txt）" Value="file" ValueChanged="FileChanged" Disabled="ScriptEdited" HelperText="新增时按名称自动生成；中文使用无声调拼音，可手动修改。" /></MudItem>
+        @if (document?.Path == ScriptPath && document.Version.Length > 0 && (Current == null || Current.FileName != file))
+        { <MudItem xs="12"><MudAlert Severity="Severity.Warning">脚本路径已存在：@ScriptPath。保存 NPC 将关联现有脚本；只有主动编辑并确认保存脚本才会覆盖其内容。</MudAlert></MudItem> }
+        <MudItem xs="12" sm="4"><MudText Class="mt-4">@Map.Title</MudText></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="X" @bind-Value="x" Min="0" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="Y" @bind-Value="y" Min="0" /></MudItem>
+        <MudItem xs="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="外观编号" @bind-Value="image" @bind-Value:after="Preview" Min="0" Max="65535" /></MudItem><MudItem xs="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="交易倍率（100 为原价）" @bind-Value="rate" Min="1" Max="65535" /></MudItem>
+        <MudItem xs="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="最低等级（0 不限）" @bind-Value="minLevel" Min="0" Max="32767" /></MudItem><MudItem xs="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="最高等级（0 不限）" @bind-Value="maxLevel" Min="0" Max="32767" /></MudItem>
+        <MudItem xs="12" sm="6"><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="string" Label="职业限制" @bind-Value="requiredClass"><MudSelectItem Value="@(string.Empty)">不限制</MudSelectItem>@foreach (var cls in Enum.GetNames<MirClass>()) { <MudSelectItem Value="cls">@cls</MudSelectItem> }</MudSelect></MudItem>
+        <MudItem xs="12" sm="6"><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="string" Label="星期限制" @bind-Value="weekday"><MudSelectItem Value="@(string.Empty)">不限制</MudSelectItem>@foreach (var day in Enum.GetNames<DayOfWeek>()) { <MudSelectItem Value="day">@day</MudSelectItem> }</MudSelect></MudItem>
+        <MudItem xs="12"><MudCheckBox Dense="true" T="bool" Label="按每日时段显示（服务端本机时间）" @bind-Value="timeVisible" /></MudItem><MudItem xs="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="开始时间（HH:mm）" @bind-Value="startTime" /></MudItem><MudItem xs="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="结束时间（HH:mm，同一天）" @bind-Value="endTime" /></MudItem>
+        <MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="需要玩家 Flag（0 不限）" @bind-Value="flag" Min="0" Max="1998" /></MudItem><MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="大地图图标编号" @bind-Value="icon" Min="0" Max="65535" /></MudItem>
+        <MudItem xs="6"><MudCheckBox Dense="true" T="bool" Label="显示在大地图" @bind-Value="showOnMap" /></MudItem><MudItem xs="6"><MudCheckBox Dense="true" T="bool" Label="允许大地图传送至 NPC" @bind-Value="canTeleport" /></MudItem></MudGrid>
+        <MudAlert Severity="Severity.Info" Class="my-3">位置、名称、外观和显示条件保存后即时生效；更换脚本路径会重启引擎。缺少脚本时保存会自动创建。时段不支持跨午夜；有关联任务、攻城或商店存货的 NPC 不能删除。</MudAlert>
+    </MudTabPanel>
+    <MudTabPanel Text="脚本" Disabled="busy">
+        @if (document != null && document.Path == ScriptPath)
+        {
+            <MudText Class="path mb-3">@document.Path</MudText>
+            @if (document.Version.Length == 0) { <MudAlert Severity="Severity.Info" Class="mb-3">脚本尚不存在，保存时将自动创建 TXT 文件。</MudAlert> }
+            <MudTextField Margin="Margin.Dense" T="string" Immediate="true" Label="NPC 脚本内容" @bind-Value="content" Lines="14" Variant="Variant.Outlined" Class="code" Disabled="busy" />
+            <MudText Typo="Typo.caption" Class="mt-3">脚本与游戏开发工具共用，保存时检查版本并备份已有文件；保存后重载生效。</MudText>
+        }
+        else { <MudText>请在属性页填写有效的脚本路径。</MudText> }
+    </MudTabPanel>
+</MudTabs>
+</fieldset>
+</DialogContent>
+<DialogActions>
+    @if (activeTab == 0 && Current != null) { <MudButton Disabled="@(!CanSubmit || busy)" OnClick="Delete" Color="Color.Error">删除 NPC</MudButton> }
+    @if (activeTab == 1 && document != null) { <MudButton OnClick="ReloadScripts" Disabled="@(busy || ScriptDirty || document.Version.Length == 0)">重载 NPC / 掉落脚本</MudButton> }
+</DialogActions>
+</AdminDialog>
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter, EditorRequired] public MapOverview Map { get; set; } = null!;
+    [Parameter] public NpcDefinition? Current { get; set; }
+    [Parameter] public MapPoint? Point { get; set; }
+    private bool busy, timeVisible, showOnMap, canTeleport, imageFailed;
+    private int x, y, image, rate = 100, minLevel, maxLevel, flag, icon, activeTab;
+    private string name = "", file = "", requiredClass = "", weekday = "", startTime = "00:00", endTime = "23:59", content = "";
+    private string? error, notice;
+    private TextDocument? document;
+    private string autoFile = "", loadedContent = "";
+    private string ScriptPath => $"Envir/NPCs/{file.Trim().Replace('\\', '/')}.txt";
+    private bool ScriptDirty => document != null && content != document.Content;
+    private bool ScriptEdited => document != null && content != loadedContent;
+    private bool Dirty => Draft != Current || ScriptDirty;
+    private bool CanSubmit => !string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(file);
+    private static int Minute(string text) => TimeOnly.TryParseExact(text, "HH:mm", out var time) ? time.Hour * 60 + time.Minute : -1;
+    private NpcDefinition Draft => new(Current?.Id ?? 0, name, file, Map.Id, x, y, image, rate, Current?.Version ?? "", timeVisible, Minute(startTime), Minute(endTime), minLevel, maxLevel, weekday, requiredClass, flag, showOnMap, icon, canTeleport);
+    protected override async Task OnInitializedAsync()
+    {
+        if (Current != null)
+        {
+            name = Current.Name; file = Current.FileName; x = Current.X; y = Current.Y; image = Current.Image; rate = Current.Rate; minLevel = Current.MinLevel; maxLevel = Current.MaxLevel; flag = Current.FlagNeeded; icon = Current.BigMapIcon; requiredClass = Current.ClassRequired; weekday = Current.DayOfWeek; timeVisible = Current.TimeVisible; showOnMap = Current.ShowOnBigMap; canTeleport = Current.CanTeleportTo; startTime = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(Current.StartMinute)).ToString("HH:mm"); endTime = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(Current.EndMinute)).ToString("HH:mm");
+        }
+        else { x = Point?.X ?? 0; y = Point?.Y ?? 0; }
+        busy = true; await LoadScript(); busy = false;
+    }
+    private Task Preview() { imageFailed = false; return Task.CompletedTask; }
+    private async Task NameChanged(string value)
+    {
+        name = value ?? "";
+        if (Current == null && !ScriptEdited && (file == autoFile || string.IsNullOrWhiteSpace(file)))
+        {
+            autoFile = string.IsNullOrWhiteSpace(name) ? "" : NpcScriptName.From(name);
+            await FileChanged(autoFile);
+        }
+    }
+    private async Task FileChanged(string value)
+    {
+        if (ScriptEdited) return;
+        file = value ?? ""; document = null; content = loadedContent = "";
+        await LoadScript();
+    }
+    private async Task SelectTab(int value) { activeTab = value; if (value == 1) { busy = true; await LoadScript(); busy = false; } }
+    private async Task LoadScript()
+    {
+        if (string.IsNullOrWhiteSpace(file) || document?.Path == ScriptPath) return;
+        var path = ScriptPath;
+        try
+        {
+            var loaded = await Api.Get<TextDocument>("management/development/file?path=" + Uri.EscapeDataString(path));
+            if (path != ScriptPath) return;
+            document = loaded; content = loadedContent = document.Version.Length == 0 ? "[@MAIN]\n#SAY\n欢迎光临。\n" : document.Content; error = null;
+        }
+        catch (Exception e) { error = e.Message; }
+    }
+    private async Task SaveScriptCore()
+    {
+        if (string.IsNullOrWhiteSpace(file)) throw new InvalidDataException("请填写脚本路径。");
+        await LoadScript();
+        if (document == null || document.Path != ScriptPath) throw new InvalidDataException("无法加载脚本，请检查路径后重试。");
+        if (ScriptDirty || document.Version.Length == 0)
+        {
+            document = await Api.Put<TextDocument>("management/development/file", new TextEdit(document.Path, content, document.Version));
+            loadedContent = content;
+            notice = "脚本已保存；重载后内容生效。";
+        }
+    }
+    private async Task SaveScript()
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try { await SaveScriptCore(); }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; }
+    }
+    private async Task ReloadScripts()
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try { notice = (await Api.Post<ActionResult>("management/reload-scripts")).Message; }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; }
+    }
+    private bool CanSaveCurrentTab => activeTab == 0 ? CanSubmit : document?.Path == ScriptPath && (ScriptDirty || document.Version.Length == 0);
+    private Task SaveCurrentTab() => activeTab == 0 ? Save() : SaveScript();
+    private async Task Close()
+    {
+        if (!Dirty || await AdminDialog.Confirm(Dialogs, "放弃未保存修改", "有未保存修改，关闭将放弃这些内容。", "放弃修改")) Dialog.Cancel();
+    }
+    private void BeforeNavigation(LocationChangingContext context) { context.PreventNavigation(); error = "请先保存或关闭 NPC 编辑弹窗。"; StateHasChanged(); }
+    private async Task Save()
+    {
+        if (busy || !CanSubmit) return;
+        busy = true; error = null;
+        try
+        {
+            if (Minute(startTime) < 0 || Minute(endTime) < 0) throw new InvalidDataException("请输入 HH:mm 格式的时间。");
+            await SaveScriptCore();
+            var value = new NpcMutation(Draft, (Current?.Name ?? name.Trim()));
+            var result = Current == null ? await Api.Post<ActionResult>("management/admin/npcs", value) : await Api.Put<ActionResult>("management/admin/npcs", value);
+            Dialog.Close(DialogResult.Ok(result.Message));
+        }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; }
+    }
+    private async Task Delete()
+    {
+        if (Current == null || busy || !CanSubmit || !await AdminDialog.Confirm(Dialogs, "确认删除 NPC", $"删除 NPC「{Current.Name}」？对应脚本文件会保留。", "确认删除")) return; busy = true; error = null;
+        try { var result = await Api.Post<ActionResult>($"management/admin/npcs/{Current.Id}/delete", new AdminCommand(Current.Name, Current.Version)); Dialog.Close(DialogResult.Ok(result.Message)); }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; }
+    }
+}

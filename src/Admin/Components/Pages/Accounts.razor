@@ -1,0 +1,91 @@
+@page "/accounts"
+@attribute [Authorize]
+@inject IDialogService Dialogs
+@using System.Text.Json
+@using Mir2.Admin.Components.Administration
+<PageTitle>游戏账户 · Mir2</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1">游戏账户</MudText>
+<MudText Class="my-3" Color="Color.Secondary">查询账户、封禁、GM 权限、金币与元宝、登录 / 仓库密码。存档编辑要求整个账户离线。</MudText>
+@if (error != null) { <MudAlert Severity="Severity.Error" Class="my-3">@error</MudAlert> }
+@if (notice != null) { <MudAlert Severity="Severity.Success" Class="my-3">@notice</MudAlert> }
+@if (busy) { <MudProgressLinear Indeterminate="true" /> }
+<fieldset disabled="@busy" style="border:0;padding:0;min-width:0">
+<MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="账户 / 编号 / 最近 IP" @bind-Value="search" /><MudCheckBox Dense="true" T="bool" Label="仅在线" @bind-Value="online" /><MudButton OnClick="Load">查询 / 刷新</MudButton>
+</MudStack>
+<MudButton Class="mb-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="New">新增游戏账户</MudButton>
+<MudTable T="AccountRow" Items="rows" Dense="true" RowsPerPage="10" Hover="true">
+    <HeaderContent><MudTh>编号 / 账户</MudTh><MudTh>状态</MudTh><MudTh>角色</MudTh><MudTh>金币 / 元宝</MudTh><MudTh>操作</MudTh></HeaderContent>
+    <RowTemplate><MudTd DataLabel="编号 / 账户">#@context.Id @context.AccountID</MudTd><MudTd DataLabel="状态">@(context.Online ? "在线" : "离线") @(context.IsGM ? "GM" : "") @(context.Banned ? "已封禁" : "")</MudTd><MudTd DataLabel="角色">@context.Characters</MudTd><MudTd DataLabel="金币 / 元宝">@context.Gold / @context.Credit</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))">管理</MudButton></MudTd></RowTemplate>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+<AdminDialog @bind-Visible="createOpen" Title="创建游戏账户" OnClose="CloseCreate" OnSave="Create" CanSave="@(!string.IsNullOrWhiteSpace(newName) && !string.IsNullOrEmpty(newPassword))" Busy="busy" Dirty="CreateDirty" SaveText="创建账户">
+    <DialogContent>
+        @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
+    <MudStack Row="true" Wrap="Wrap.Wrap"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="账户（3–15 位字母数字）" @bind-Value="newName" /><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="初始密码（5–15 位字母数字）" InputType="InputType.Password" @bind-Value="newPassword" /></MudStack>
+    
+
+    </DialogContent>
+</AdminDialog>
+@if (detail != null)
+{
+    <AdminDialog Visible="true" Title="编辑游戏账户" OnClose="CloseEdit" OnSave="Save" CanSave="@(!busy && CanSubmit && !detail.Online)" Busy="busy" Dirty="@(Draft != original)" SaveText="备份并保存账户">
+    <DialogContent>
+        @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
+        <MudText Typo="Typo.h6">#@detail.Id @detail.AccountID · @(detail.Online ? "在线" : "离线")</MudText>
+        <MudText Typo="Typo.body2" Class="my-2">注册：@detail.Created.ToString("yyyy-MM-dd HH:mm") · 最近登录：@detail.LastLogin.ToString("yyyy-MM-dd HH:mm") · @detail.LastIP</MudText>
+        @if (detail.Online) { <MudAlert Severity="Severity.Warning">先踢下线再修改存档。角色选择界面的连接也属于在线账户。</MudAlert> }
+        <MudGrid Spacing="2" Class="my-2">
+            <MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="uint" Immediate="true" Label="金币（账户共享）" @bind-Value="gold" /></MudItem><MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="uint" Immediate="true" Label="元宝" @bind-Value="credit" /></MudItem>
+            <MudItem xs="12" sm="4"><MudCheckBox Dense="true" T="bool" Label="GM 权限" @bind-Value="gm" /></MudItem><MudItem xs="12" sm="4"><MudCheckBox Dense="true" T="bool" Label="封禁账户" @bind-Value="banned" /></MudItem><MudItem xs="12" sm="4"><MudCheckBox Dense="true" T="bool" Label="下次登录要求改密" @bind-Value="requireChange" /></MudItem>
+            <MudItem xs="12" sm="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="封禁原因" @bind-Value="banReason" /></MudItem><MudItem xs="12" sm="6"><MudDatePicker Margin="Margin.Dense" Variant="Variant.Outlined" Label="封禁截止日期（空为永久）" @bind-Date="banUntil" Clearable="true" /></MudItem>
+        </MudGrid>
+        <MudStack Row="true" Wrap="Wrap.Wrap" Class="my-3"><MudButton Color="Color.Warning" Disabled="@(!CanSubmit || !detail.Online)" OnClick="Kick">踢下线</MudButton><MudButton OnClick="@(() => Open(detail.Id))">重新读取</MudButton></MudStack>
+        <MudDivider Class="my-4" /><MudText Typo="Typo.subtitle1">重置密码</MudText>
+        <MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="新密码（不会回显）" InputType="InputType.Password" @bind-Value="password" />
+        <MudCheckBox Dense="true" T="bool" Label="重置登录密码后要求再次改密" @bind-Value="resetRequireChange" />
+        <MudStack Row="true" Class="my-3" Wrap="Wrap.Wrap"><MudButton Disabled="@(!CanSubmit || detail.Online || string.IsNullOrEmpty(password))" OnClick="@(() => Reset(false))">重置登录密码</MudButton><MudButton Disabled="@(!CanSubmit || detail.Online || string.IsNullOrEmpty(password))" OnClick="@(() => Reset(true))">重置仓库密码</MudButton></MudStack>
+        <MudText Typo="Typo.subtitle1" Class="mt-4">角色</MudText>
+        <MudTable T="CharacterRow" Items="detail.Characters" Dense="true"><HeaderContent><MudTh>角色</MudTh><MudTh>职业 / 等级</MudTh><MudTh>状态</MudTh></HeaderContent><RowTemplate><MudTd><MudLink Href="@($"/characters?selected={context.Id}")">#@context.Id @context.Name</MudLink></MudTd><MudTd>@context.Class / @context.Level</MudTd><MudTd>@(context.Deleted ? "已删除" : "正常")</MudTd></RowTemplate></MudTable>
+        <MudAlert Severity="Severity.Info" Class="my-3">仅允许删除离线空账户：不能有角色（含软删除）、资金、仓库物品、拍卖或扩展仓库权益。</MudAlert>
+        <MudButton Color="Color.Error" Disabled="@(!CanSubmit || detail.Online)" OnClick="Delete">删除账户</MudButton>
+        <MudText Typo="Typo.subtitle1" Class="mt-4">账户仓库（只读）</MudText><ItemTable Items="detail.Storage" />
+    </DialogContent>
+    </AdminDialog>
+}
+</fieldset>
+@code {
+    private bool createOpen;
+    private string original = "";
+    private string Draft => JsonSerializer.Serialize(new { gold, credit, gm, banned, requireChange, banReason, banUntil, password, resetRequireChange });
+    private bool CreateDirty => newName.Length != 0 || newPassword.Length != 0;
+    private void New() { newName = newPassword = ""; error = null; createOpen = true; }
+    private void CloseCreate() { createOpen = false; newName = newPassword = ""; }
+    private void CloseEdit() { detail = null; password = ""; }
+    private async Task Delete()
+    {
+        if (detail == null || busy || !CanSubmit) return;
+        if (await AdminDialog.Confirm(Dialogs, "确认删除账户", $"永久删除空账户「{detail.AccountID}」？已存在角色、资金、仓库物品、拍卖或仓库权益时服务端会拒绝；删除前保留完整备份。", "确认删除"))
+            await Run(async () => { await Api.Post<ActionResult>($"management/admin/accounts/{detail.Id}/delete", new AdminCommand(detail!.AccountID, detail.Version)); CloseEdit(); });
+    }
+
+    [SupplyParameterFromQuery] public int? Selected { get; set; }
+    private AccountRow[] rows = []; private AccountDetails? detail; private bool busy, online, gm, banned, requireChange, resetRequireChange = true;
+    private string search = "", newName = "", newPassword = "", banReason = "", password = "";
+    private string? error, notice; private uint gold, credit; private DateTime? banUntil; private int? openedQuery;
+    private bool CanSubmit => detail != null;
+    protected override async Task OnParametersSetAsync() { await Load(); if (Selected != null && Selected != openedQuery) { openedQuery = Selected; await Open(Selected.Value); } }
+    private async Task Load() { try { rows = await Api.Get<AccountRow[]>($"management/admin/accounts?search={Uri.EscapeDataString(search)}&online={online}"); error = null; } catch (Exception e) { error = e.Message; } }
+    private async Task Open(int id)
+    {
+        busy = true; error = null;
+        try { detail = await Api.Get<AccountDetails>($"management/admin/accounts/{id}"); gold = detail.Gold; credit = detail.Credit; gm = detail.IsGM; banned = detail.Banned; banReason = detail.BanReason; banUntil = detail.BanUntil; requireChange = detail.RequirePasswordChange; password = ""; original = Draft; }
+        catch (Exception e) { error = e.Message; } finally { busy = false; }
+    }
+    private async Task Run(Func<Task> action) { busy = true; error = null; notice = null; try { await action(); await Load(); if (detail != null) await Open(detail.Id); notice = "操作已完成，已重新读取账户。"; } catch (Exception e) { error = e.Message; } finally { password = ""; busy = false; } }
+    private async Task ConfirmRun(string title, string message, Func<Task> action) { if (await AdminDialog.Confirm(Dialogs, title, message, "确认执行")) await Run(action); }
+    private Task Create() => Run(async () => { detail = await Api.Post<AccountDetails>("management/admin/accounts", new AccountCreate(newName, newPassword)); newName = newPassword = ""; createOpen = false; });
+    private Task Save() => Run(async () => { await Api.Put<ActionResult>("management/admin/accounts", new AccountEdit(detail!.Id, gold, credit, gm, banned, banReason, banUntil, requireChange, detail.Version, detail!.AccountID)); });
+    private Task Kick() => ConfirmRun("确认踢下线", "确认断开当前账户的游戏连接？", async () => { await Api.Post<ActionResult>($"management/admin/accounts/{detail!.Id}/kick", new AdminCommand(detail!.AccountID)); });
+    private Task Reset(bool storage) => ConfirmRun("确认重置密码", "确认重置密码？请保存或放弃其他账户修改后再操作。", async () => { await Api.Post<ActionResult>($"management/admin/accounts/{detail!.Id}/{(storage ? "storage-password" : "password")}", new PasswordReset(password, resetRequireChange, detail.Version, detail!.AccountID)); });
+}

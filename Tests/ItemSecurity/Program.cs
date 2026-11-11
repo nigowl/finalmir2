@@ -41,6 +41,16 @@ void AtNPC(TestPlayer p, string key)
     p.NPCPage = new NPCPage(key);
 }
 
+void TradePair(TestPlayer p, TestPlayer partner)
+{
+    p.TradePartner = partner; partner.TradePartner = p;
+    var nodes = new LinkedList<MapObject>(); p.Node = nodes.AddLast(p); partner.Node = nodes.AddLast(partner);
+    var map = (Map)RuntimeHelpers.GetUninitializedObject(typeof(Map)); map.Info = new MapInfo();
+    p.CurrentMap = partner.CurrentMap = map;
+    p.Info.CurrentLocation = new(0, 0); partner.Info.CurrentLocation = new(0, 1);
+    p.Info.Direction = MirDirection.Down; partner.Info.Direction = MirDirection.Up;
+}
+
 MirGridType[] grids = { MirGridType.Inventory, MirGridType.Storage, MirGridType.Equipment,
     MirGridType.Fishing, MirGridType.HeroInventory, MirGridType.HeroEquipment };
 foreach (var from in grids)
@@ -221,7 +231,7 @@ foreach (var restrict in restrictions)
     Check(item.Price() == uint.MaxValue, "Stack price overflowed");
     p.Account.Gold = uint.MaxValue;
     p.ItemRentalPartner = Player();
-    p.TradePartner = Player(); p.TradeGoldAmount = uint.MaxValue - 1;
+    TradePair(p, Player()); p.TradeGoldAmount = uint.MaxValue - 1;
     p.TradeGold(2);
     Check(p.TradeGoldAmount == uint.MaxValue - 1 && p.Account.Gold == uint.MaxValue, "Trade escrow overflowed");
 }
@@ -360,11 +370,7 @@ foreach (int invalid in new[] { int.MinValue, -1, 1000, int.MaxValue })
 
 {
     var p = Player(); var partner = Player();
-    p.TradePartner = partner; partner.TradePartner = p;
-    var map = (Map)RuntimeHelpers.GetUninitializedObject(typeof(Map)); map.Info = new MapInfo();
-    p.CurrentMap = map; partner.CurrentMap = map;
-    p.Info.CurrentLocation = new(0, 0); partner.Info.CurrentLocation = new(0, 1);
-    p.Info.Direction = MirDirection.Down; partner.Info.Direction = MirDirection.Up;
+    TradePair(p, partner);
     p.Info.Trade[0] = Item(1, 1);
     for (int i = 0; i < partner.Info.Inventory.Length; i++) partner.Info.Inventory[i] = Item((ulong)i + 100, 100);
     p.TradeLocked = partner.TradeLocked = true;

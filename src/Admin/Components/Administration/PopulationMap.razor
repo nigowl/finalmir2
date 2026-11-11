@@ -1,0 +1,75 @@
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+<MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-2">
+    <MudButton Size="Size.Small" OnClick="@(() => zoom = Math.Max(1, zoom - .5))" Disabled="@(zoom <= 1)">缩小</MudButton>
+    <MudText Typo="Typo.body2">@zoom.ToString("0.#") ×</MudText><MudButton Size="Size.Small" OnClick="@(() => zoom = Math.Min(8, zoom + .5))" Disabled="@(zoom >= 8)">放大</MudButton>
+    <MudButton Size="Size.Small" OnClick="@(() => zoom = 1)">全图</MudButton><MudCheckBox T="bool" Label="显示阻挡" @bind-Value="blocks" Dense="true" />
+</MudStack>
+<div class="population-map-scroll" aria-busy="@Disabled">
+    <svg @ref="svg" class="population-map" preserveAspectRatio="none" data-disabled="@(Disabled ? "true" : "false")" viewBox="@($"0 0 {Map.Width} {Map.Height}")" style="@($"width:{F(zoom * 100)}%;aspect-ratio:{Map.Width * 48}/{Map.Height * 32}")" role="group" aria-label="@($"{Map.Title}地图，点击地图布点，也可用坐标表单编辑")">
+        <image data-map-thumbnail="@Map.Id" href="@($"/map-preview/{Map.Id}?version={Map.ImageVersion}")" width="@Map.Width" height="@Map.Height" preserveAspectRatio="none" />
+        @if (blocks) { <path d="@blockedPath" class="map-blocks" pointer-events="none" /> }
+        @foreach (var marker in Markers)
+        {
+            <g data-marker="@($"{marker.Kind}:{marker.Id}")" class="@($"map-marker {marker.Kind}")" style="pointer-events:visiblePainted" role="button" tabindex="0" aria-label="@Label(marker)" @onclick="@(() => Select(marker))" @onkeydown="@((KeyboardEventArgs e) => Key(e, marker))" @onclick:stopPropagation="true">
+                <title>@Label(marker)</title>
+                @if (marker.Spread > 0) { <rect x="@(marker.X - marker.Spread)" y="@(marker.Y - marker.Spread)" width="@(2 * marker.Spread + 1)" height="@(2 * marker.Spread + 1)" class="map-spread" /> }
+                <circle cx="@(marker.X + .5)" cy="@(marker.Y + .5)" r="@F(Radius)" />
+                @if (marker.Kind.Contains("npc"))
+                {
+                    <image href="@PopulationMarker.NpcImage(marker.Image)" x="@F(marker.X + .5 - Radius * 2)" y="@F(marker.Y + .5 - Radius * 5)" width="@F(Radius * 4)" height="@F(Radius * 5)" preserveAspectRatio="xMidYMax meet" />
+                }
+                <text transform="@($"translate({F(marker.X + Radius * 1.5)} {F(marker.Y - Radius)}) scale(1 1.5)")" style="@($"font-size:{F(Radius * 1.6)}px")">@marker.Name @(marker.Kind.Contains("spawn") ? $"×{marker.Count}" : "")</text>
+            </g>
+        }
+        @if (Point != null) { <rect x="@Point.X" y="@Point.Y" width="1" height="1" class="map-cell" pointer-events="none" /> }
+    </svg>
+</div>
+<MudText Typo="Typo.caption" Class="mt-2">@Map.Width × @Map.Height 格 · @Map.ImageSource · 绿色 NPC / 红色刷怪 / 黄色未保存 · 放大后滚动定位</MudText>
+@if (error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@error</MudAlert> }
+@code {
+    [Parameter, EditorRequired] public MapOverview Map { get; set; } = null!;
+    [Parameter] public PopulationMarker[] Markers { get; set; } = [];
+    [Parameter] public MapPoint? Point { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool AllowBlockedPoints { get; set; }
+    [Parameter] public EventCallback<MapPoint> PointChosen { get; set; }
+    [Parameter] public EventCallback<PopulationMarker> MarkerChosen { get; set; }
+    private ElementReference svg; private IJSObjectReference? module; private DotNetObjectReference<PopulationMap>? self;
+    private double zoom = 1; private bool blocks; private string? error; private string imageVersion = "", blockedPath = ""; private byte[] mask = [];
+    private double Radius => Map.Width / 100d / zoom;
+    private static string F(double value) => value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+    private static string Label(PopulationMarker m) => $"{(m.Kind.Contains("npc") ? "NPC" : "刷怪")} {m.Name}，坐标 {m.X},{m.Y}" + (m.Kind.Contains("spawn") ? $"，{m.Count} 只，范围 {m.Spread}" : "");
+    protected override void OnParametersSet()
+    {
+        if (imageVersion == Map.ImageVersion) return;
+        imageVersion = Map.ImageVersion; zoom = 1; error = null; mask = Convert.FromBase64String(Map.Walkable);
+        var path = new System.Text.StringBuilder();
+        for (var y = 0; y < Map.Height; y++) for (var x = 0; x < Map.Width;)
+        {
+            if (Walkable(x, y)) { x++; continue; } var start = x; while (x < Map.Width && !Walkable(x, y)) x++;
+            path.Append($"M{start} {y}h{x - start}v1h-{x - start}z");
+        }
+        blockedPath = path.ToString();
+    }
+    private bool Walkable(int x, int y) { var i = y * Map.Width + x; return x >= 0 && y >= 0 && x < Map.Width && y < Map.Height && i / 8 < mask.Length && (mask[i / 8] & (1 << (i % 8))) != 0; }
+    [JSInvokable] public async Task Pick(int x, int y)
+    {
+        if (Disabled) return;
+        if (x < 0 || y < 0 || x >= Map.Width || y >= Map.Height || (!AllowBlockedPoints && !Walkable(x, y))) { error = $"({x},{y}) 是阻挡或地图外位置，请选择有效格。"; StateHasChanged(); return; }
+        error = null; await PointChosen.InvokeAsync(new(x, y)); StateHasChanged();
+    }
+    private Task Select(PopulationMarker marker) => Disabled ? Task.CompletedTask : MarkerChosen.InvokeAsync(marker);
+    private Task Key(KeyboardEventArgs e, PopulationMarker marker) => e.Key is "Enter" or " " ? Select(marker) : Task.CompletedTask;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        module ??= await Js.InvokeAsync<IJSObjectReference>("import", "./map-editor.js"); self ??= DotNetObjectReference.Create(this);
+        await module.InvokeVoidAsync("attach", svg, self);
+    }
+    public async ValueTask DisposeAsync()
+    {
+        try { if (module != null) { await module.InvokeVoidAsync("detach", svg); await module.DisposeAsync(); } } catch (JSDisconnectedException) { }
+        self?.Dispose();
+    }
+}

@@ -1,0 +1,13 @@
+<AdminDialog Title="@Title">
+    <DialogContent><MudText>@Message</MudText></DialogContent>
+    <DialogActions>
+        <MudButton Size="Size.Small" OnClick="@(() => Dialog.Cancel())">取消</MudButton>
+        <MudButton Size="Size.Small" Class="admin-dialog-save" Color="Color.Primary" Variant="Variant.Filled" OnClick="@(() => Dialog.Close(DialogResult.Ok(true)))">@ConfirmText</MudButton>
+    </DialogActions>
+</AdminDialog>
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public string Title { get; set; } = "确认保存";
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string ConfirmText { get; set; } = "确认保存";
+}

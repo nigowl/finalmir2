@@ -1,0 +1,19 @@
+<MudAutocomplete T="MapChoice" Label="地图（代码 / 名称 / 编号模糊搜索）" Value="Selected" ValueChanged="Choose" SearchFunc="Search" ToStringFunc="Label"
+                 Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" MinCharacters="0" MaxItems="100" DebounceInterval="150" Disabled="Disabled" Style="min-width:280px;max-width:760px;flex:1" CoerceText="true" SelectValueOnTab="true">
+    <NoItemsTemplate><MudText Class="pa-3">没有匹配地图，请尝试代码、名称或编号。</MudText></NoItemsTemplate>
+</MudAutocomplete>
+@code {
+    [Parameter] public MapChoice[] Maps { get; set; } = [];
+    [Parameter] public int Value { get; set; }
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Npcs { get; set; }
+    private MapChoice? Selected => Maps.FirstOrDefault(m => m.Id == Value);
+    private string Label(MapChoice? map) => map == null ? "" : $"{map.Code}（#{map.Id}） · {map.Width}×{map.Height} · {map.Name} · " + (Npcs ? $"NPC {map.Npcs}" : $"怪物 {map.Monsters}（配置 {map.PlannedMonsters}） · 刷怪点 {map.Spawns}");
+    private Task Choose(MapChoice? map) => map == null || map.Id == Value ? Task.CompletedTask : ValueChanged.InvokeAsync(map.Id);
+    private Task<IEnumerable<MapChoice>> Search(string text, CancellationToken token)
+    {
+        var terms = (text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return Task.FromResult(Maps.Where(m => terms.All(term => Label(m).Contains(term, StringComparison.OrdinalIgnoreCase))));
+    }
+}
