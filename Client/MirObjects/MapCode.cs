@@ -1,4 +1,4 @@
-﻿namespace Client.MirObjects
+namespace Client.MirObjects
 {
     public class CellInfo
     {
@@ -24,9 +24,11 @@
 
         public byte Light;
         public byte Unknown;
-        public List<MapObject> CellObjects;
 
         public bool FishingCell;
+
+#if !PORTABLE_CLIENT
+        public List<MapObject> CellObjects;
 
         public void AddObject(MapObject ob)
         {
@@ -127,20 +129,45 @@
                 return i == 0 ? ob1.ObjectID.CompareTo(ob2.ObjectID) : i;
             });
         }
+#endif
     }
 
     class MapReader
     {
         public int Width, Height;
         public CellInfo[,] MapCells;
+        private static void LogError(Exception error)
+        {
+#if PORTABLE_CLIENT
+            throw new InvalidDataException("Could not decode map data.", error);
+#else
+            if (Settings.LogErrors) CMain.SaveError(error.ToString());
+#endif
+        }
+
+        private CellInfo[,] CreateCells()
+        {
+#if PORTABLE_CLIENT
+            if (Width <= 0 || Height <= 0 || (long)Width * Height > 4_000_000 ||
+                Bytes == null || (long)Width * Height > Bytes.Length)
+                throw new InvalidDataException("Map dimensions exceed the resource limits.");
+#endif
+            return new CellInfo[Width, Height];
+        }
+
         private string FileName;
         private byte[] Bytes;
         
         public MapReader(string FileName)
         {
             this.FileName = FileName;
-
+#if PORTABLE_CLIENT
+            try { initiate(); }
+            catch (Exception error) when (error is ArgumentException or IndexOutOfRangeException or OverflowException)
+            { throw new InvalidDataException("Invalid map header or cell data.", error); }
+#else
             initiate();
+#endif
         }
 
         private void initiate()
@@ -153,7 +180,7 @@
             {
                 Width = 1000;
                 Height = 1000;
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
 
                 for (int x = 0; x < Width; x++)
                     for (int y = 0; y < Height; y++)
@@ -231,7 +258,7 @@
                 Width = BitConverter.ToInt16(Bytes, offset);
                 offset += 2;
                 Height = BitConverter.ToInt16(Bytes, offset);
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
                 offset = 52;
                 for (int x = 0; x < Width; x++)
                     for (int y = 0; y < Height; y++)
@@ -262,7 +289,7 @@
             }
             catch (Exception ex)
             {
-                if (Settings.LogErrors) CMain.SaveError(ex.ToString());
+                LogError(ex);
             }
 
         }
@@ -280,7 +307,7 @@
                 int h = BitConverter.ToInt16(Bytes, offSet);
                 Width = w ^ xor;
                 Height = h ^ xor;
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
 
                 offSet = 54;
 
@@ -316,7 +343,7 @@
             }
             catch (Exception ex)
             {
-                if (Settings.LogErrors) CMain.SaveError(ex.ToString());
+                LogError(ex);
             }
         }
 
@@ -328,7 +355,7 @@
                 Width = BitConverter.ToInt16(Bytes, offset);
                 offset += 2;
                 Height = BitConverter.ToInt16(Bytes, offset);
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
                 offset = 52;
                 for (int x = 0; x < Width; x++)
                     for (int y = 0; y < Height; y++)
@@ -357,7 +384,7 @@
             }
             catch (Exception ex)
             {
-                if (Settings.LogErrors) CMain.SaveError(ex.ToString());
+                LogError(ex);
             }
 
         }
@@ -370,7 +397,7 @@
                 Width = BitConverter.ToInt16(Bytes, offset);
                 offset += 2;
                 Height = BitConverter.ToInt16(Bytes, offset);
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
                 offset = 52;
                 for (int x = 0; x < Width; x++)
                     for (int y = 0; y < Height; y++)
@@ -405,7 +432,7 @@
             }
             catch (Exception ex)
             {
-                if (Settings.LogErrors) CMain.SaveError(ex.ToString());
+                LogError(ex);
             }
         }
 
@@ -421,7 +448,7 @@
                 int h = BitConverter.ToInt16(Bytes, offset);
                 Width = w ^ xor;
                 Height = h ^ xor;
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
                 offset = 64;
                 for (int x = 0; x < Width; x++)
                     for (int y = 0; y < Height; y++)
@@ -450,7 +477,7 @@
             }
             catch (Exception ex)
             {
-                if (Settings.LogErrors) CMain.SaveError(ex.ToString());
+                LogError(ex);
             }
         }
 
@@ -466,7 +493,7 @@
                 //ignoring eventfile and fogcolor for now (seems unused in maps i checked)
                 offset = 28;
                 //initiate all cells
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
                 for (int x = 0; x < Width; x++)
                     for (int y = 0; y < Height; y++)
                         MapCells[x, y] = new CellInfo();
@@ -519,7 +546,7 @@
             }
             catch (Exception ex)
             {
-                if (Settings.LogErrors) CMain.SaveError(ex.ToString());
+                LogError(ex);
             }
         }
 
@@ -532,7 +559,7 @@
                 Width = BitConverter.ToInt16(Bytes, offset);
                 offset += 2;
                 Height = BitConverter.ToInt16(Bytes, offset);
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
                 offset = 40;
                 for (int x = 0; x < Width; x++)
                     for (int y = 0; y < Height; y++)
@@ -570,7 +597,7 @@
             }
             catch (Exception ex)
             {
-                if (Settings.LogErrors) CMain.SaveError(ex.ToString());
+                LogError(ex);
             }
 
         }
@@ -583,7 +610,7 @@
                 Width = BitConverter.ToInt16(Bytes, offset);
                 offset += 4;
                 Height = BitConverter.ToInt16(Bytes, offset);
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
 
                 offset = 54;
 
@@ -615,7 +642,7 @@
             }
             catch (Exception ex)
             {
-                if (Settings.LogErrors) CMain.SaveError(ex.ToString());
+                LogError(ex);
             }
         }
 
@@ -628,7 +655,7 @@
                 Width = BitConverter.ToInt16(Bytes, offset);
                 offset += 2;
                 Height = BitConverter.ToInt16(Bytes, offset);
-                MapCells = new CellInfo[Width, Height];
+                MapCells = CreateCells();
                 offset = 8;
                 for (int x = 0; x < Width; x++)
                     for (int y = 0; y < Height; y++)
@@ -665,7 +692,7 @@
             }
             catch (Exception ex)
             {
-                if (Settings.LogErrors) CMain.SaveError(ex.ToString());
+                LogError(ex);
             }
         }
 

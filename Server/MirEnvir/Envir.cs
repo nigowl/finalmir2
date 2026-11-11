@@ -86,6 +86,7 @@ namespace Server.MirEnvir
             _startTime.AddMilliseconds(Time);
 
         public bool Running { get; private set; }
+        public bool NetworkStarted { get; private set; }
 
 
         private static uint _objectID;
@@ -101,7 +102,7 @@ namespace Server.MirEnvir
 
         private Thread _thread;
         private TcpListener _listener;
-        private bool StatusPortEnabled = true;
+        public bool StatusPortEnabled { get; set; } = true;
         public List<MirStatusConnection> StatusConnections = new List<MirStatusConnection>();
         private TcpListener _StatusPort;
         private int _sessionID;
@@ -2174,7 +2175,8 @@ namespace Server.MirEnvir
                             });
                         }
 
-                        //   if (Players.Count == 0) Thread.Sleep(1);
+                        // Yield between ticks instead of busy-waiting on desktop hosts.
+                        Thread.Sleep(1);
                         //   GC.Collect();
                     }
                 }
@@ -2214,6 +2216,7 @@ namespace Server.MirEnvir
                 MessageQueue.Enqueue(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.OuterWorkloopErrorLine), line, ex));
             }
 
+            Running = false;
             _thread = null;
         }
 
@@ -2438,6 +2441,13 @@ namespace Server.MirEnvir
 
         public void SaveDB()
         {
+            if (DatabaseStorage.Current != null)
+            {
+                using var memory = new MemoryStream();
+                SaveDB(memory);
+                DatabaseStorage.Current.Write(DatabasePath, memory.ToArray());
+                return;
+            }
             if (File.Exists(DatabasePath))
             {
                 if (!Directory.Exists(DatabaseBackUpPath)) Directory.CreateDirectory(DatabaseBackUpPath);
@@ -2452,6 +2462,11 @@ namespace Server.MirEnvir
             }
 
             using (var stream = File.Create(DatabasePath))
+                SaveDB(stream);
+        }
+
+        private void SaveDB(Stream stream)
+        {
             using (var writer = new BinaryWriter(stream))
             {
                 writer.Write(Version);
@@ -2509,8 +2524,7 @@ namespace Server.MirEnvir
 
         public CharacterInfo GetArchivedCharacter(string name)
         {
-            DirectoryInfo dir = new DirectoryInfo(ArchivePath);
-            FileInfo[] files = dir.GetFiles($"{name}*.MirCA");
+            var files = DatabaseStorage.GetFiles(ArchivePath, $"{name}*.MirCA");
 
             if (files.Length != 1)
             {
@@ -2521,7 +2535,7 @@ namespace Server.MirEnvir
 
             CharacterInfo info = null;
 
-            using (var stream = fileInfo.OpenRead())
+            using (var stream = DatabaseStorage.OpenRead(fileInfo))
             {
                 using var reader = new BinaryReader(stream);
 
@@ -2538,19 +2552,31 @@ namespace Server.MirEnvir
         {
             if (!Directory.Exists(ArchivePath)) Directory.CreateDirectory(ArchivePath);
 
-            using var stream = File.Create(Path.Combine(ArchivePath, @$"{info.Name}{Now:_MMddyyyy_HHmmss}.MirCA"));
+            var path = Path.Combine(ArchivePath, @$"{info.Name}{Now:_MMddyyyy_HHmmss}.MirCA");
+            using var stream = DatabaseStorage.Current != null ? new MemoryStream() : (Stream)File.Create(path);
             using var writer = new BinaryWriter(stream);
 
             writer.Write(Version);
             writer.Write(CustomVersion);
 
             info.Save(writer);
+            writer.Flush();
+            if (DatabaseStorage.Current != null)
+                DatabaseStorage.Current.Write(path, ((MemoryStream)stream).ToArray());
         }
 
         public void SaveAccounts()
         {
             while (Saving)
                 Thread.Sleep(1);
+
+            if (DatabaseStorage.Current != null)
+            {
+                using var memory = new MemoryStream();
+                SaveAccounts(memory);
+                DatabaseStorage.Current.Write(AccountPath, memory.ToArray());
+                return;
+            }
 
             try
             {
@@ -2617,9 +2643,9 @@ namespace Server.MirEnvir
 
             if (GuildRefreshNeeded == true) //deletes guild files and resaves with new indexing if a guild is deleted.
             {
-                foreach (var guildfile in Directory.GetFiles(Settings.GuildPath, "*.mgd"))
+                foreach (var guildfile in DatabaseStorage.GetFiles(Settings.GuildPath, "*.mgd"))
                 {
-                    File.Delete(guildfile);
+                    DatabaseStorage.Delete(guildfile);
                 }
 
                 GuildRefreshNeeded = false;
@@ -2641,6 +2667,11 @@ namespace Server.MirEnvir
 					var mStream = new MemoryStream();
                     var writer = new BinaryWriter(mStream);
 					GuildList[i].Save(writer);
+                    if (DatabaseStorage.Current != null)
+                    {
+                        DatabaseStorage.Current.Write(Path.Combine(Settings.GuildPath, i + ".mgd"), mStream.ToArray());
+                        continue;
+                    }
                     var fStream = new FileStream(Path.Combine(Settings.GuildPath, i + ".mgdn"), FileMode.Create);
                     var data = mStream.ToArray();
                     fStream.BeginWrite(data, 0, data.Length, EndSaveGuildsAsync, fStream);
@@ -2704,6 +2735,12 @@ namespace Server.MirEnvir
                         npc.UsedGoods[k].Save(writer);
                     }
 
+                    if (DatabaseStorage.Current != null)
+                    {
+                        DatabaseStorage.Current.Write(path[..^1], mStream.ToArray());
+                        npc.NeedSave = false;
+                        continue;
+                    }
                     var fStream = new FileStream(path, FileMode.Create);
                     var data = mStream.ToArray();
                     fStream.BeginWrite(data, 0, data.Length, EndSaveGoodsAsync, fStream);
@@ -2741,6 +2778,11 @@ namespace Server.MirEnvir
                 var mStream = new MemoryStream();
                 var writer = new BinaryWriter(mStream);
                 ConquestList[i].Save(writer);
+                if (DatabaseStorage.Current != null)
+                {
+                    DatabaseStorage.Current.Write(Path.Combine(Settings.ConquestsPath, ConquestList[i].Info.Index + ".mcd"), mStream.ToArray());
+                    continue;
+                }
                 var fStream = new FileStream(Path.Combine(Settings.ConquestsPath, ConquestList[i].Info.Index + ".mcdn"), FileMode.Create);
                 var data = mStream.ToArray();
                 fStream.BeginWrite(data, 0, data.Length, EndSaveConquestsAsync, fStream);
@@ -2770,6 +2812,11 @@ namespace Server.MirEnvir
         public void BeginSaveAccounts()
         {
             if (Saving) return;
+            if (DatabaseStorage.Current != null)
+            {
+                SaveAccounts();
+                return;
+            }
 
             Saving = true;
 
@@ -2822,12 +2869,12 @@ namespace Server.MirEnvir
         {
             lock (LoadLock)
             {
-                if (!File.Exists(DatabasePath))
+                if (!DatabaseStorage.Exists(DatabasePath))
                 {
                     SaveDB();
                 }
 
-                using (var stream = File.OpenRead(DatabasePath))
+                using (var stream = DatabaseStorage.OpenRead(DatabasePath))
                 using (var reader = new BinaryReader(stream))
                 {
                     LoadVersion = reader.ReadInt32();
@@ -2960,12 +3007,12 @@ namespace Server.MirEnvir
 
             lock (LoadLock)
             {
-                if (!File.Exists(AccountPath))
+                if (!DatabaseStorage.Exists(AccountPath))
                 {
                     SaveAccounts();
                 }
 
-                using (var stream = File.OpenRead(AccountPath))
+                using (var stream = DatabaseStorage.OpenRead(AccountPath))
                 using (var reader = new BinaryReader(stream))
                 {
                     LoadVersion = reader.ReadInt32();
@@ -3097,9 +3144,9 @@ namespace Server.MirEnvir
                 for (var i = 0; i < GuildCount; i++)
                 {
                     GuildInfo guildInfo;
-                    if (!File.Exists(Path.Combine(Settings.GuildPath, i + ".mgd"))) continue;
+                    if (!DatabaseStorage.Exists(Path.Combine(Settings.GuildPath, i + ".mgd"))) continue;
 
-                    using (var stream = File.OpenRead(Path.Combine(Settings.GuildPath, i + ".mgd")))
+                    using (var stream = DatabaseStorage.OpenRead(Path.Combine(Settings.GuildPath, i + ".mgd")))
                     {
                         using var reader = new BinaryReader(stream);
                         guildInfo = new GuildInfo(reader);
@@ -3131,9 +3178,9 @@ namespace Server.MirEnvir
 
                     if (tempMap == null) continue;
 
-                    if (File.Exists(Path.Combine(Settings.ConquestsPath, ConquestInfoList[i].Index + ".mcd")))
+                    if (DatabaseStorage.Exists(Path.Combine(Settings.ConquestsPath, ConquestInfoList[i].Index + ".mcd")))
                     {
-                        using (var stream = File.OpenRead(Path.Combine(Settings.ConquestsPath, ConquestInfoList[i].Index + ".mcd")))
+                        using (var stream = DatabaseStorage.OpenRead(Path.Combine(Settings.ConquestsPath, ConquestInfoList[i].Index + ".mcd")))
                         {
                             using var reader = new BinaryReader(stream);
                             conquestGuildInfo = new ConquestGuildInfo(reader) { Info = ConquestInfoList[i] };
@@ -3318,7 +3365,7 @@ namespace Server.MirEnvir
             Heroes.Clear();
             MonsterCount = 0;
 
-            LoadDB();
+            if (!LoadDB()) throw new InvalidDataException("Unsupported server database version.");
 
             BuffInfoList.Clear();
             foreach (var buff in BuffInfo.Load())
@@ -3433,6 +3480,7 @@ namespace Server.MirEnvir
             }
 
             MessageQueue.Enqueue(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.NetworkStarted));
+            NetworkStarted = true;
         }
 
         private void StopEnvir()
@@ -3455,7 +3503,8 @@ namespace Server.MirEnvir
         }
         private void StopNetwork()
         {
-            _listener.Stop();
+            NetworkStarted = false;
+            _listener?.Stop();
             lock (Connections)
             {
                 for (var i = Connections.Count - 1; i >= 0; i--)

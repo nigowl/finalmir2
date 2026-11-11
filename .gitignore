@@ -364,3 +364,13 @@ FodyWeavers.xsd
 /Build
 /.idea/.idea.Legend of Mir/.idea
 /.idea/config
+
+
+#
+/Data/ref/
+/Data/runtime/
+.DS_Store
+
+# Godot generated imports and build cache
+**/.godot/
+**/.mono/

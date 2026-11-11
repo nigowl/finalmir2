@@ -139,7 +139,7 @@ namespace Server.MirObjects
 
             if (!Directory.Exists(Settings.NPCPath)) return;
 
-            string fileName = Path.Combine(Settings.NPCPath, FileName + ".txt");
+            string fileName = Path.Combine(Settings.NPCPath, FileName + ".txt").Replace('\\', Path.DirectorySeparatorChar);
 
             if (File.Exists(fileName))
             {
@@ -185,11 +185,11 @@ namespace Server.MirObjects
             {
                 loadedNPC.UsedGoods.Clear();
 
-                string path = Path.Combine(Settings.GoodsPath, loadedNPC.Info.Index.ToString() + ".msd");
+                string path = Path.Combine(Settings.GoodsPath, loadedNPC.Info.Index.ToString() + ".msd").Replace('\\', Path.DirectorySeparatorChar);
 
-                if (!File.Exists(path)) return;
+                if (!DatabaseStorage.Exists(path)) return;
 
-                using (FileStream stream = File.OpenRead(path))
+                using (Stream stream = DatabaseStorage.OpenRead(path))
                 {
                     using (BinaryReader reader = new BinaryReader(stream))
                     {
@@ -312,7 +312,7 @@ namespace Server.MirObjects
 
                 if (split.Length < 2) continue;
 
-                string path = Path.Combine(Settings.EnvirPath, split[1].Substring(1, split[1].Length - 2));
+                string path = Path.Combine(Settings.EnvirPath, split[1].Substring(1, split[1].Length - 2)).Replace('\\', Path.DirectorySeparatorChar);
 
                 if (!File.Exists(path))
                     MessageQueue.Enqueue(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.InsertScriptNotFound), path));
@@ -335,7 +335,7 @@ namespace Server.MirObjects
 
                 string[] split = lines[i].Split(' ');
 
-                string path = Path.Combine(Settings.EnvirPath, split[1].Substring(1, split[1].Length - 2));
+                string path = Path.Combine(Settings.EnvirPath, split[1].Substring(1, split[1].Length - 2)).Replace('\\', Path.DirectorySeparatorChar);
                 string page = ("[" + split[2] + "]").ToUpper();
 
                 bool start = false, finish = false;

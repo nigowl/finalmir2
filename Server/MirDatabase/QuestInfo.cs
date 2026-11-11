@@ -133,7 +133,7 @@ namespace Server.MirDatabase
 
             if (!Directory.Exists(Settings.QuestPath)) return;
 
-            string fileName = Path.Combine(Settings.QuestPath, FileName + ".txt");
+            string fileName = Path.Combine(Settings.QuestPath, FileName + ".txt").Replace('\\', Path.DirectorySeparatorChar);
 
             if (File.Exists(fileName))
             {

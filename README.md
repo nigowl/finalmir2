@@ -30,6 +30,20 @@ Crystal has become the foundation for most private Legend of Mir 2 servers world
 
 ---
 
+## macOS 试运行版本
+
+项目新增了无界面的 .NET 服务端和纯 Godot 原生微端，可在 macOS 上使用
+`Data/ref/` 中的数据库、地图和 `.Lib` 素材运行，存档使用 SQLite。
+功能范围、数据位置和验证方法见 [macOS 运行说明](MACOS.md)。
+
+```bash
+# 终端一：后端，看到 Game server ready 后再操作客户端
+./start-backend.sh
+
+# 终端二：启动 Godot .NET 原生客户端
+./start-frontend.sh
+```
+
 ## 🔗 Quick Links
 
 ### LOMCN Community
@@ -57,8 +71,8 @@ of either licence for the entire repository.
 
 | Component | Licence |
 | --- | --- |
-| `Client/` and `Shared/` | [MIT](LICENSE-MIT.txt) |
-| `Server/`, `Server.MirForms/` and `Tests/` | [GPL v3 only (`GPL-3.0-only`)](LICENSE-GPL-3.0.txt) |
+| `Client/`, `Client.Godot/` and `Shared/` | [MIT](LICENSE-MIT.txt) |
+| `Server/`, `Server.MirForms/`, `Server.Console/` and `Tests/` | [GPL v3 only (`GPL-3.0-only`)](LICENSE-GPL-3.0.txt) |
 | Other original Crystal tools, build files and documentation | [MIT](LICENSE-MIT.txt), unless explicitly stated otherwise |
 | Third-party software and assets | Their own terms; see [third-party notices](THIRD-PARTY-NOTICES.md) |
 
