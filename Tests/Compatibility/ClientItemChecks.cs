@@ -1,0 +1,31 @@
+using Crystal.Native;
+using S = ServerPackets;
+
+internal static class ClientItemChecks
+{
+    public static void Run(Action<bool, string> check)
+    {
+        var state = new GameState();
+        var messages = new List<string>(); state.Message += messages.Add;
+        var item = new UserItem(new ItemInfo { Index = 1, Type = ItemType.Weapon }) { UniqueID = 42, Count = 3, CurrentDura = 1000, MaxDura = 5000 };
+        state.Apply(new S.UserInformation { ObjectID = 1, Inventory = [item], Equipment = new UserItem[14], QuestInventory = [] });
+        state.Apply(new S.DropItem { UniqueID = 42, Count = 1, Success = false });
+        check(item.Count == 3 && state.User!.Inventory[0] == item, "Rejected drop removed inventory locally");
+        state.Apply(new S.DropItem { UniqueID = 42, Count = 1, HeroItem = true, Success = true });
+        check(item.Count == 3, "Hero drop changed the player inventory");
+        state.Apply(new S.DropItem { UniqueID = 99, Count = 1, Success = true });
+        check(item.Count == 3, "Unrelated drop changed a different item");
+        state.Apply(new S.DropItem { UniqueID = 42, Count = 1, Success = true });
+        check(item.Count == 2, "Partial drop ignored the server-confirmed quantity");
+        state.Apply(new S.RepairItem { UniqueID = 42 });
+        check(item.CurrentDura == 1000 && item.MaxDura == 5000, "Repair unlock acknowledgement invented a successful repair");
+        state.Apply(new S.ItemRepaired { UniqueID = 42, CurrentDura = 4900, MaxDura = 4900 });
+        check(item.CurrentDura == 4900 && item.MaxDura == 4900, "Repair result lost authoritative durability values");
+        state.Apply(new S.DropItem { UniqueID = 42, Count = 2, Success = true });
+        check(state.User!.Inventory[0] == null, "Full stack drop left a phantom inventory item");
+        state.Apply(new S.EquipItem { UniqueID = 42, Grid = MirGridType.Inventory, Success = false });
+        state.Apply(new S.UseItem { UniqueID = 42, Success = false });
+        state.Apply(new S.NewMagic { Magic = new ClientMagic { Spell = Spell.FireBall } });
+        check(messages.Any(text => text.StartsWith("装备失败")) && messages.Any(text => text.StartsWith("使用失败")) && messages.Any(text => text.StartsWith("学会技能")), "Common item/skill feedback omitted server results");
+    }
+}

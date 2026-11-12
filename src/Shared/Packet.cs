@@ -112,6 +112,8 @@ public abstract class Packet
                 return new C.SetStoragePassword();
             case (short)ClientPacketIds.RemoveStoragePassword:
                 return new C.RemoveStoragePassword();
+            case (short)ClientPacketIds.CharacterLocationRequest:
+                return new C.CharacterLocationRequest();
             case (short)ClientPacketIds.Login:
                 return new C.Login();
             case (short)ClientPacketIds.NewCharacter:
@@ -965,6 +967,8 @@ public abstract class Packet
                 return new S.SetCompass();
             case (short)ServerPacketIds.GuildTerritoryPage:
                 return new S.GuildTerritoryPage();
+            case (short)ServerPacketIds.CharacterLocation:
+                return new S.CharacterLocation();
             default:
                 return null;
         }

@@ -10,6 +10,7 @@ public partial class Main
     private LineEdit guildRecruit = null!, guildRankName = null!;
     private VBoxContainer guildMemberRows = null!;
     private OriginalButton guildEditNotice = null!, guildSaveNotice = null!;
+    private readonly List<OriginalButton> guildTabs = new();
     private Button guildReloadNotice = null!, guildInviteToggle = null!;
     private OptionButton guildRankSelect = null!;
     private readonly List<CheckButton> guildRankOptions = new();
@@ -26,9 +27,9 @@ public partial class Main
         guild = Panel(game, 218, 145, 588, 440); guild.Hide();
         Picture(guild, "Prguse", 180, 0, 0); Picture(guild, "Title", 25, 18, 9);
         ArtButton(guild, "Prguse2", 360, 565, 4, "关闭行会 H", CloseGuild);
-        ArtButton(guild, "Title", 93, 20, 38, "公告", () => SelectGuildPage(0));
-        ArtButton(guild, "Title", 99, 91, 38, "成员", () => SelectGuildPage(1));
-        ArtButton(guild, "Title", 101, 233, 38, "职位与权限", () => SelectGuildPage(2));
+        guildTabs.Add(ArtButton(guild, "Title", 93, 20, 38, "公告", () => SelectGuildPage(0)));
+        guildTabs.Add(ArtButton(guild, "Title", 99, 91, 38, "成员", () => SelectGuildPage(1)));
+        guildTabs.Add(ArtButton(guild, "Title", 101, 233, 38, "职位与权限", () => SelectGuildPage(2)));
         Picture(guild, "Prguse", 1850, 365, 62);
         guildSummary = Text(guild, "", 370, 90, 202); guildSummary.Size = new Vector2(202, 175); guildSummary.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         guildRecruit = Edit(guild, 372, 285, 130, "邀请角色名"); guildRecruit.MaxLength = Globals.MaxCharacterNameLength;
@@ -36,10 +37,10 @@ public partial class Main
         ArtButton(guild, "Title", 356, 525, 286, "邀请加入行会", () => InviteGuildMember(guildRecruit.Text));
         guildInviteToggle = Button(guild, "", 368, 321, 204, ToggleGuildInvitations);
         Button(guild, "离开行会", 368, 357, 204, () => ConfirmGuild("离开当前行会？原引擎将检查会长和战争规则。", LeaveGuild));
-        guildHint = Text(guild, "", 18, 408, 550); guildHint.AddThemeFontSizeOverride("font_size", 11);
+        guildHint = Text(guild, "", 18, 408, 550); guildHint.AddThemeFontSizeOverride("font_size", 10);
         guildNoticePage = new Control { Position = new Vector2(0, 60), Size = new Vector2(352, 342) }; guild.AddChild(guildNoticePage);
         guildNotice = new TextEdit { Position = new Vector2(13, 1), Size = new Vector2(322, 298), Editable = false, WrapMode = TextEdit.LineWrappingMode.Boundary }; guildNoticePage.AddChild(guildNotice);
-        guildNotice.AddThemeFontSizeOverride("font_size", 12);
+        guildNotice.AddThemeFontSizeOverride("font_size", 11);
         guildNotice.AddThemeColorOverride("font_readonly_color", new Color("eadbb6"));
         guildEditNotice = ArtButton(guildNoticePage, "Prguse", 560, 20, 304, "编辑公告", BeginGuildNoticeEdit);
         guildSaveNotice = ArtButton(guildNoticePage, "Prguse", 554, 20, 304, "保存公告", SaveGuildNotice);
@@ -59,11 +60,11 @@ public partial class Main
             guildRanksPage.AddChild(button); guildRankOptions.Add(button);
             button.Toggled += enabled => { if (!renderingGuildRanks) SetGuildRankPermission(guildSelectedRank, option, enabled); };
         }
-        guildInvitation = new ConfirmationDialog { Title = "行会邀请" }; game.AddChild(guildInvitation);
+        guildInvitation = new ConfirmationDialog { Title = "行会邀请" }; game.AddChild(guildInvitation); guildInvitation.GetOkButton().Text = "确定"; guildInvitation.GetCancelButton().Text = "取消";
         guildInvitation.Confirmed += () => RespondGuildInvitation(true); guildInvitation.Canceled += () => RespondGuildInvitation(false);
-        guildConfirm = new ConfirmationDialog { Title = "确认行会操作" }; game.AddChild(guildConfirm);
+        guildConfirm = new ConfirmationDialog { Title = "确认行会操作" }; game.AddChild(guildConfirm); guildConfirm.GetOkButton().Text = "确定"; guildConfirm.GetCancelButton().Text = "取消";
         guildConfirm.Confirmed += () => { var action = guildConfirmed; guildConfirmed = null; action?.Invoke(); };
-        guildDiscard = new ConfirmationDialog { Title = "未保存的行会公告", DialogText = "放弃当前公告草稿？" }; game.AddChild(guildDiscard);
+        guildDiscard = new ConfirmationDialog { Title = "未保存的行会公告", DialogText = "放弃当前公告草稿？" }; game.AddChild(guildDiscard); guildDiscard.GetOkButton().Text = "确定"; guildDiscard.GetCancelButton().Text = "取消";
         guildDiscard.Confirmed += () => { editingGuildNotice = false; savingGuildNotice = false; var action = guildAfterDiscard; guildAfterDiscard = null; action?.Invoke(); };
         Draggable(guild);
         BuildGuildStorage();
@@ -166,6 +167,12 @@ public partial class Main
     private void RenderGuild()
     {
         if (State.User == null) return;
+        var indices = new[] { 93, 99, 101, 105 };
+        for (var page = 0; page < guildTabs.Count; page++)
+        {
+            guildTabs[page].Index = indices[page] + (guildPage == page ? 1 : 0);
+            guildTabs[page].HoverIndex = guildTabs[page].Index; guildTabs[page].PressedIndex = indices[page] + 1;
+        }
         guildNoticePage.Visible = State.InGuild && guildPage == 0; guildMembersPage.Visible = State.InGuild && guildPage == 1; guildRanksPage.Visible = State.InGuild && guildPage == 2;
         guildSummary.Text = State.Guild is { } g ? $"{g.GuildName}\n职位：{g.GuildRankName}\n等级：{g.Level}\n成员：{g.MemberCount}/{g.MaxMembers}\n经验：{g.Experience}/{g.MaxExperience}\n资金：{g.Gold:N0}\n\n!~内容 发送行会聊天" : "尚未加入行会。\n允许邀请后，由有招收权限的成员邀请你。\n\n行会可由管理台创建。";
         guildRecruit.Editable = State.HasGuildPermission(GuildRankOptions.CanRecruit);

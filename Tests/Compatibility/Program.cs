@@ -15,6 +15,7 @@ if (args.Contains("--fixture"))
 }
 if (args.Contains("--admin-session")) { await AdminSession.Run(args); return; }
 if (args.Contains("--trade-recovery")) { await TradeRecoverySession.Run(args); return; }
+if (args.Contains("--chinese-checks")) { ChineseTranslationChecks.Run(new ProjectPaths()); return; }
 
 var checks = 0;
 void Check(bool result, string message)
@@ -97,6 +98,11 @@ try
         Check(fit.Width <= width * .9 && fit.Height <= height * .9 && fit.Width * 3 == fit.Height * 4, "Scaled window exceeds its usable screen or loses the logical canvas ratio");
     }
     RespawnLocationChecks.Run(Check);
+    ClientAnimationChecks.Run(Check);
+    ClientAutomationChecks.Run(Check);
+    ClientItemChecks.Run(Check);
+    CommandChecks.Run(Check);
+    NpcSessionChecks.Run(Check);
     await ConnectionChecks.Run(Check);
     await ServerConnectionChecks.Run(Check);
     GroupChecks.Run(Check);

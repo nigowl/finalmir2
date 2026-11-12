@@ -22,7 +22,7 @@ public static class ResourceService
         builder.Services.AddSingleton<GameRuntime>(); builder.Services.AddHostedService(sp => sp.GetRequiredService<GameRuntime>());
         builder.Services.AddSingleton<DevelopmentFiles>();
         builder.Services.AddSingleton<WorldDefinitions>();
-        builder.Services.AddSingleton((SqliteDatabaseStorage)(Server.DatabaseStorage.Current ?? throw new InvalidOperationException("SQLite storage is required.")));
+        builder.Services.AddSingleton((SqliteDatabaseStorage)(Server.DatabaseStorage.Current ?? throw new InvalidOperationException("需要 SQLite 存储。")));
         builder.Services.AddSingleton<AdminChanges>();
         builder.Services.AddSingleton<PlayerAdministration>();
         builder.Services.AddSingleton<GuildAdministration>();
@@ -38,7 +38,7 @@ public static class ResourceService
             if (management && !ProjectPaths.KeyEquals(context.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal), key))
             { context.Response.StatusCode = 401; return; }
             if (management && context.Request.Headers.TryGetValue("X-Mir2-Version", out var version) && version != paths.VersionId)
-            { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { error = "Management and server version directories do not match." }); return; }
+            { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { error = "管理端与服务端的版本目录不匹配。" }); return; }
             var runtime = context.RequestServices.GetRequiredService<GameRuntime>();
             var mutation = management && context.Request.Method is not ("GET" or "HEAD");
             IDisposable? lease = null;
@@ -62,7 +62,7 @@ public static class ResourceService
             finally { lease?.Dispose(); }
         });
         app.MapGet("/health", (GameRuntime runtime) => new { ready = runtime.Ready, gamePort = runtime.GamePort, version = catalog.Version, gameVersion = paths.VersionName });
-        app.MapGet("/assets/manifest", (GameRuntime runtime) => new { version = catalog.Version, gamePort = runtime.GamePort, protocol = "Crystal TCP", frameFormat = 1, checksumAlgorithm = "sha256" });
+        app.MapGet("/assets/manifest", (GameRuntime runtime) => new { version = catalog.Version, gamePort = runtime.GamePort, protocol = "Crystal TCP", frameFormat = 1, checksumAlgorithm = "sha256", characterLocation = true });
         var assets = app.MapGroup("/assets/{requested}");
         assets.AddEndpointFilter(async (context, next) => context.HttpContext.Request.RouteValues["requested"]?.ToString() == catalog.Version ? await next(context) : Results.StatusCode(410));
         IResult Bytes(HttpContext context, byte[] bytes, string contentType = "application/octet-stream")

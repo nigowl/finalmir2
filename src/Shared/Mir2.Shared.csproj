@@ -19,4 +19,7 @@
     <NoWarn>1701;1702</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Localization/*.zh-CN.json" WithCulture="false" />
+  </ItemGroup>
 </Project>

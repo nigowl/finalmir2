@@ -15,7 +15,7 @@ public static class WorldFigureCatalog
     }
     public static CatalogFigurePage Read(string kind, int page, string? search)
     {
-        if (page is < 1 or > 1000000) throw new InvalidDataException("Invalid page.");
+        if (page is < 1 or > 1000000) throw new InvalidDataException("页码无效。");
         bool Match(int id, string name) => string.IsNullOrWhiteSpace(search) || name.Contains(search, StringComparison.OrdinalIgnoreCase) || id.ToString().Contains(search, StringComparison.OrdinalIgnoreCase);
         if (kind == "monsters")
         {
@@ -27,23 +27,23 @@ public static class WorldFigureCatalog
             var entries = Envir.Main.NPCInfoList.Where(n => Match(n.Index, n.Name)).OrderBy(n => n.Index).ToArray();
             return new(entries.Skip((page - 1) * 50).Take(50).Select(Npc).ToArray(), entries.Length);
         }
-        throw new InvalidDataException("Unknown figure catalog.");
+        throw new InvalidDataException("未知的图鉴类型。");
     }
     private static CatalogFigure Monster(MonsterInfo m)
     {
         var appearance = Appearance(m);
         var attributes = new Dictionary<string, string>
         {
-            ["编号"] = m.Index.ToString(), ["名称"] = m.Name, ["外观"] = $"{m.Image} ({(int)m.Image})", ["等级"] = m.Level.ToString(),
-            ["经验奖励"] = m.Experience.ToString(), ["AI"] = m.AI.ToString(), ["特效"] = m.Effect.ToString(), ["光照"] = m.Light.ToString(),
-            ["视野"] = m.ViewRange.ToString(), ["识破隐身"] = m.CoolEye.ToString(), ["攻击间隔（ms）"] = m.AttackSpeed.ToString(), ["移动间隔（ms）"] = m.MoveSpeed.ToString(),
+            ["编号"] = m.Index.ToString(), ["名称"] = m.Name, ["外观"] = $"外观编号{(int)m.Image}", ["等级"] = m.Level.ToString(),
+            ["经验奖励"] = m.Experience.ToString(), ["行为编号"] = m.AI.ToString(), ["特效"] = m.Effect.ToString(), ["光照"] = m.Light.ToString(),
+            ["视野"] = m.ViewRange.ToString(), ["识破隐身"] = m.CoolEye.ToString(), ["攻击间隔（毫秒）"] = m.AttackSpeed.ToString(), ["移动间隔（毫秒）"] = m.MoveSpeed.ToString(),
             ["掉落脚本"] = string.IsNullOrWhiteSpace(m.DropPath) ? m.Name : m.DropPath, ["掉落规则数"] = m.Drops.Count.ToString(),
             ["可诱惑"] = Yes(m.CanTame), ["可推动"] = Yes(m.CanPush), ["可召回"] = Yes(m.CanRecall), ["自动显血"] = Yes(m.AutoRev),
-            ["不死系"] = Yes(m.Undead), ["Boss"] = Yes(m.IsBoss), ["出生脚本"] = Yes(m.HasSpawnScript), ["死亡脚本"] = Yes(m.HasDieScript),
-            ["HP"] = m.Stats[Stat.HP].ToString(), ["DC"] = $"{m.Stats[Stat.MinDC]}–{m.Stats[Stat.MaxDC]}",
-            ["AC"] = $"{m.Stats[Stat.MinAC]}–{m.Stats[Stat.MaxAC]}", ["MAC"] = $"{m.Stats[Stat.MinMAC]}–{m.Stats[Stat.MaxMAC]}"
+            ["不死系"] = Yes(m.Undead), ["首领"] = Yes(m.IsBoss), ["出生脚本"] = Yes(m.HasSpawnScript), ["死亡脚本"] = Yes(m.HasDieScript),
+            ["生命"] = m.Stats[Stat.HP].ToString(), ["攻击"] = $"{m.Stats[Stat.MinDC]}–{m.Stats[Stat.MaxDC]}",
+            ["防御"] = $"{m.Stats[Stat.MinAC]}–{m.Stats[Stat.MaxAC]}", ["魔御"] = $"{m.Stats[Stat.MinMAC]}–{m.Stats[Stat.MaxMAC]}"
         };
-        foreach (var stat in m.Stats.Values) attributes[stat.Key.ToString()] = stat.Value.ToString();
+        foreach (var stat in m.Stats.Values) attributes[stat.Key.ToLocalizedString()] = stat.Value.ToString();
         return new(m.Index, m.Name, appearance.Library, appearance.Frame, attributes);
     }
     private static CatalogFigure Npc(NPCInfo n)

@@ -37,7 +37,7 @@ public sealed class ProjectPaths
         var configured = Environment.GetEnvironmentVariable("MIR2_ADMIN_KEY");
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            if (configured.Length < 32) throw new InvalidDataException("MIR2_ADMIN_KEY must contain at least 32 characters.");
+            if (configured.Length < 32) throw new InvalidDataException("MIR2_ADMIN_KEY 管理密钥至少需要 32 个字符。");
             return configured;
         }
         if (!File.Exists(AdminKeyFile))
@@ -54,7 +54,7 @@ public sealed class ProjectPaths
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
         var key = File.ReadAllText(AdminKeyFile).Trim();
-        if (key.Length < 32) throw new InvalidDataException($"Invalid management key: {AdminKeyFile}");
+        if (key.Length < 32) throw new InvalidDataException($"管理密钥无效：{AdminKeyFile}");
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(AdminKeyFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         return key;
     }
@@ -64,18 +64,18 @@ public sealed class ProjectPaths
     public static string SafePath(string root, string name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Contains('\\') || name.Split('/').Any(p => p is ".." or "." or ""))
-            throw new InvalidDataException("Invalid relative path.");
+            throw new InvalidDataException("相对路径无效。");
         var directory = new DirectoryInfo(Path.GetFullPath(root));
         var physicalRoot = directory.Exists ? directory.ResolveLinkTarget(true)?.FullName ?? directory.FullName : directory.FullName;
         var path = Path.GetFullPath(Path.Combine(physicalRoot, name));
         if (!path.StartsWith(physicalRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-            throw new InvalidDataException("Path is outside the managed directory.");
+            throw new InvalidDataException("路径超出受管理目录。");
         var current = physicalRoot;
         foreach (var part in name.Split('/'))
         {
             current = Path.Combine(current, part);
             if (File.Exists(current) || Directory.Exists(current))
-                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException("Nested symbolic links are not allowed.");
+                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException("受管理路径中不能包含嵌套符号链接。");
         }
         return path;
     }

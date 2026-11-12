@@ -7,8 +7,12 @@ public static class AdministrationModule
     public static void MapAdministration(this RouteGroupBuilder management)
     {
         var group = management.MapGroup("/admin");
+        group.MapGet("/gm-commands", (GameRuntime runtime, CancellationToken token) => runtime.Invoke(() =>
+            Mir2.Commands.GameCommands.All.Concat(Server.MirEnvir.Envir.Main.CustomCommands
+                .Where(name => Mir2.Commands.GameCommands.All.All(command => !command.Original.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                .Select(name => new Mir2.Commands.GameCommandInfo(name, name, name, "", "@" + name, "所选版本自定义脚本命令；参数与权限由默认 NPC 脚本定义。", true))).ToArray(), token));
         group.MapGet("/monsters/{id:int}/appearance", (GameRuntime runtime, int id, CancellationToken token) => runtime.Invoke(() =>
-            WorldFigureCatalog.Appearance(Server.MirEnvir.Envir.Main.GetMonsterInfo(id) ?? throw new FileNotFoundException("Monster not found.")), token));
+            WorldFigureCatalog.Appearance(Server.MirEnvir.Envir.Main.GetMonsterInfo(id) ?? throw new FileNotFoundException("未找到怪物。")), token));
         group.MapGet("/catalog/{kind}", (GameRuntime runtime, string kind, int page, string? search, CancellationToken token) =>
             runtime.Invoke(() => WorldFigureCatalog.Read(kind, page, search), token));
         group.MapGet("/accounts", (GameRuntime runtime, PlayerAdministration players, string? search, bool? online, CancellationToken token) => runtime.Invoke(() => players.Accounts(search, online ?? false), token));

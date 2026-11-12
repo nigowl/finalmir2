@@ -4011,7 +4011,7 @@ namespace Server.MirObjects
         {
             if (CurrentMap.Info.NoPets)
             {
-                ReceiveChat("You cannot summon pets on this map.", ChatType.System);
+                ReceiveChat("此地图无法召唤宠物。", ChatType.System);
                 return;
             }
             
@@ -4168,7 +4168,7 @@ namespace Server.MirObjects
                 {
                     if (!TryReplaceOldestFireWallCast(activeFireWalls))
                     {
-                        ReceiveChat("Unable to recycle an existing FireWall. Please wait a moment.", ChatType.System);
+                        ReceiveChat("暂时无法重新施放已有火墙，请稍候。", ChatType.System);
                         return;
                     }
 
@@ -4273,7 +4273,7 @@ namespace Server.MirObjects
         {
             if (CurrentMap.Info.NoPets)
             {
-                ReceiveChat("You cannot summon pets on this map.", ChatType.System);
+                ReceiveChat("此地图无法召唤宠物。", ChatType.System);
                 return;
             }
             
@@ -4401,7 +4401,7 @@ namespace Server.MirObjects
         {
             if (CurrentMap.Info.NoPets)
             {
-                ReceiveChat("You cannot summon pets on this map.", ChatType.System);
+                ReceiveChat("此地图无法召唤宠物。", ChatType.System);
                 return;
             }
             
@@ -4450,7 +4450,7 @@ namespace Server.MirObjects
         {
             if (CurrentMap.Info.NoPets)
             {
-                ReceiveChat("You cannot summon pets on this map.", ChatType.System);
+                ReceiveChat("此地图无法召唤宠物。", ChatType.System);
                 return;
             }
             
@@ -4701,7 +4701,7 @@ namespace Server.MirObjects
         {
             if (CurrentMap.Info.NoPets)
             {
-                ReceiveChat("You cannot summon pets on this map.", ChatType.System);
+                ReceiveChat("此地图无法召唤宠物。", ChatType.System);
                 return;
             }
             
@@ -5325,7 +5325,7 @@ namespace Server.MirObjects
         {
             if (CurrentMap.Info.NoPets)
             {
-                ReceiveChat("You cannot summon pets on this map.", ChatType.System);
+                ReceiveChat("此地图无法召唤宠物。", ChatType.System);
                 return;
             }
             
@@ -5721,7 +5721,7 @@ namespace Server.MirObjects
         {
             if (CurrentMap.Info.NoPets)
             {
-                ReceiveChat("You cannot summon pets on this map.", ChatType.System);
+                ReceiveChat("此地图无法召唤宠物。", ChatType.System);
                 return;
             }
             
@@ -5743,7 +5743,7 @@ namespace Server.MirObjects
 
             if (CurrentMap.Info.NoPets)
             {
-                ReceiveChat("You cannot summon pets on this map.", ChatType.System);
+                ReceiveChat("此地图无法召唤宠物。", ChatType.System);
                 return;
             }
             

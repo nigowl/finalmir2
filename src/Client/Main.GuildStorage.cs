@@ -19,7 +19,7 @@ public partial class Main
 
     private void BuildGuildStorage()
     {
-        ArtButton(guild, "Title", 105, 162, 38, "行会仓库与资金（仅安全区）", () => SelectGuildPage(3));
+        guildTabs.Add(ArtButton(guild, "Title", 105, 162, 38, "行会仓库与资金（仅安全区）", () => SelectGuildPage(3)));
         guildStoragePage = new Control { Position = new Vector2(0, 60), Size = new Vector2(352, 342) }; guild.AddChild(guildStoragePage);
         Picture(guildStoragePage, "Prguse", 1851, 30, 19);
         for (var i = 0; i < 64; i++)
@@ -31,11 +31,12 @@ public partial class Main
         }
         ArtButton(guildStoragePage, "Prguse2", 197, 337, 1, "上滚一行", () => ScrollGuildStorage(-1));
         ArtButton(guildStoragePage, "Prguse2", 207, 337, 318, "下滚一行", () => ScrollGuildStorage(1));
-        guildStoragePosition = Text(guildStoragePage, "", 14, 310, 116); guildStoragePosition.AddThemeFontSizeOverride("font_size", 10);
+        guildStoragePosition = Text(guildStoragePage, "", 14, 310, 116); guildStoragePosition.AddThemeFontSizeOverride("font_size", 9);
         guildWithdraw = ArtButton(guildStoragePage, "Prguse", 917, 142, 313, "取出金币（会长）", () => ShowGuildGold(true));
         guildDonate = ArtButton(guildStoragePage, "Prguse", 918, 158, 313, "捐献金币", () => ShowGuildGold(false));
+        guildWithdraw.HoverIndex = guildWithdraw.PressedIndex = 917; guildDonate.HoverIndex = guildDonate.PressedIndex = 918;
         guildStorageGold = Text(guildStoragePage, "", 194, 308, 125); guildStorageGold.HorizontalAlignment = HorizontalAlignment.Right;
-        guildGoldAmount = new AcceptDialog { Title = "行会资金", MinSize = new Vector2I(320, 125) }; game.AddChild(guildGoldAmount);
+        guildGoldAmount = new AcceptDialog { Title = "行会资金", MinSize = new Vector2I(320, 125) }; game.AddChild(guildGoldAmount); guildGoldAmount.GetOkButton().Text = "确定";
         guildGoldInput = new LineEdit { Position = new Vector2(12, 12), Size = new Vector2(290, 28), MaxLength = 10 }; guildGoldAmount.AddChild(guildGoldInput);
         guildGoldInput.TextSubmitted += _ => SubmitGuildGold(); guildGoldAmount.Confirmed += SubmitGuildGold;
     }

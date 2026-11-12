@@ -26,8 +26,8 @@ public sealed class MapThumbnails(AssetCatalog assets, ProjectPaths paths)
         await gate.WaitAsync(token);
         try
         {
-            using var lease = assets.TryRead() ?? throw new InvalidOperationException("Resources are being published. Retry after publication.");
-            if (version != null && version != assets.Version) throw new InvalidOperationException("Resources changed. Refresh the map.");
+            using var lease = assets.TryRead() ?? throw new InvalidOperationException("资源正在发布，请在发布完成后重试。");
+            if (version != null && version != assets.Version) throw new InvalidOperationException("资源已变化，请刷新地图。");
             var path = assets.ReadPath("maps", name);
             var key = assets.Version + ":" + path;
             if (!regenerate && cache.TryGetValue(key, out var found)) return found;
@@ -79,11 +79,11 @@ public sealed class MapThumbnails(AssetCatalog assets, ProjectPaths paths)
         await gate.WaitAsync(token);
         try
         {
-            using var lease = assets.TryRead() ?? throw new InvalidOperationException("Resources are being published. Retry after publication.");
-            if (version != assets.Version) throw new InvalidOperationException("Resources changed. Refresh the map.");
+            using var lease = assets.TryRead() ?? throw new InvalidOperationException("资源正在发布，请在发布完成后重试。");
+            if (version != assets.Version) throw new InvalidOperationException("资源已变化，请刷新地图。");
             var map = ReadMap(assets.ReadPath("maps", name));
             if (tileX < 0 || tileY < 0 || (long)tileX * 1024 >= (long)map.Width * 48 || (long)tileY * 1024 >= (long)map.Height * 32)
-                throw new InvalidDataException("Native map tile is outside the map.");
+                throw new InvalidDataException("原尺寸地图块超出地图范围。");
             var key = $"native:{assets.Version}:{name}:{tileX}:{tileY}";
             if (cache.TryGetValue(key, out var found)) return found.Png;
             var result = await Task.Run(() => Render(map, token, nativeX: tileX * 1024, nativeY: tileY * 1024), token);

@@ -27,25 +27,45 @@ public partial class OriginalArt : Control
         }
         var user = State.User;
         if (user == null) return;
+        if (Page == "inventory")
+        {
+            var ratio = Math.Clamp(State.InventoryWeight / (float)Math.Max(1, State.CalculateStats()[Stat.BagWeight]), 0, 1);
+            var bar = ratio <= .5f ? Assets.Sprite("Prguse", 24) : Assets.Sprite("UI_32bit", ratio <= .75f ? 471 : 470);
+            if (bar != null && ratio > 0)
+            {
+                var size = new Vector2((bar.Size.X - 3) * ratio, bar.Size.Y);
+                DrawTextureRectRegion(bar.Texture, new Rect2(new Vector2(182, 217), size), new Rect2(Vector2.Zero, size));
+            }
+            return;
+        }
         if (Page == "equipment")
         {
             var origin = new Vector2(8, 90);
             Sprite("Prguse", user.Gender == MirGender.Male ? 340 : 341, origin);
             foreach (var slot in new[] { EquipmentSlot.Armour, EquipmentSlot.Weapon, EquipmentSlot.Helmet })
-                if (user.Equipment[(int)slot]?.Info is { } item) Sprite("Stateitem", item.Image, origin, true);
+                if (user.Equipment[(int)slot]?.Info is { } item) Sprite("Stateitem", item.Image, Vector2.Zero, true);
             if (user.Equipment[(int)EquipmentSlot.Helmet] == null)
-                Sprite("Prguse", 441 + user.Hair + (user.Gender == MirGender.Female ? 40 : 0), origin, true);
+                Sprite("Prguse", 441 + user.Hair + (user.Class == MirClass.Assassin ? 20 : 0) + (user.Gender == MirGender.Female ? 40 : 0),
+                    user.Class == MirClass.Assassin ? user.Gender == MirGender.Male ? new Vector2(6, 25) : new Vector2(4, 18) : Vector2.Zero, true);
             Sprite("Prguse", 100 + (int)user.Class, new Vector2(15, 33));
             return;
         }
         var stats = State.CalculateStats();
-        var orb = Assets.Sprite("Prguse", 4);
+        var hpOnly = user.Class == MirClass.Warrior && user.Level < 26;
+        var orb = Assets.Sprite("Prguse", hpOnly ? 6 : 4);
         if (orb != null)
         {
             var hp = Math.Clamp(user.HP / (float)Math.Max(1, stats[Stat.HP]), 0, 1);
             var mp = Math.Clamp(user.MP / (float)Math.Max(1, stats[Stat.MP]), 0, 1);
-            DrawTextureRectRegion(orb.Texture, new Rect2(0, 646 + 80 * (1 - hp), 50, 80 * hp), new Rect2(0, 80 * (1 - hp), 50, 80 * hp));
-            DrawTextureRectRegion(orb.Texture, new Rect2(51, 646 + 80 * (1 - mp), 50, 80 * mp), new Rect2(51, 80 * (1 - mp), 50, 80 * mp));
+            DrawTextureRectRegion(orb.Texture, new Rect2(0, 646 + 80 * (1 - hp), hpOnly ? 100 : 50, 80 * hp), new Rect2(0, 80 * (1 - hp), hpOnly ? 100 : 50, 80 * hp));
+            if (!hpOnly) DrawTextureRectRegion(orb.Texture, new Rect2(51, 646 + 80 * (1 - mp), 50, 80 * mp), new Rect2(51, 80 * (1 - mp), 50, 80 * mp));
+        }
+        var weightRatio = Math.Clamp(State.InventoryWeight / (float)Math.Max(1, stats[Stat.BagWeight]), 0, 1);
+        var weight = weightRatio <= .5f ? Assets.Sprite("Prguse", 76) : Assets.Sprite("UI_32bit", weightRatio <= .75f ? 473 : 472);
+        if (weight != null && weightRatio > 0)
+        {
+            var fill = new Vector2((weight.Size.X - 2) * weightRatio, weight.Size.Y);
+            DrawTextureRectRegion(weight.Texture, new Rect2(new Vector2(919, 719), fill), new Rect2(Vector2.Zero, fill));
         }
         var experience = Assets.Sprite("Prguse", 8);
         var fraction = Math.Clamp(user.Experience / (double)Math.Max(1, user.MaxExperience), 0, 1);
@@ -62,7 +82,7 @@ public partial class OriginalButton : Button
     public override void _Ready()
     {
         FocusMode = FocusModeEnum.None;
-        foreach (var state in new[] { "normal", "hover", "pressed", "focus" }) AddThemeStyleboxOverride(state, new StyleBoxEmpty());
+        foreach (var state in new[] { "normal", "hover", "pressed", "hover_pressed", "disabled", "focus" }) AddThemeStyleboxOverride(state, new StyleBoxEmpty());
     }
     public override void _Process(double delta) { if (IsVisibleInTree()) QueueRedraw(); }
     public override void _Draw()
@@ -72,5 +92,18 @@ public partial class OriginalButton : Button
         else if (IsHovered()) index = HoverIndex < 0 ? Index + 1 : HoverIndex;
         var image = Assets.Sprite(Library, index);
         if (image != null) { Size = image.Size; DrawTexture(image.Texture, Vector2.Zero, Disabled ? new Color(1, 1, 1, 0.4f) : Colors.White); }
+    }
+}
+
+public partial class OriginalItemButton : Button
+{
+    public uint Count;
+    public override void _Draw()
+    {
+        if (Count <= 1) return;
+        var text = Count.ToString();
+        var position = new Vector2(Size.X - ThemeDB.FallbackFont.GetStringSize(text, fontSize: 10).X - 1, Size.Y - 1);
+        DrawStringOutline(ThemeDB.FallbackFont, position, text, fontSize: 10, size: 3, modulate: Colors.Black);
+        DrawString(ThemeDB.FallbackFont, position, text, fontSize: 10, modulate: Colors.White);
     }
 }

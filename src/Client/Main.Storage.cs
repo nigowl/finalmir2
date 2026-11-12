@@ -25,7 +25,8 @@ public partial class Main
         firstPage.HoverIndex = 743; firstPage.PressedIndex = 744;
         var secondPage = storageSecondPage = ArtButton(storage, "Title", 746, 80, 36, "扩展仓库", () => SelectStoragePage(1));
         secondPage.HoverIndex = secondPage.PressedIndex = 746;
-        ArtButton(storage, "Title", 113, 328, 33, "修改仓库密码", ChangeStoragePassword);
+        var passwordButton = ArtButton(storage, "Title", 113, 328, 33, "修改仓库密码", ChangeStoragePassword);
+        passwordButton.HoverIndex = passwordButton.PressedIndex = 113;
         storageGrid = new Control { MouseFilter = MouseFilterEnum.Ignore }; storage.AddChild(storageGrid);
         for (var index = 0; index < Globals.StorageGridSize; index++)
         {
@@ -35,7 +36,7 @@ public partial class Main
             storageGrid.AddChild(button); storageButtons.Add(button);
         }
         storageLockedPage = Picture(storage, "Prguse", 2443, 8, 59);
-        storageNotice = Text(storage, "扩展仓库未租用。", 40, 322, 310); storageNotice.AddThemeFontSizeOverride("font_size", 11);
+        storageNotice = Text(storage, "扩展仓库未租用。", 40, 322, 310); storageNotice.AddThemeFontSizeOverride("font_size", 10);
         storageAuth = Panel(storage, 8, 60, 370, 255);
         storageAuthTitle = Text(storageAuth, "", 12, 12, 345);
         storagePassword = Edit(storageAuth, 12, 50, 340, "仓库密码（5–15 位字母或数字）", true);
@@ -44,7 +45,7 @@ public partial class Main
         foreach (var input in new[] { storagePassword, storageNewPassword, storageConfirm }) { input.MaxLength = 15; input.TextSubmitted += _ => SubmitStoragePassword(); }
         storageSubmit = Button(storageAuth, "解锁", 12, 174, 145, SubmitStoragePassword);
         Button(storageAuth, "取消", 190, 174, 145, () => { if (changingStoragePassword) { changingStoragePassword = false; ClearStoragePasswords(); RenderStorage(); } else CloseStorage(); });
-        storageAuthError = Text(storageAuth, "", 12, 212, 345); storageAuthError.AddThemeFontSizeOverride("font_size", 11);
+        storageAuthError = Text(storageAuth, "", 12, 212, 345); storageAuthError.AddThemeFontSizeOverride("font_size", 10);
         Draggable(storage);
     }
 
@@ -55,7 +56,7 @@ public partial class Main
     private void OpenStorage()
     {
         CloseQuests();
-        storageNpc = State.NpcId; storageBusy = changingStoragePassword = false; storagePage = 0;
+        storageNpc = npcDialogueId; storageBusy = changingStoragePassword = false; storagePage = 0;
         shopMode = null; npc.Hide(); ClearStoragePasswords(); storageAuthError.Text = ""; storageSubmit.Disabled = false;
         storage.Show(); inventory.Position = storage.Position + new Vector2(391, 0); inventory.Show();
         RenderStorage();

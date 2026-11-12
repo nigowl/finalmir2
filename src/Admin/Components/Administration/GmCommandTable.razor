@@ -1,0 +1,13 @@
+@using Mir2.Commands
+<MudTable T="GameCommandInfo" Items="Commands" Dense="true" Hover="true" FixedHeader="true" Height="55vh" RowsPerPage="@Math.Max(1, Commands.Length)">
+    <HeaderContent><MudTh>名称</MudTh><MudTh>命令</MudTh><MudTh>例子说明</MudTh></HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="名称">@context.Name</MudTd>
+        <MudTd DataLabel="命令"><div><code>@@@context.Name @context.Arguments</code></div>
+            @if (!context.Custom) { <div><code>@@@context.ShortName @context.Arguments</code></div><MudText Typo="Typo.caption">原命令：@@@context.Original</MudText> }
+        </MudTd>
+        <MudTd DataLabel="例子说明"><div><code>@context.Example</code></div><MudText Typo="Typo.body2">@context.Description</MudText></MudTd>
+    </RowTemplate>
+    <NoRecordsContent><MudText Typo="Typo.body2">暂无匹配的命令。</MudText></NoRecordsContent>
+</MudTable>
+@code { [Parameter] public GameCommandInfo[] Commands { get; set; } = []; }

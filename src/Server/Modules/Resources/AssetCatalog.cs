@@ -38,7 +38,7 @@ public sealed class AssetCatalog
             var hash = changed?.Contains(key) != true && old.TryGetValue(key, out var prior) && prior.Size == info.Length && prior.LastWriteUtc == info.LastWriteTimeUtc ? prior.Sha256 : DataBootstrap.Hash(file);
             files.Add(new(kind, name, info.Length, hash, info.LastWriteTimeUtc));
         }
-        if (files.GroupBy(f => f.Kind + "/" + f.Path, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1)) throw new InvalidDataException("Case-insensitive asset names collide.");
+        if (files.GroupBy(f => f.Kind + "/" + f.Path, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1)) throw new InvalidDataException("资源名称存在不区分大小写的冲突。");
         var fingerprint = string.Join('\n', files.OrderBy(f => f.Kind + "/" + f.Path, StringComparer.Ordinal).Select(f => $"{f.Kind}/{f.Path}:{f.Sha256}"));
         var version = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint))).ToLowerInvariant()[..20];
         var updated = new AssetManifest(version, files.ToArray());
@@ -57,7 +57,7 @@ public sealed class AssetCatalog
         Task wait;
         lock (gate)
         {
-            if (publishing) throw new InvalidOperationException("A resource publication is already in progress.");
+            if (publishing) throw new InvalidOperationException("已有资源发布正在进行。");
             publishing = true; drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
             if (readers == 0) drained.TrySetResult(); wait = drained.Task;
         }
@@ -67,9 +67,9 @@ public sealed class AssetCatalog
     public void EndPublish() { lock (gate) { publishing = false; drained = null; } }
     public string ReadPath(string kind, string name)
     {
-        var entry = Files.FirstOrDefault(f => f.Kind == kind && f.Path.Equals(name, StringComparison.OrdinalIgnoreCase)) ?? throw new FileNotFoundException("Resource not found.");
+        var entry = Files.FirstOrDefault(f => f.Kind == kind && f.Path.Equals(name, StringComparison.OrdinalIgnoreCase)) ?? throw new FileNotFoundException("未找到资源。");
         var path = ProjectPaths.SafePath(Path.Combine(paths.Assets, kind), entry.Path); var info = new FileInfo(path);
-        if (!info.Exists || info.Length != entry.Size || info.LastWriteTimeUtc != entry.LastWriteUtc) throw new InvalidOperationException("Unpublished resource changes detected. Publish resources before serving them.");
+        if (!info.Exists || info.Length != entry.Size || info.LastWriteTimeUtc != entry.LastWriteUtc) throw new InvalidOperationException("检测到尚未发布的资源修改，请先发布再提供资源服务。");
         return path;
     }
     public ResourceListing List(string? search = null)
@@ -88,7 +88,7 @@ public sealed class AssetCatalog
     };
     public async Task Stage(string kind, string name, Stream input, CancellationToken cancellation)
     {
-        if (!Supported(kind, name)) throw new InvalidDataException("Unsupported resource type.");
+        if (!Supported(kind, name)) throw new InvalidDataException("不支持此资源类型。");
         var target = ProjectPaths.SafePath(Path.Combine(Staging, kind), name); Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         var temp = target + "." + Guid.NewGuid() + ".tmp";
         try
@@ -98,7 +98,7 @@ public sealed class AssetCatalog
                 var buffer = new byte[65536]; long total = 0; int read;
                 while ((read = await input.ReadAsync(buffer, cancellation)) > 0)
                 {
-                    total += read; if (total > 512L * 1024 * 1024) throw new InvalidDataException("Upload exceeds 512 MiB.");
+                    total += read; if (total > 512L * 1024 * 1024) throw new InvalidDataException("上传文件超过512兆字节。");
                     await output.WriteAsync(buffer.AsMemory(0, read), cancellation);
                 }
             }
@@ -113,9 +113,9 @@ public sealed class AssetCatalog
         {
             using var reader = new BinaryReader(File.OpenRead(file));
             var version = reader.ReadInt32(); var count = reader.ReadInt32(); var start = version == 3 ? 12L : 8L;
-            if (version is < 2 or > 3 || count is < 0 or > 1000000 || start + count * 4L > reader.BaseStream.Length) throw new InvalidDataException("Invalid sprite library.");
+            if (version is < 2 or > 3 || count is < 0 or > 1000000 || start + count * 4L > reader.BaseStream.Length) throw new InvalidDataException("素材库无效。");
         }
-        else if (new FileInfo(file).Length == 0) throw new InvalidDataException("Empty sound resource.");
+        else if (new FileInfo(file).Length == 0) throw new InvalidDataException("声音资源为空。");
     }
     public async Task<PublishResult> Publish(GameRuntime runtime, CancellationToken cancellation)
     {
@@ -126,12 +126,12 @@ public sealed class AssetCatalog
         var changedNames = staged.Select(p => Path.GetRelativePath(Staging, p).Replace('\\', '/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
         try
         {
-            if (staged.Length == 0) throw new InvalidOperationException("No staged resources to publish.");
+            if (staged.Length == 0) throw new InvalidOperationException("没有待发布的暂存资源。");
             await runtime.Stop(cancellation); stopped = true;
             foreach (var source in staged)
             {
                 var relative = Path.GetRelativePath(Staging, source).Replace('\\', '/'); var split = relative.IndexOf('/');
-                if (split < 0 || !Supported(relative[..split], relative[(split + 1)..])) throw new InvalidDataException("Invalid staged resource.");
+                if (split < 0 || !Supported(relative[..split], relative[(split + 1)..])) throw new InvalidDataException("暂存资源无效。");
                 Validate(relative[..split], source);
                 var target = ProjectPaths.SafePath(Path.Combine(paths.Assets, relative[..split]), relative[(split + 1)..]);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!); string? backup = null;

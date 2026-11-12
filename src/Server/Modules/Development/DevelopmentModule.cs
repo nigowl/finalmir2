@@ -16,12 +16,12 @@ public static class DevelopmentModule
             var world = Envir.Main;
             IEnumerable<CatalogRow> rows = kind switch
             {
-                "items" => world.ItemInfoList.Select(i => new CatalogRow(i.Index, i.Name, $"{i.Type} · Lv.{i.RequiredAmount} · {i.Price} gold · stack {i.StackSize}")),
-                "monsters" => world.MonsterInfoList.Select(m => new CatalogRow(m.Index, m.Name, $"Lv.{m.Level} · HP {m.Stats[Stat.HP]} · XP {m.Experience}")),
+                "items" => world.ItemInfoList.Select(i => new CatalogRow(i.Index, i.Name, $"{i.Type.ToLocalizedString()} · 要求{i.RequiredAmount} · {i.Price}金币 · 堆叠上限{i.StackSize}")),
+                "monsters" => world.MonsterInfoList.Select(m => new CatalogRow(m.Index, m.Name, $"等级{m.Level} · 生命{m.Stats[Stat.HP]} · 经验{m.Experience}")),
                 "maps" => world.MapInfoList.Select(m => new CatalogRow(m.Index, m.Title, m.FileName)),
-                "npcs" => world.NPCInfoList.Select(n => new CatalogRow(n.Index, n.Name, $"Map {n.MapIndex} ({n.Location.X},{n.Location.Y}) · {n.FileName}")),
-                "quests" => world.QuestInfoList.Select(q => new CatalogRow(q.Index, q.Name, $"Lv.{q.RequiredMinLevel}–{q.RequiredMaxLevel} · {q.FileName}")),
-                _ => throw new InvalidDataException("Unknown catalog.")
+                "npcs" => world.NPCInfoList.Select(n => new CatalogRow(n.Index, n.Name, $"地图{n.MapIndex} ({n.Location.X},{n.Location.Y}) · {n.FileName}")),
+                "quests" => world.QuestInfoList.Select(q => new CatalogRow(q.Index, q.Name, $"等级{q.RequiredMinLevel}–{q.RequiredMaxLevel} · {q.FileName}")),
+                _ => throw new InvalidDataException("未知的目录类型。")
             };
             return rows.Where(row => string.IsNullOrEmpty(search) || row.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || row.Id.ToString() == search).ToArray();
         }, token));
@@ -46,6 +46,6 @@ public static class DevelopmentModule
         await runtime.Invoke(() => { save(); return true; }, token);
         // Once committed, finish restarting even if the browser disconnects.
         await runtime.Restart(CancellationToken.None);
-        return new("Definition backed up and saved to SQLite; engine restarted. Reconnect the game client.");
+        return new("定义已备份并保存到 SQLite，游戏引擎已重启，请重新连接客户端。");
     }
 }

@@ -8,6 +8,7 @@ export MIR2_RUNTIME_ROOT="$TEST_RUNTIME/runtime"
 export MIR2_GAME_PORT="${MIR2_GAME_PORT:-17010}"
 export MIR2_RESOURCE_PORT="${MIR2_RESOURCE_PORT:-15090}"
 export MIR2_CLIENT_CACHE="$TEST_RUNTIME/cache"
+export MIR2_CLIENT_SETTINGS="$TEST_RUNTIME/client-settings.json"
 export MIR2_ADMIN_PORT="${MIR2_ADMIN_PORT:-15091}"
 GODOT="${GODOT_BIN:-godot}"
 if ! command -v "$GODOT" >/dev/null 2>&1 && [ -x /Applications/Godot_mono.app/Contents/MacOS/Godot ]; then
@@ -34,8 +35,11 @@ start_backend() {
   cat "$TEST_RUNTIME/backend.log"; return 1
 }
 run_client() {
-  if ! "$GODOT" --headless --path "$ROOT/src/Client" --max-fps 60 -- \
-    "--server=http://127.0.0.1:$MIR2_RESOURCE_PORT" "--smoke-record=$TEST_RUNTIME/save.json" "$1" > "$TEST_RUNTIME/client.log" 2>&1; then
+  local args=(--path "$ROOT/src/Client" --max-fps 60)
+  if [ "${MIR2_NATIVE_VISIBLE:-}" != 1 ]; then args=(--headless "${args[@]}"); fi
+  args+=(-- "--server=http://127.0.0.1:$MIR2_RESOURCE_PORT" "--smoke-record=$TEST_RUNTIME/save.json" "$1")
+  if [ "${MIR2_TEST_SCREENSHOTS:-}" = 1 ]; then args+=("--screenshot=$TEST_RUNTIME/client${1}.png"); fi
+  if ! "$GODOT" "${args[@]}" > "$TEST_RUNTIME/client.log" 2>&1; then
     cat "$TEST_RUNTIME/client.log" "$TEST_RUNTIME/backend.log"; return 1
   fi
   cat "$TEST_RUNTIME/client.log"

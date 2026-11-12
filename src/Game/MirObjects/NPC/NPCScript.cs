@@ -832,7 +832,7 @@ namespace Server.MirObjects
             {
                 if (key != MainKey)
                 {
-                    if (player.NPCObjectID != objectID) return;
+                    if (player.NPCObjectID != objectID || player.NPCPage == null) return;
 
                     bool found = false;
 
@@ -874,6 +874,10 @@ namespace Server.MirObjects
 
                 player.NPCSpeech = new List<string>();
                 player.NPCSuccess.Clear();
+                // 原脚本允许只有内置功能、没有 #SAY 的页面，空段也必须切换交易会话。
+                player.NPCObjectID = objectID;
+                player.NPCScriptID = ScriptID;
+                player.NPCPage = page;
 
                 foreach (NPCSegment segment in page.SegmentList)
                 {
@@ -883,7 +887,7 @@ namespace Server.MirObjects
                         break;
                     }
 
-                    ProcessSegment(player, page, segment, objectID);
+                    player.NPCSuccess.Add(segment, segment.Check(player));
                 }
 
                 Response(player, page);
@@ -897,14 +901,6 @@ namespace Server.MirObjects
             player.Enqueue(new S.NPCResponse { Page = player.NPCSpeech });
 
             ProcessSpecial(player, page);
-        }
-
-        private void ProcessSegment(PlayerObject player, NPCPage page, NPCSegment segment, uint objectID)
-        {
-            player.NPCObjectID = objectID;
-            player.NPCScriptID = ScriptID;
-            player.NPCSuccess.Add(segment, segment.Check(player));
-            player.NPCPage = page;
         }
 
         private void ProcessSegment(MonsterObject monster, NPCPage page, NPCSegment segment)
@@ -1177,34 +1173,36 @@ namespace Server.MirObjects
                 }
             }
 
-            if (goods == null || count == 0 || count > goods.Info.StackSize) return;
+            if (goods == null || count == 0 || count > goods.Info.StackSize)
+            { player.ReceiveChat("购买失败：商品已变更或数量无效，请重新打开商品列表。", ChatType.System); return; }
 
             if (isBuyBack || isUsed)
                 count = Math.Min(count, goods.Count);
-            if (count == 0) return;
-            if ((isBuyBack || isUsed) && count < goods.Count && goods.Slots.Any(slot => slot != null)) return;
+            if (count == 0 || (isBuyBack || isUsed) && count < goods.Count && goods.Slots.Any(slot => slot != null))
+            { player.ReceiveChat("购买失败：库存不足或该商品不能拆分。", ChatType.System); return; }
 
             // Price a copy so an unsuccessful purchase cannot change shared stock.
             UserItem pricedItem = goods.Clone();
             pricedItem.Count = count;
 
             double totalCost = pricedItem.Price() * (double)PriceRate(player);
-            if (totalCost < 0 || totalCost > uint.MaxValue || double.IsNaN(totalCost)) return;
+            if (totalCost < 0 || totalCost > uint.MaxValue || double.IsNaN(totalCost))
+            { player.ReceiveChat("购买失败：总价超出允许范围。", ChatType.System); return; }
             uint cost = (uint)totalCost;
             uint baseCost = (uint)Math.Clamp(pricedItem.Price() * (double)PriceRate(player, true), 0, uint.MaxValue);
 
             if (player.NPCPage.Key.ToUpper() == PearlBuyKey)//pearl currency
             {
-                if (cost > player.Info.PearlCount) return;
+                if (cost > player.Info.PearlCount) { player.ReceiveChat("购买失败：真珠不足。", ChatType.System); return; }
             }
-            else if (cost > player.Account.Gold) return;
+            else if (cost > player.Account.Gold) { player.ReceiveChat("购买失败：金币不足。", ChatType.System); return; }
 
             UserItem item = (isBuyBack || isUsed) ? pricedItem : Envir.CreateFreshItem(goods.Info);
             if ((isBuyBack || isUsed) && count < goods.Count)
                 item.UniqueID = Envir.CreateFreshItem(goods.Info).UniqueID;
             item.Count = count;
 
-            if (!player.CanGainItem(item)) return;
+            if (!player.CanGainItem(item)) { player.ReceiveChat("购买失败：背包空间或负重不足。", ChatType.System); return; }
 
             if (player.NPCPage.Key.ToUpper() == PearlBuyKey)
             {
@@ -1222,6 +1220,7 @@ namespace Server.MirObjects
             }
 
             player.GainItem(item);
+            player.ReceiveChat($"购买成功：{item.Info.FriendlyName} ×{count}，花费 {cost:N0} {(player.NPCPage.Key.ToUpper() == PearlBuyKey ? "真珠" : "金币")}。", ChatType.System);
 
             if (isUsed)
             {

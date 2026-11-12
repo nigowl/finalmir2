@@ -14,15 +14,13 @@
 <MudButton Class="mb-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="New">新增角色</MudButton>
 <MudTable T="CharacterRow" Items="rows" Dense="true" RowsPerPage="10" Hover="true">
     <HeaderContent><MudTh>编号 / 角色</MudTh><MudTh>账户</MudTh><MudTh>职业 / 等级</MudTh><MudTh>状态</MudTh><MudTh>位置</MudTh><MudTh>操作</MudTh></HeaderContent>
-    <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>@context.AccountName</MudTd><MudTd>@context.Class / @context.Level</MudTd><MudTd>@(context.Online ? "在线" : "离线") @(context.Deleted ? "已删除" : "") @(context.Banned ? "封禁" : "")</MudTd><MudTd>@context.MapId (@context.X,@context.Y)</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))">管理</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager /></PagerContent>
+    <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>@context.AccountName</MudTd><MudTd>@ChineseText.Name(context.Class) / @context.Level</MudTd><MudTd>@(context.Online ? "在线" : "离线") @(context.Deleted ? "已删除" : "") @(context.Banned ? "封禁" : "")</MudTd><MudTd>@context.MapId (@context.X,@context.Y)</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))">管理</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
 </MudTable>
 <AdminDialog @bind-Visible="createOpen" Title="创建角色" OnClose="CloseCreate" OnSave="Create" CanSave="@(!string.IsNullOrWhiteSpace(newName) && newAccount > 0)" Busy="busy" Dirty="CreateDirty" SaveText="创建角色">
     <DialogContent>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
     <MudGrid Spacing="2"><MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="所属账户编号" @bind-Value="newAccount" Min="1" /></MudItem><MudItem xs="12" sm="3"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="角色名" @bind-Value="newName" /></MudItem>
     <MudItem xs="6" sm="3"><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="int" Label="职业" @bind-Value="newClass">@for (var i=0;i<classes.Length;i++) { var index = i; <MudSelectItem Value="index">@classes[index]</MudSelectItem> }</MudSelect></MudItem><MudItem xs="6" sm="3"><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="int" Label="性别" @bind-Value="newGender"><MudSelectItem Value="0">男</MudSelectItem><MudSelectItem Value="1">女</MudSelectItem></MudSelect></MudItem></MudGrid>
-    
-
     </DialogContent>
 </AdminDialog>
 @if (detail != null)
@@ -30,8 +28,8 @@
     <AdminDialog Visible="true" Title="编辑角色" OnClose="CloseEdit" OnSave="Save" CanSave="@(!busy && CanSubmit && !detail.Online)" Busy="busy" Dirty="@(Draft != original)" SaveText="备份并保存角色">
     <DialogContent>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
-        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center"><MudText Typo="Typo.h6">#@detail.Id @detail.Name · @detail.Class · @detail.Gender</MudText><MudButton Href="@($"/accounts?selected={detail.AccountId}")">管理账户 @detail.AccountName</MudButton></MudStack>
-        <MudText Class="my-2">@(detail.Online ? "在线" : "离线") @(detail.Deleted ? "· 已软删除" : "") · HP @detail.Hp / MP @detail.Mp · 行会 #@detail.GuildId @detail.GuildName</MudText>
+        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center"><MudText Typo="Typo.h6">#@detail.Id @detail.Name · @ChineseText.Name(detail.Class) · @ChineseText.Name(detail.Gender)</MudText><MudButton Href="@($"/accounts?selected={detail.AccountId}")">管理账户 @detail.AccountName</MudButton></MudStack>
+        <MudText Class="my-2">@(detail.Online ? "在线" : "离线") @(detail.Deleted ? "· 已软删除" : "") · 生命 @detail.Hp / 魔力 @detail.Mp · 行会 #@detail.GuildId @detail.GuildName</MudText>
         <MudText>当前位置：地图 @detail.MapId (@detail.X,@detail.Y) · 绑定点：@detail.BindMapId (@detail.BindX,@detail.BindY)</MudText>
         <MudAlert Severity="Severity.Info" Class="my-3">除在线传送外，编辑要求整个账户离线。等级 0 表示从未进游戏，需先登录初始化后才能调级或发物品。</MudAlert>
         <MudGrid Spacing="2"><MudItem xs="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="等级" @bind-Value="level" Min="0" Max="500" /></MudItem><MudItem xs="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="long" Immediate="true" Label="当前等级经验" @bind-Value="experience" Min="0" /></MudItem><MudItem xs="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="PK 值" @bind-Value="pk" Min="0" Max="1000000" /></MudItem>
@@ -45,7 +43,7 @@
             </MudExpansionPanel>
             <MudExpansionPanel Text="发放物品（空背包格，GM 标记）">
                 <MudStack Row="true" Wrap="Wrap.Wrap"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="搜索物品名称 / 编号" @bind-Value="itemSearch" /><MudButton OnClick="SearchItems">查找物品</MudButton></MudStack>
-                <MudTable T="CatalogRow" Items="itemRows" Dense="true" RowsPerPage="5"><RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>@context.Details</MudTd><MudTd><MudButton OnClick="@(() => itemId = context.Id)">选择</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager /></PagerContent></MudTable>
+                <MudTable T="CatalogRow" Items="itemRows" Dense="true" RowsPerPage="5"><RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>@context.Details</MudTd><MudTd><MudButton OnClick="@(() => itemId = context.Id)">选择</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent></MudTable>
                 <MudStack Row="true"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="物品编号" @bind-Value="itemId" Min="1" /><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="数量" @bind-Value="count" Min="1" Max="65535" /></MudStack>
                 <MudButton Class="mt-3" Disabled="@(!CanSubmit || detail.Online || detail.Level == 0 || detail.Deleted)" OnClick="Grant">备份并发放</MudButton>
             </MudExpansionPanel>

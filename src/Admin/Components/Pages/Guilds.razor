@@ -14,14 +14,12 @@
 <MudButton Class="mb-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="New">新增行会</MudButton>
 <MudTable T="GuildRow" Items="rows" Dense="true" Hover="true" RowsPerPage="10">
     <HeaderContent><MudTh>行会</MudTh><MudTh>等级</MudTh><MudTh>资金</MudTh><MudTh>成员 / 在线</MudTh><MudTh>会长</MudTh><MudTh>操作</MudTh></HeaderContent>
-    <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>@context.Level</MudTd><MudTd>@context.Gold</MudTd><MudTd>@context.Members / @context.Online</MudTd><MudTd>@context.Leader</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))">管理</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager /></PagerContent>
+    <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>@context.Level</MudTd><MudTd>@context.Gold</MudTd><MudTd>@context.Members / @context.Online</MudTd><MudTd>@context.Leader</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))">管理</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
 </MudTable>
 <AdminDialog @bind-Visible="createOpen" Title="创建行会" OnClose="CloseCreate" OnSave="Create" CanSave="@(!string.IsNullOrWhiteSpace(newName) && leaderId > 0)" Busy="busy" Dirty="CreateDirty" SaveText="创建行会">
     <DialogContent>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
     <MudStack Row="true"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="行会名称" @bind-Value="newName" MaxLength="20" /><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="会长角色编号" @bind-Value="leaderId" Min="1" /></MudStack>
-    
-
     </DialogContent>
 </AdminDialog>
 @if (detail != null)
@@ -36,7 +34,7 @@
         <MudText Typo="Typo.h6" Class="mt-5">成员</MudText>
         <MudTable T="GuildMemberRow" Items="detail.Members" Dense="true" RowsPerPage="10">
             <HeaderContent><MudTh>角色</MudTh><MudTh>职位</MudTh><MudTh>状态</MudTh><MudTh>操作</MudTh></HeaderContent>
-            <RowTemplate><MudTd><MudLink Href="@($"/characters?selected={context.CharacterId}")">#@context.CharacterId @context.Name</MudLink></MudTd><MudTd>@context.RankName</MudTd><MudTd>@(context.Online ? "在线" : "离线")</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => memberId = context.CharacterId)">选中</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager /></PagerContent>
+            <RowTemplate><MudTd><MudLink Href="@($"/characters?selected={context.CharacterId}")">#@context.CharacterId @context.Name</MudLink></MudTd><MudTd>@context.RankName</MudTd><MudTd>@(context.Online ? "在线" : "离线")</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => memberId = context.CharacterId)">选中</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
         </MudTable>
         <MudStack Row="true" Wrap="Wrap.Wrap" Class="my-3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="目标角色编号" @bind-Value="memberId" Min="1" /><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="int" Label="目标职位" @bind-Value="memberRank">@foreach (var rank in detail.Ranks.Where(r => r.Id > 0)) { <MudSelectItem Value="rank.Id">@rank.Name</MudSelectItem> }</MudSelect></MudStack>
         <MudStack Row="true" Wrap="Wrap.Wrap"><MudButton Disabled="@(!CanSubmit || memberId <= 0)" OnClick="@(() => Member("add"))">添加成员</MudButton><MudButton Disabled="@(!CanSubmit || memberId <= 0)" OnClick="@(() => Member("rank"))">调整成员职位</MudButton><MudButton Disabled="@(!CanSubmit || memberId <= 0)" Color="Color.Warning" OnClick="@(() => Member("leader"))">转交会长</MudButton><MudButton Disabled="@(!CanSubmit || memberId <= 0)" Color="Color.Error" OnClick="@(() => Member("remove"))">移除成员</MudButton></MudStack>

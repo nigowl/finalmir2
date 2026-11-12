@@ -206,6 +206,16 @@
         public int Interval, EffectInterval;
         public bool Reverse, Blend;
 
+        public int Duration => Math.Max(1, Count) * Math.Max(1, Interval);
+
+        public int IndexAt(long elapsed, bool loop = false)
+        {
+            var count = Math.Max(1, Count);
+            var step = Math.Max(0, elapsed) / Math.Max(1, Interval);
+            var index = (int)(loop ? step % count : Math.Min(step, count - 1));
+            return Reverse ? count - 1 - index : index;
+        }
+
         public int OffSet
         {
             get { return Count + Skip; }

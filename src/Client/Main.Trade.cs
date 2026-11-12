@@ -43,22 +43,22 @@ public partial class Main
                 if (!peer) cell.GuiInput += input => TradeCellInput(index, input);
             }
         }
-        tradeNotice = Text(trade, "", 0, 155, 428); tradeNotice.HorizontalAlignment = HorizontalAlignment.Center; tradeNotice.AddThemeFontSizeOverride("font_size", 12);
+        tradeNotice = Text(trade, "", 0, 155, 428); tradeNotice.HorizontalAlignment = HorizontalAlignment.Center; tradeNotice.AddThemeFontSizeOverride("font_size", 11);
         tradeNotice.AddThemeColorOverride("font_shadow_color", Colors.Black); tradeNotice.AddThemeConstantOverride("shadow_offset_x", 1); tradeNotice.AddThemeConstantOverride("shadow_offset_y", 1);
-        tradeInvitation = new ConfirmationDialog { Title = "交易邀请" }; game.AddChild(tradeInvitation);
+        tradeInvitation = new ConfirmationDialog { Title = "交易邀请" }; game.AddChild(tradeInvitation); tradeInvitation.GetOkButton().Text = "确定"; tradeInvitation.GetCancelButton().Text = "取消";
         tradeInvitation.Confirmed += () => RespondTradeInvitation(true); tradeInvitation.Canceled += () => RespondTradeInvitation(false);
-        tradeAmount = new AcceptDialog { Title = "增加交易金币", MinSize = new Vector2I(310, 120) }; game.AddChild(tradeAmount);
+        tradeAmount = new AcceptDialog { Title = "增加交易金币", MinSize = new Vector2I(310, 120) }; game.AddChild(tradeAmount); tradeAmount.GetOkButton().Text = "确定";
         tradeAmountInput = new LineEdit { Position = new Vector2(12, 12), Size = new Vector2(285, 28), PlaceholderText = "输入增加的金币数量", MaxLength = 10 }; tradeAmount.AddChild(tradeAmountInput);
         tradeAmountInput.TextSubmitted += _ => SubmitTradeAmount(); tradeAmount.Confirmed += SubmitTradeAmount;
         Draggable(own); Draggable(guest); Draggable(tradeMenu);
     }
     public void OpenTrade() { if (State.User == null) return; if (State.Trading) { trade.Show(); inventory.Show(); } else tradeMenu.Show(); }
     public void SetTradeMode(bool enabled) { if (State.User != null) { Send(new C.ChangeTrade { AllowTrade = enabled }); Log(enabled ? "已允许交易邀请。" : "已拒绝新的交易邀请。"); } }
-    public void RequestTrade() { if (State.User != null && !State.Trading && State.Me?.Dead == false) { destination = null; actionTarget = 0; tradeMenu.Hide(); Send(new C.TradeRequest()); } }
+    public void RequestTrade() { if (State.User != null && !State.Trading && State.Me?.Dead == false) { destination = null; MiniMap.Route = []; actionTarget = 0; tradeMenu.Hide(); Send(new C.TradeRequest()); } }
     public void Face(System.Drawing.Point point)
     {
         if (State.User == null || State.Me?.Dead != false || point == State.User.Location) return;
-        destination = null; actionTarget = 0;
+        destination = null; MiniMap.Route = []; actionTarget = 0;
         var direction = Direction(State.User.Location, point);
         if (State.User.Direction != direction) Send(new C.Turn { Direction = direction });
     }

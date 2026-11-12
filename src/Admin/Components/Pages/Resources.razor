@@ -11,7 +11,7 @@
     <MudPaper Class="pa-4 mb-5" Elevation="0">
         <MudText Class="path">版本 @listing.Version</MudText>
     </MudPaper>
-    <MudExpansionPanels Class="mb-5"><MudExpansionPanel Text="@($"导入时地图冲突：{listing.Conflicts.Length} 项（统一采用服务端版本）")">@foreach (var conflict in listing.Conflicts) { <MudText Typo="Typo.body2" Class="path">@conflict</MudText> }</MudExpansionPanel></MudExpansionPanels>
+    <MudExpansionPanels Class="mb-5"><MudExpansionPanel Text="@($"导入时地图冲突：{listing.Conflicts.Length} 项（统一采用服务端版本）")">@foreach (var conflict in listing.Conflicts) { <MudText Typo="Typo.body2" Class="path">@conflict.Replace(": server map retained; client source differs", "：保留服务端地图，客户端原文件内容不同")</MudText> }</MudExpansionPanel></MudExpansionPanels>
 }
 <MudGrid Spacing="2" Class="mb-4">
     <MudItem xs="12" sm="3">
@@ -37,7 +37,7 @@
             </MudTd>
         </RowTemplate>
         <NoRecordsContent><MudText>没有符合条件的资源。</MudText></NoRecordsContent>
-        <PagerContent><MudTablePager /></PagerContent>
+        <PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
     </MudTable>
 }
 @code {

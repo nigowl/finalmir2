@@ -4120,6 +4120,7 @@ public static class GameLanguage
     static GameLanguage()
     {
         PopulateEnumToClientTextMap(localizationEnumTypes);
+        foreach (var entry in ChineseText.Read("Enums")) ClientTextMap.Enum[entry.Key] = entry.Value;
     }
 
     private static void PopulateEnumToClientTextMap(Type[] localizationEnumTypes)
@@ -4268,6 +4269,7 @@ public static class GameLanguage
             return value;
         }
 
-        return @enum.ToString();
+        return string.Join("、", @enum.ToString().Split(", ").Select(name =>
+            ClientTextMap.Enum.TryGetValue($"{@enum.GetType().Name}_{name}", out var text) ? text : name));
     }
 }

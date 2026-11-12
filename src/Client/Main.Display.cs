@@ -10,6 +10,7 @@ public partial class Main
     private void ConfigureDisplay()
     {
         var window = GetWindow();
+        window.GuiEmbedSubwindows = true;
         window.ContentScaleSize = new Vector2I(1024, 768);
         window.ContentScaleMode = Window.ContentScaleModeEnum.CanvasItems;
         window.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;

@@ -22,7 +22,7 @@ public partial class NativeSmoke
         // Keep a separate safe tile so the two logged-in peers do not block the return path.
         var start = new Point(other.User!.Location.X, other.User.Location.Y - 1);
         Client.SetDestination(start); await Until(() => State.User!.Location == start);
-        var item = State.User.Inventory.First(i => i?.Info?.Type == ItemType.Potion)!;
+        var item = State.User.Inventory.First(i => i?.Info?.Type == ItemType.Potion && i.Info.Stats[Stat.HP] >= 0)!;
         var from = Array.IndexOf(State.User.Inventory, item);
         stage = "native guild bank outside safezone rejection";
         Client.SetDestination(new Point(start.X, start.Y - 1)); await Until(() => State.User.Location == new Point(start.X, start.Y - 1));

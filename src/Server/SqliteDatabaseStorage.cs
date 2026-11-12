@@ -63,7 +63,7 @@ public sealed class SqliteDatabaseStorage : DatabaseStorage, IDisposable
             command.CommandText = "SELECT data FROM snapshots WHERE name = $name";
             command.Parameters.AddWithValue("$name", Key(name));
             return new MemoryStream((byte[])(command.ExecuteScalar()
-                ?? throw new FileNotFoundException("SQLite snapshot not found", name)), writable: false);
+                ?? throw new FileNotFoundException("未找到 SQLite 快照", name)), writable: false);
         }
     }
 
@@ -150,7 +150,7 @@ public sealed class SqliteDatabaseStorage : DatabaseStorage, IDisposable
     {
         lock (gate)
         {
-            if (transaction != null) throw new InvalidOperationException("Cannot back up an active transaction.");
+            if (transaction != null) throw new InvalidOperationException("事务尚未结束，无法备份。");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             using var target = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
             target.Open(); connection.BackupDatabase(target);
@@ -162,7 +162,7 @@ public sealed class SqliteDatabaseStorage : DatabaseStorage, IDisposable
         using var reader = new BinaryReader(Read(Server.MirEnvir.Envir.AccountPath));
         var version = reader.ReadInt32(); var customVersion = reader.ReadInt32();
         if (version > Server.MirEnvir.Envir.Version || customVersion > Server.MirEnvir.Envir.CustomVersion)
-            throw new InvalidDataException("Player database was written by a newer engine. Use that engine or restore a complete backup.");
+            throw new InvalidDataException("玩家存档由更新版本的引擎写入，请使用对应引擎或恢复完整备份。");
         if (customVersion < Server.MirEnvir.Envir.CustomVersion)
             Backup(Path.Combine(directory, "player-upgrade-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff"), "mir2.sqlite3"));
     }

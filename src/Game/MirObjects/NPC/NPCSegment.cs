@@ -1820,7 +1820,7 @@ namespace Server.MirObjects
                         failed = (!Compare(param[1], Envir.Objects.Count((
                             d => d.CurrentMap == map &&
                                 d.Race == ObjectType.Monster &&
-                                string.Equals(d.Name.Replace(" ", ""), param[0], StringComparison.OrdinalIgnoreCase) &&
+                                ChineseText.Matches(d.Name, param[0]) &&
                                 !d.Dead)), tempInt));
 
                         break;
@@ -2028,7 +2028,7 @@ namespace Server.MirObjects
                         failed = (!Compare(param[1], Envir.Objects.Count((
                             d => d.CurrentMap == map &&
                                 d.Race == ObjectType.Monster &&
-                                string.Equals(d.Name.Replace(" ", ""), param[0], StringComparison.OrdinalIgnoreCase) &&
+                                ChineseText.Matches(d.Name, param[0]) &&
                                 !d.Dead)), tempInt));
 
                         break;
@@ -2406,7 +2406,7 @@ namespace Server.MirObjects
                         failed = (!Compare(param[1], Envir.Objects.Count((
                             d => d.CurrentMap == map &&
                                 d.Race == ObjectType.Monster &&
-                                string.Equals(d.Name.Replace(" ", ""), param[0], StringComparison.OrdinalIgnoreCase) &&
+                                ChineseText.Matches(d.Name, param[0]) &&
                                 !d.Dead)), tempInt));
 
                         break;
@@ -2547,7 +2547,7 @@ namespace Server.MirObjects
                         bool petMatch = false;
                         for (int c = player.Pets.Count - 1; c >= 0; c--)
                         {
-                            if (string.Compare(player.Pets[c].Info.Name, param[0], true) != 0) continue;
+                            if (!ChineseText.Matches(player.Pets[c].Info.Name, param[0])) continue;
 
                             petMatch = true;
                         }
@@ -3451,7 +3451,7 @@ namespace Server.MirObjects
                         {
                             for (int c = player.Pets.Count - 1; c >= 0; c--)
                             {
-                                if (string.Compare(player.Pets[c].Info.Name, param[0], true) != 0) continue;
+                                if (!ChineseText.Matches(player.Pets[c].Info.Name, param[0])) continue;
 
                                 player.Pets[c].Die();
                             }
@@ -3840,7 +3840,7 @@ namespace Server.MirObjects
                                     if (ob.Race != ObjectType.Monster) continue;
                                     if (ob.Dead) continue;
 
-                                    if (!string.IsNullOrEmpty(param[2]) && string.Compare(param[2], ((MonsterObject)ob).Info.Name, true) != 0)
+                                    if (!string.IsNullOrEmpty(param[2]) && !ChineseText.Matches(((MonsterObject)ob).Info.Name, param[2]))
                                         continue;
 
                                     ob.Die();

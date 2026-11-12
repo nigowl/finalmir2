@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Localization/*.zh-CN.json" WithCulture="false" />
     <ProjectReference Include="../Game/Mir2.Game.csproj" />
     <ProjectReference Include="../Resources/Mir2.Resources.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.33" />

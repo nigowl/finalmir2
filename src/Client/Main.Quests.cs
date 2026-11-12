@@ -22,11 +22,12 @@ public partial class Main
     private void BuildQuests()
     {
         ArtButton(game, "Prguse", 1909, 974, 692, "任务 Q", () => { if (questList.Visible) CloseQuests(); else OpenQuestJournal(); });
-        npcQuestButton = Button(npc, "任务", 290, 5, 90, () => OpenQuestJournal(State.NpcId)); npcQuestButton.Hide();
-        questTracker = new RichTextLabel { Position = new Vector2(792, 70), Size = new Vector2(225, 230), MouseFilter = MouseFilterEnum.Ignore, ScrollActive = false };
+        npcQuestButton = Button(npc, "任务", 235, 194, 91, () => OpenQuestJournal(npcDialogueId)); npcQuestButton.Size = new Vector2(91, 24); npcQuestButton.Hide();
+        questTracker = new RichTextLabel { Name = "QuestTracker", Position = new Vector2(8, 34), Size = new Vector2(225, 230), MouseFilter = MouseFilterEnum.Ignore, ScrollActive = false };
         questTracker.AddThemeColorOverride("default_color", new Color("f4e2b1"));
         questTracker.AddThemeColorOverride("font_shadow_color", Colors.Black);
         questTracker.AddThemeConstantOverride("shadow_offset_x", 1); questTracker.AddThemeConstantOverride("shadow_offset_y", 1); game.AddChild(questTracker);
+        game.MoveChild(questTracker, 1);
         questList = Panel(game, 10, 70, 314, 466); questList.Hide();
         diaryArt = Picture(questList, "Prguse", 961, 0, 0); npcQuestArt = Picture(questList, "Prguse", 950, 0, 0);
         diaryTitle = Picture(questList, "Title", 15, 18, 9); npcQuestTitle = Picture(questList, "Title", 14, 18, 9);
@@ -35,7 +36,7 @@ public partial class Main
         questTabs = new Control { Size = new Vector2(300, 65), MouseFilter = MouseFilterEnum.Ignore }; questList.AddChild(questTabs);
         Button(questTabs, "进行中", 12, 35, 85, () => { questNpc = 0; completedQuestPage = false; selectedQuest = 0; RenderQuests(); });
         Button(questTabs, "已完成", 108, 35, 85, () => { questNpc = 0; completedQuestPage = true; selectedQuest = 0; RenderQuests(); });
-        Button(questTabs, "NPC", 204, 35, 85, () => OpenQuestJournal(State.NpcId));
+        Button(questTabs, "NPC", 204, 35, 85, () => OpenQuestJournal(npcDialogueId));
         questScroll = new ScrollContainer { Position = new Vector2(10, 73), Size = new Vector2(292, 352) }; questList.AddChild(questScroll);
         questRows = new VBoxContainer { CustomMinimumSize = new Vector2(273, 0), SizeFlagsHorizontal = SizeFlags.ExpandFill }; questScroll.AddChild(questRows);
         ArtButton(questList, "Title", 276, 205, 436, "关闭", CloseQuests);
@@ -50,11 +51,11 @@ public partial class Main
         questFinish = ArtButton(questDetail, "Title", 273, 40, 436, "交付并领取奖励", () => FinishQuest(selectedQuest, selectedReward));
         questAbandon = Button(questDetail, "放弃任务", 170, 435, 110, () =>
         { abandonQuest = selectedQuest; abandonConfirmation.DialogText = "放弃此任务并清理其任务物品？"; abandonConfirmation.PopupCentered(); });
-        abandonConfirmation = new ConfirmationDialog { Title = "确认放弃任务" }; game.AddChild(abandonConfirmation);
+        abandonConfirmation = new ConfirmationDialog { Title = "确认放弃任务" }; game.AddChild(abandonConfirmation); abandonConfirmation.GetOkButton().Text = "确定"; abandonConfirmation.GetCancelButton().Text = "取消";
         abandonConfirmation.Confirmed += () => AbandonQuest(abandonQuest);
         questBag = Panel(game, 700, 280, 316, 236); questBag.Hide();
         Picture(questBag, "Title", 196, 0, 0); Text(questBag, "任务物品（随任务接交更新）", 9, 5, 270);
-        ArtButton(questBag, "Prguse2", 360, 291, 3, "关闭任务物品", () => questBag.Hide());
+        ArtButton(questBag, "Prguse2", 360, 289, 3, "关闭任务物品", () => questBag.Hide());
         for (var i = 0; i < 40; i++)
         {
             var button = new Button { Position = new Vector2(9 + i % 8 * 37, 37 + i / 8 * 33), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
@@ -113,6 +114,7 @@ public partial class Main
             var progress = State.Quests.GetValueOrDefault(quest.Index);
             var state = State.CompletedQuests.Contains(quest.Index) ? "已完成" : progress?.Completed == true ? "可交付" : progress != null ? "进行中" : "可接受";
             var row = new Button { Text = $"{quest.Group} · {quest.Name}\n{state}", Alignment = HorizontalAlignment.Left, CustomMinimumSize = new Vector2(267, questNpc == 0 ? 48 : 38), ToggleMode = true, ButtonPressed = quest.Index == selectedQuest, FocusMode = FocusModeEnum.None };
+            CellStyle(row);
             row.Pressed += () => { selectedQuest = quest.Index; selectedReward = -1; RenderQuests(); }; questRows.AddChild(row);
         }
         if (quests.Count == 0 && (!completedQuestPage || State.CompletedQuests.Count == 0)) questRows.AddChild(new Label { Text = questNpc != 0 ? "当前没有可接交的任务。" : "暂无任务。" });
@@ -126,7 +128,7 @@ public partial class Main
         questDetail.Visible = questList.Visible && questNpc == 0;
         questHeading.Text = quest.Name;
         questDescription.Text = QuestText(completed ? quest.CompletionDescription : progress?.Completed == true ? quest.ReturnDescription : progress != null ? quest.TaskDescription : quest.Description) +
-            $"\n\n等级 {quest.MinLevelNeeded}–{quest.MaxLevelNeeded} · {quest.Type}" +
+            $"\n\n等级 {quest.MinLevelNeeded}–{quest.MaxLevelNeeded} · {quest.Type.ToLocalizedString()}" +
             (progress == null ? "" : "\n\n" + QuestText(progress.TaskList)) +
             (progress?.Completed == true ? "\n\n请返回交付 NPC 领取奖励。" : "");
         questRewards.AddChild(new Label { Text = $"金币 {quest.RewardGold} · 经验 {quest.RewardExp} · 积分 {quest.RewardCredit}" });
@@ -163,7 +165,7 @@ public partial class Main
     }
     private void ProcessQuests()
     {
-        npcQuestButton.Visible = State.QuestsAt(State.NpcId).Any();
+        npcQuestButton.Visible = State.QuestsAt(npcDialogueId).Any();
         if (questNpc != 0 && !NearQuestNpc(questNpc)) CloseQuests();
         if (State.QuestDefinitions.TryGetValue(selectedQuest, out var selected))
         {

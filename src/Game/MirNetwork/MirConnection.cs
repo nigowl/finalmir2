@@ -322,6 +322,9 @@ namespace Server.MirNetwork
                 case (short)ClientPacketIds.RemoveStoragePassword:
                     RemoveStoragePassword((C.RemoveStoragePassword)p);
                     break;
+                case (short)ClientPacketIds.CharacterLocationRequest:
+                    CharacterLocation((C.CharacterLocationRequest)p);
+                    break;
                 case (short)ClientPacketIds.Login:
                     Login((C.Login) p);
                     break;
@@ -1130,6 +1133,16 @@ namespace Server.MirNetwork
 
             Player = new PlayerObject(info, this);
             Player.StartGame();
+        }
+
+        private void CharacterLocation(C.CharacterLocationRequest request)
+        {
+            if (Stage != GameStage.Select || Account == null) return;
+            var character = Account.Characters.FirstOrDefault(info => info.Index == request.CharacterIndex && !info.Deleted);
+            if (character == null) return;
+            var map = Envir.MapInfoList.FirstOrDefault(info => info.Index == character.CurrentMapIndex);
+            Enqueue(new S.CharacterLocation { CharacterIndex = character.Index, Found = map != null,
+                MapTitle = map?.Title ?? "", Location = character.CurrentLocation });
         }
 
         public void LogOut()

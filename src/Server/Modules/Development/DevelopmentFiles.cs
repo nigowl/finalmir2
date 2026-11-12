@@ -10,7 +10,7 @@ public sealed class DevelopmentFiles(ProjectPaths paths)
         Path.GetExtension(name).ToLowerInvariant() is ".ini" or ".txt" or ".json";
     private string Resolve(string name)
     {
-        if (!Allowed(name)) throw new InvalidDataException("Only configuration and game script files may be edited.");
+        if (!Allowed(name)) throw new InvalidDataException("只能编辑配置文件和游戏脚本。");
         return ProjectPaths.SafePath(paths.World, name);
     }
     public string[] List(string? search) => new[] { "Configs", "Envir" }.SelectMany(folder =>
@@ -21,15 +21,15 @@ public sealed class DevelopmentFiles(ProjectPaths paths)
     {
         var path = Resolve(name);
         if (!File.Exists(path)) return new(name, "", "");
-        if (new FileInfo(path).Length > 1024 * 1024) throw new InvalidDataException("Text editor supports files up to 1 MiB.");
+        if (new FileInfo(path).Length > 1024 * 1024) throw new InvalidDataException("文本编辑器仅支持不超过1兆字节的文件。");
         return new(name, File.ReadAllText(path), DataBootstrap.Hash(path));
     }
     public TextDocument Save(TextEdit edit)
     {
         var path = Resolve(edit.Path);
-        if (Encoding.UTF8.GetByteCount(edit.Content) > 1024 * 1024 || edit.Content.Contains('\0')) throw new InvalidDataException("Invalid or oversized text file.");
+        if (Encoding.UTF8.GetByteCount(edit.Content) > 1024 * 1024 || edit.Content.Contains('\0')) throw new InvalidDataException("文本文件无效或超过大小上限。");
         var current = File.Exists(path) ? DataBootstrap.Hash(path) : "";
-        if (current != edit.Version) throw new InvalidOperationException("The file changed since it was opened. Reload before saving.");
+        if (current != edit.Version) throw new InvalidOperationException("文件已在读取后发生变化，请重新读取再保存。");
         if (File.Exists(path))
         {
             var backup = ProjectPaths.SafePath(Path.Combine(paths.Runtime, "backups", "text-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff")), edit.Path);

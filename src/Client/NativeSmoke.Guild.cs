@@ -73,6 +73,9 @@ public partial class NativeSmoke
         Client.SetGuildRankPermission(1, 6, true); await botUntil(() => other.HasGuildPermission(GuildRankOptions.CanChangeNotice));
         Client.Send(new C.Chat { Message = "!~Native guild chat" }); await botUntil(() => received.OfType<S.Chat>().Any(p => p.Type == ChatType.Guild && p.Message.Contains("Native guild chat")));
         Client.SelectGuildPage(1); await Screenshot("guild-members"); Client.SelectGuildPage(2); await Screenshot("guild-ranks");
+        var tabs = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Where(button => button.Library == "Title" && button.Position.Y == 38 && button.TooltipText is "公告" or "成员" or "职位与权限" or "行会仓库与资金（仅安全区）").ToArray();
+        if (tabs.Length != 4 || tabs.Any(button => button.HoverIndex != button.Index || button.PressedIndex != (button.TooltipText switch { "公告" => 94, "成员" => 100, "职位与权限" => 102, _ => 106 })) || tabs.Single(button => button.TooltipText == "职位与权限").Index != 102)
+            throw new Exception("Guild tabs selected adjacent unrelated art instead of the original two-state images.");
         await VerifyGuildStorage(bot, other, received, botUntil);
         using (var http = new System.Net.Http.HttpClient())
         {

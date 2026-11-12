@@ -22,10 +22,10 @@ public partial class Main
         {
             var index = i;
             var row = new Button { Position = i == 0 ? new Vector2(16, 32) : new Vector2((i + 1) % 2 * 100 + 16, 54 + (i - 1) / 2 * 20), Size = new Vector2(96, 20), FocusMode = FocusModeEnum.None, Alignment = HorizontalAlignment.Left };
-            row.AddThemeFontSizeOverride("font_size", 11); CellStyle(row); group.AddChild(row); groupRows.Add(row);
+            row.AddThemeFontSizeOverride("font_size", 10); CellStyle(row); group.AddChild(row); groupRows.Add(row);
             row.Pressed += () => { if (index < State.GroupMembers.Count) ShowGroupTarget(true, State.GroupMembers[index]); };
         }
-        groupStatus = Text(group, "", 12, 194, 210); groupStatus.AddThemeFontSizeOverride("font_size", 11);
+        groupStatus = Text(group, "", 12, 194, 210); groupStatus.AddThemeFontSizeOverride("font_size", 10);
         groupSwitch = ArtButton(group, "Prguse", 114, 25, 219, "开启 / 关闭组队（关闭会离队）", ToggleGroupMode);
         groupAdd = ArtButton(group, "Title", 130, 70, 219, "创建队伍 / 邀请成员", () => ShowGroupTarget(false));
         groupRemove = ArtButton(group, "Title", 136, 140, 219, "移除成员（队长）", () => ShowGroupTarget(true));
@@ -35,10 +35,10 @@ public partial class Main
         groupName.TextSubmitted += _ => SubmitGroupTarget();
         Button(groupTarget, "确认", 14, 93, 132, SubmitGroupTarget);
         Button(groupTarget, "取消", 168, 93, 132, () => groupTarget.Hide());
-        groupInvitation = new ConfirmationDialog { Title = "组队邀请" }; game.AddChild(groupInvitation);
+        groupInvitation = new ConfirmationDialog { Title = "组队邀请" }; game.AddChild(groupInvitation); groupInvitation.GetOkButton().Text = "确定"; groupInvitation.GetCancelButton().Text = "取消";
         groupInvitation.Confirmed += () => RespondGroupInvitation(true);
         groupInvitation.Canceled += () => RespondGroupInvitation(false);
-        groupLeave = new ConfirmationDialog { Title = "退出队伍", DialogText = "关闭组队并离开当前队伍？组队地图可能将你传送离开。" }; game.AddChild(groupLeave);
+        groupLeave = new ConfirmationDialog { Title = "退出队伍", DialogText = "关闭组队并离开当前队伍？组队地图可能将你传送离开。" }; game.AddChild(groupLeave); groupLeave.GetOkButton().Text = "确定"; groupLeave.GetCancelButton().Text = "取消";
         groupLeave.Confirmed += () => SetGroupMode(false);
         Draggable(group); Draggable(groupTarget);
     }

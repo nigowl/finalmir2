@@ -12,21 +12,21 @@
 <MudTable T="CatalogRow" Items="rows" Dense="true" Hover="true" RowsPerPage="10" aria-label="游戏定义列表">
     <HeaderContent><MudTh>编号</MudTh><MudTh>名称</MudTh><MudTh>属性</MudTh><MudTh>操作</MudTh></HeaderContent>
     <RowTemplate><MudTd DataLabel="编号">@context.Id</MudTd><MudTd DataLabel="名称">@context.Name</MudTd><MudTd DataLabel="属性">@context.Details</MudTd><MudTd DataLabel="操作"><MudButton Disabled="busy" Size="Size.Small" OnClick="@(() => Edit(context.Id))">编辑</MudButton></MudTd></RowTemplate>
-    <PagerContent><MudTablePager /></PagerContent>
+    <PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
 </MudTable>
 @if (definition != null || map != null || npc != null || quest != null)
 {
     <AdminDialog Visible="true" Title="编辑游戏定义" OnClose="Cancel" OnSave="Save" Busy="busy" Dirty="@(Draft != original)" SaveText="备份并保存定义" SaveConfirmation="保存定义将备份并重启游戏引擎，在线玩家需要重新连接。确认保存？">
     <DialogContent>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
-        <MudText Typo="Typo.h6">编辑 @catalogKind #@(definition?.Id ?? map?.Id ?? npc?.Id ?? quest!.Id)</MudText>
+        <MudText Typo="Typo.h6">编辑 @ChineseText.Name(catalogKind) #@(definition?.Id ?? map?.Id ?? npc?.Id ?? quest!.Id)</MudText>
         <MudGrid Spacing="2" Class="my-2">
             <MudItem xs="12" sm="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="string" Label="@(map != null ? "地图标题" : "名称")" @bind-Value="name" Disabled="busy" /></MudItem>
             @if (definition != null)
             {
                 <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="等级 / 要求等级" @bind-Value="level" Min="0" Max="@(definition.Kind == "items" ? 255 : 65535)" /></MudItem>
-                <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="HP" @bind-Value="hp" Min="0" Max="100000000" /></MudItem>
-                <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最小 DC" @bind-Value="minDc" Min="0" /></MudItem><MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最大 DC" @bind-Value="maxDc" Min="0" Max="1000000" /></MudItem>
+                <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="生命值" @bind-Value="hp" Min="0" Max="100000000" /></MudItem>
+                <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最小物理攻击" @bind-Value="minDc" Min="0" /></MudItem><MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最大物理攻击" @bind-Value="maxDc" Min="0" Max="1000000" /></MudItem>
                 @if (definition.Kind == "items")
                 {
                     <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="uint" Label="价格" @bind-Value="price" /></MudItem><MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="堆叠上限" @bind-Value="stack" Min="1" Max="65535" /></MudItem>

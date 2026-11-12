@@ -22,10 +22,10 @@ public static class ResourcesModule
         group.MapGet("", (AssetCatalog catalog, string? search) => catalog.List(search));
         group.MapGet("/download/{kind}/{**name}", (AssetCatalog catalog, string kind, string name) => Results.File(catalog.ReadPath(kind, name), "application/octet-stream", Path.GetFileName(name)));
         group.MapPut("/stage/{kind}/{**name}", async (AssetCatalog catalog, string kind, string name, HttpRequest request, CancellationToken token) =>
-        { await catalog.Stage(kind, name, request.Body, token); return new ActionResult("Resource staged. Publish restarts the game engine and updates the micro-client version."); });
+        { await catalog.Stage(kind, name, request.Body, token); return new ActionResult("资源已暂存。发布会重启游戏引擎，并更新微端资源版本。"); });
         group.MapPost("/publish", (AssetCatalog catalog, GameRuntime runtime, CancellationToken token) => catalog.Publish(runtime, token));
         group.MapDelete("/staged/{kind}/{**name}", (AssetCatalog catalog, string kind, string name) =>
-        { File.Delete(Mir2.Hosting.ProjectPaths.SafePath(Path.Combine(catalog.Staging, kind), name)); return new ActionResult("Staged resource discarded."); });
+        { File.Delete(Mir2.Hosting.ProjectPaths.SafePath(Path.Combine(catalog.Staging, kind), name)); return new ActionResult("已丢弃暂存资源。"); });
         group.MapGet("/inspect-map/{**name}", async (AssetCatalog catalog, GameRuntime runtime, string name, CancellationToken token) =>
         {
             var path = catalog.ReadPath("maps", name); var map = new MapReader(path); long blocked = 0;
@@ -34,7 +34,7 @@ public static class ResourcesModule
             {
                 var world = Server.MirEnvir.Envir.Main;
                 return world.MapInfoList.Where(m => (m.FileName.Replace('\\', '/') + ".map").Equals(name, StringComparison.OrdinalIgnoreCase))
-                    .Select(m => new MapAssetUsage(m.Index, m.FileName, m.Title, m.MiniMap, m.BigMap, m.Music, m.Light.ToString(),
+                    .Select(m => new MapAssetUsage(m.Index, m.FileName, m.Title, m.MiniMap, m.BigMap, m.Music, m.Light.ToLocalizedString(),
                         world.NPCInfoList.Count(n => n.MapIndex == m.Index), m.Respawns.Count)).ToArray();
             }, token) : [];
             return new MapInspection(name, map.Width, map.Height, blocked, DataBootstrap.Hash(path), usages);

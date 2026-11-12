@@ -4702,7 +4702,8 @@ namespace Server.MirEnvir
 
         public Map GetWorldMap(string name)
         {
-            return MapList.FirstOrDefault(t => t.Info.Title.StartsWith(name, StringComparison.CurrentCultureIgnoreCase) && t.Info.BigMap > 0);
+            return MapList.FirstOrDefault(t => t.Info.Title.StartsWith(name, StringComparison.CurrentCultureIgnoreCase) && t.Info.BigMap > 0)
+                ?? MapList.FirstOrDefault(t => t.Info.Title == ChineseText.Name(name) && t.Info.BigMap > 0);
         }
 
         public MapInfo GetMapInfo(int index)
@@ -4758,12 +4759,14 @@ namespace Server.MirEnvir
 
         public NPCObject GetNPC(string name)
         {
-            return MapList.SelectMany(t1 => t1.NPCs.Where(t => t.Info.Name == name)).FirstOrDefault();
+            return MapList.SelectMany(t1 => t1.NPCs.Where(t => t.Info.Name == name)).FirstOrDefault()
+                ?? MapList.SelectMany(m => m.NPCs.Where(n => n.Info.Name == ChineseText.Name(name))).FirstOrDefault();
         }
 
         public NPCObject GetWorldMapNPC(string name)
         {
-            return MapList.SelectMany(t1 => t1.NPCs.Where(t => t.Info.GameName.StartsWith(name, StringComparison.CurrentCultureIgnoreCase) && t.Info.ShowOnBigMap)).FirstOrDefault();
+            return MapList.SelectMany(t1 => t1.NPCs.Where(t => t.Info.GameName.StartsWith(name, StringComparison.CurrentCultureIgnoreCase) && t.Info.ShowOnBigMap)).FirstOrDefault()
+                ?? MapList.SelectMany(m => m.NPCs.Where(n => n.Info.Name == ChineseText.Name(name) && n.Info.ShowOnBigMap)).FirstOrDefault();
         }
 
         public MonsterInfo GetMonsterInfo(int id, bool strict = false)
@@ -4797,7 +4800,8 @@ namespace Server.MirEnvir
                     return info;
                 }
             }
-            return null;
+            var translated = ChineseText.Alias(name);
+            return translated != name ? GetMonsterInfo(translated, Strict) : null;
         }
         public PlayerObject GetPlayer(string name)
         {
@@ -4850,13 +4854,15 @@ namespace Server.MirEnvir
 
         public ItemInfo GetItemInfo(string name)
         {
+            name = name.Replace(" ", "");
             for (var i = 0; i < ItemInfoList.Count; i++)
             {
                 var info = ItemInfoList[i];
                 if (string.Compare(info.Name.Replace(" ", ""), name, StringComparison.OrdinalIgnoreCase) != 0) continue;
                 return info;
             }
-            return null;
+            var translated = ChineseText.ItemAlias(name);
+            return translated != name ? GetItemInfo(translated) : null;
         }
 
         public QuestInfo GetQuestInfo(int index)

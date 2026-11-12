@@ -7,6 +7,16 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions { ContentRo
 var paths = new ProjectPaths(versionDirectory: builder.Configuration["Mir2:VersionDirectory"]);
 Directory.CreateDirectory(paths.Data);
 using var instanceLock = new FileStream(Path.Combine(paths.Data, ".server.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+if (args.Contains("--translate-chinese"))
+{
+    if (!File.Exists(paths.Database)) throw new FileNotFoundException("请先导入默认世界，再执行中文迁移。", paths.Database);
+    Directory.SetCurrentDirectory(paths.World);
+    using var database = new SqliteDatabaseStorage(paths.Database);
+    DatabaseStorage.Current = database;
+    try { Console.WriteLine(ChineseWorldTranslation.Apply(paths, database, args.Contains("--check"))); }
+    finally { DatabaseStorage.Current = null; }
+    return;
+}
 DataBootstrap.Prepare(paths);
 if (args.Contains("--prepare-data")) { _ = new AssetCatalog(paths); Console.WriteLine("Canonical data ready."); return; }
 Directory.SetCurrentDirectory(paths.World);

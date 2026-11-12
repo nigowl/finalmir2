@@ -9,25 +9,25 @@ public sealed class AdminChanges(ProjectPaths paths, SqliteDatabaseStorage stora
 {
     public static string Version(object value) => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value))).ToLowerInvariant();
     public static void Match(string current, string supplied)
-    { if (current != supplied) throw new InvalidOperationException("Data changed since it was opened. Refresh before applying this operation."); }
+    { if (current != supplied) throw new InvalidOperationException("数据已在读取后发生变化，请刷新后再执行此操作。"); }
     public static void Confirm(string supplied, string expected)
-    { if (supplied != expected) throw new InvalidDataException("Confirmation must exactly match the selected target name."); }
+    { if (supplied != expected) throw new InvalidDataException("确认名称必须与所选对象的名称完全一致。"); }
     public static string Name(string value, int max = 40)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > max || value.Any(c => char.IsControl(c) || c is '/' or '\\' or ':')) throw new InvalidDataException("Invalid name.");
+        if (string.IsNullOrWhiteSpace(value) || value.Length > max || value.Any(c => char.IsControl(c) || c is '/' or '\\' or ':')) throw new InvalidDataException("名称无效。");
         return value.Trim();
     }
     public static int Next(int counter, IEnumerable<int> values)
     {
         var maximum = Math.Max(0, Math.Max(counter, values.DefaultIfEmpty(0).Max()));
-        if (maximum == int.MaxValue) throw new InvalidOperationException("ID space is exhausted.");
+        if (maximum == int.MaxValue) throw new InvalidOperationException("编号空间已用尽。");
         return maximum + 1;
     }
     public static DateTime Expiry(bool enabled, DateTime? value)
     {
         if (!enabled) return DateTime.MinValue;
         if (value == null) return DateTime.MaxValue;
-        if (value.Value.ToUniversalTime() <= DateTime.UtcNow) throw new InvalidDataException("Expiry must be in the future, or empty for permanent.");
+        if (value.Value.ToUniversalTime() <= DateTime.UtcNow) throw new InvalidDataException("到期时间必须晚于当前时间，留空表示永久。");
         return value.Value.ToLocalTime();
     }
     public static DateTime? PublicExpiry(DateTime value) => value == DateTime.MinValue || value == DateTime.MaxValue ? null : value;

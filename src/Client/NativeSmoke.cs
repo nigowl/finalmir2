@@ -11,6 +11,7 @@ public partial class NativeSmoke : Node
 {
     public Main Client = null!;
     private readonly List<Packet> packets = new();
+    private readonly HashSet<int> effectsPlayed = new();
     private string stage = "connection";
     private GameState State => Client.State;
     private static string Argument(string name) => OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith(name + "="))?[(name.Length + 1)..] ?? "";
@@ -18,6 +19,7 @@ public partial class NativeSmoke : Node
     public override async void _Ready()
     {
         Client.PacketReceived += packet => packets.Add(packet);
+        Client.EffectPlayed += id => effectsPlayed.Add(id);
         try
         {
             var verify = OS.GetCmdlineUserArgs().Contains("--verify-save");
@@ -27,6 +29,7 @@ public partial class NativeSmoke : Node
             var record = Argument("--smoke-record");
             if (record.Length == 0 && !reference) throw new InvalidOperationException("--smoke-record is required.");
             await Until(() => Client.HandshakeReady);
+            await VerifyLoginPresentation();
             if (reference && Argument("--screenshot") is { Length: > 0 } loginShot)
             {
                 await ToSignal(GetTree().CreateTimer(2), SceneTreeTimer.SignalName.Timeout);
@@ -58,12 +61,14 @@ public partial class NativeSmoke : Node
                 await ToSignal(GetTree().CreateTimer(2), SceneTreeTimer.SignalName.Timeout);
                 Capture(Path.ChangeExtension(selectShot, "selection.png"));
             }
+            await VerifySelection();
             Client.Send(new C.StartGame { CharacterIndex = State.Characters.Single(c => c.Name == name).Index });
             await Until(() => State.User != null && Client.World.Map != null && !Client.World.Loading);
             stage = "canonical map thumbnail";
             await Until(() => Client.MiniMap.Revision.Length == 64);
             if (Client.MiniMap.Error.Length != 0) throw new Exception(Client.MiniMap.Error);
             await Until(() => State.User!.Inventory.Any(i => i?.Info?.Type == ItemType.Weapon) || State.User!.Equipment[0] != null);
+            if (OS.GetCmdlineUserArgs().Contains("--chinese-world")) await VerifyChineseWorld();
             if (verify)
             {
                 stage = "restored quests and storage";
@@ -104,14 +109,22 @@ public partial class NativeSmoke : Node
                 Client.UseItem(sword.UniqueID);
                 var equipped = await Packet<S.EquipItem>();
                 if (!equipped.Success || State.User.Equipment[0]?.UniqueID != sword.UniqueID) throw new Exception("Equip failed.");
+                var armour = State.User.Inventory.Single(i => i?.Info?.Type == ItemType.Armour);
+                Client.UseItem(armour.UniqueID);
+                if (!(await Packet<S.EquipItem>()).Success || State.User.Equipment[(int)EquipmentSlot.Armour]?.UniqueID != armour.UniqueID)
+                    throw new Exception("Armour equip failed.");
+                await VerifyHud();
+                await VerifyInventoryPresentation();
+                await VerifySettings();
+                await VerifyChatInteraction();
+                await VerifyCommandFeedback();
+                await VerifyItemDrag();
                 stage = "learn spell";
                 Client.UseItem(State.User.Inventory.First(i => i?.Info?.Type == ItemType.Book).UniqueID);
                 if (!(await Packet<S.UseItem>()).Success) throw new Exception("Skill book failed.");
                 await Packet<S.NewMagic>();
                 stage = "potion";
-                var potion = State.User.Inventory.First(i => i?.Info?.Type == ItemType.Potion);
-                Client.UseItem(potion.UniqueID);
-                if (!(await Packet<S.UseItem>()).Success) throw new Exception("Potion consumption failed.");
+                await UseQuickPotion(false);
                 stage = "accept and abandon quests";
                 await Until(() => State.QuestDefinitions.Count == 3 && State.Actors.Values.Any(a => a.Kind == ObjectType.Merchant));
                 var questNpc = State.Actors.Values.Single(a => a.Kind == ObjectType.Merchant);
@@ -121,23 +134,28 @@ public partial class NativeSmoke : Node
                 Client.AbandonQuest(3);
                 await Until(() => !State.Quests.ContainsKey(3) && State.User.QuestInventory.Count(i => i != null) == 2);
                 stage = "movement";
-                Client.SetDestination(new Point(start.X, start.Y - 3), true);
-                await Until(() => State.User.Location == new Point(start.X, start.Y - 3));
+                await VerifyMapAndMovement(start);
+                await VerifyPatrol();
                 Client.SetDestination(new Point(start.X, start.Y - 1));
                 await Until(() => State.User.Location == new Point(start.X, start.Y - 1));
                 stage = "combat";
                 await Until(() => State.Actors.Values.Any(a => a.Kind == ObjectType.Monster && !a.Dead));
-                var target = State.Actors.Values.First(a => a.Kind == ObjectType.Monster && !a.Dead);
-                Client.SelectTarget(target.Id);
+                var target = ClientAutomation.Targets(State).First();
+                EnableAutomaticBattle(false, Spell.FireBall);
                 await Until(() => target.Dead && State.User.Experience > 0);
+                if (!packets.OfType<S.Magic>().Any(packet => packet.Cast)) throw new Exception("The configured learned skill was not cast by automation.");
+                using (var stop = new InputEventKey { PhysicalKeycode = Key.Escape, Pressed = true }) Client._UnhandledInput(stop);
                 await Until(() => State.Quests[1].TaskList.Any(t => t.Contains("1/2")) && State.Quests[2].TaskList.Any(t => t.Contains("1/3")));
                 stage = "spell combat and level";
-                var magicTarget = State.Actors.Values.First(a => a.Kind == ObjectType.Monster && !a.Dead);
+                await ToSignal(GetTree().CreateTimer(2), SceneTreeTimer.SignalName.Timeout);
+                var magicTarget = ClientAutomation.Targets(State).First();
+                packets.RemoveAll(packet => packet is S.Magic);
                 Client.SetDestination(State.User.Location); Client.World.Selected = magicTarget.Id;
                 Client.BindMagic(0, 1);
                 using (var skillKey = new InputEventKey { PhysicalKeycode = Key.F1, Pressed = true }) Client._UnhandledInput(skillKey);
                 if (!(await Packet<S.Magic>()).Cast) throw new Exception("Fireball cast was rejected.");
                 await Until(() => magicTarget.Dead && State.User.Level > 1);
+                await VerifyAutomaticManaPotion();
                 await Until(() => State.Quests[1].Completed && State.Quests[2].TaskList.Any(t => t.Contains("2/3")));
                 stage = "loot";
                 await Until(() => State.Actors.Values.Any(a => a.Kind == ObjectType.Item));
@@ -165,21 +183,27 @@ public partial class NativeSmoke : Node
                 await Until(() => State.User.Gold == questGold + 77 && State.User.Experience == questExperience + 5 && State.User.QuestInventory.Count(i => i != null) == 1);
                 if (State.User.Inventory.Any(i => i?.Info?.Name == "NativeChoice0")) throw new Exception("Wrong quest choice was granted.");
                 stage = "shop";
+                // 交任务会调用默认 NPC；重新点击商人，按真实界面流程恢复当前对话目标。
+                packets.RemoveAll(packet => packet is S.NPCResponse);
+                Client.SelectTarget(npc.Id); await Packet<S.NPCResponse>();
                 Client.Send(new C.CallNPC { ObjectID = npc.Id, Key = "[@BUY]" });
                 var goods = await Packet<S.NPCGoods>();
+                await VerifyNpcGoods(goods);
                 var count = State.User.Inventory.Where(i => i?.Info?.Type == ItemType.Potion).Sum(i => i.Count);
                 var beforeGold = State.User.Gold;
                 Client.Send(new C.BuyItem { ItemIndex = goods.List[0].UniqueID, Count = 1, Type = goods.Type });
                 await Until(() => State.User.Inventory.Where(i => i?.Info?.Type == ItemType.Potion).Sum(i => i.Count) == count + 1 && State.User.Gold < beforeGold);
+                await Until(() => packets.OfType<S.Chat>().Any(packet => packet.Message.StartsWith("购买成功")));
                 Client.Send(new C.CallNPC { ObjectID = npc.Id, Key = "[@MAIN]" });
                 await Packet<S.NPCResponse>();
+                await UseQuickPotion(true);
                 Client.Send(new C.CallNPC { ObjectID = npc.Id, Key = "[@SELL]" });
                 await Packet<S.NPCSell>();
-                var sell = State.User.Inventory.First(i => i?.Info?.Type == ItemType.Potion);
+                var sell = State.User.Inventory.First(i => i?.Info?.Type == ItemType.Potion && i.Info.Stats[Stat.HP] >= 0);
                 Client.Send(new C.SellItem { UniqueID = sell.UniqueID, Count = 1 });
                 if (!(await Packet<S.SellItem>()).Success) throw new Exception("Sell failed.");
                 stage = "inventory";
-                var remaining = State.User.Inventory.First(i => i?.Info?.Type == ItemType.Potion);
+                var remaining = State.User.Inventory.First(i => i?.Info?.Type == ItemType.Potion && i.Info.Stats[Stat.HP] >= 0);
                 var from = Array.FindIndex(State.User.Inventory, i => i?.UniqueID == remaining.UniqueID);
                 Client.Send(new C.MoveItem { Grid = MirGridType.Inventory, From = from, To = 7 });
                 var moved = await Packet<S.MoveItem>();
@@ -243,6 +267,10 @@ public partial class NativeSmoke : Node
                 await Packet<S.ObjectChat>();
                 // Decode real art through the same cache used by the renderer, even headless.
                 await VerifyGroup();
+                await VerifyNpcRepair();
+                await VerifyAutomaticRoam();
+                await VerifyAutomaticEscape(start);
+                await VerifyTerrainCache();
                 stage = "native guild bank durable item";
                 Client.SetDestination(start); await Until(() => State.User!.Location == start);
                 await ReadGuildStorage(open: true);

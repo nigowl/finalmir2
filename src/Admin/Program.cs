@@ -19,7 +19,8 @@ builder.WebHost.UseStaticWebAssets();
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 builder.WebHost.UseUrls($"http://127.0.0.1:{Environment.GetEnvironmentVariable("MIR2_ADMIN_PORT") ?? "5081"}");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
-builder.Services.AddMudServices(); builder.Services.AddCascadingAuthenticationState(); builder.Services.AddAuthorization();
+builder.Services.AddMudServices(); builder.Services.AddTransient<MudBlazor.MudLocalizer, ChineseMudLocalizer>();
+builder.Services.AddCascadingAuthenticationState(); builder.Services.AddAuthorization();
 builder.Services.AddSingleton(paths);
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options =>
 {
@@ -39,6 +40,7 @@ builder.Services.AddHttpClient<AdminApi>(client =>
     client.DefaultRequestHeaders.Add("X-Mir2-Version", paths.VersionId);
 });
 var app = builder.Build();
+app.UseRequestLocalization(new RequestLocalizationOptions().SetDefaultCulture("zh-CN").AddSupportedCultures("zh-CN").AddSupportedUICultures("zh-CN"));
 app.Use(async (context, next) =>
 {
     var host = context.Request.Host.Host;
@@ -50,7 +52,7 @@ app.UseStaticFiles(); app.UseAuthentication(); app.UseAuthorization(); app.UseRa
 app.MapPost("/auth/login", async (HttpContext context, IAntiforgery antiforgery) =>
 {
     try { await antiforgery.ValidateRequestAsync(context); }
-    catch (AntiforgeryValidationException) { return Results.BadRequest("Invalid form token."); }
+    catch (AntiforgeryValidationException) { return Results.BadRequest("表单验证失败，请刷新后重试。"); }
     var form = await context.Request.ReadFormAsync();
     if (!ProjectPaths.KeyEquals(form["key"], key)) return Results.Redirect("/login?error=1");
     await context.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "Administrator")], CookieAuthenticationDefaults.AuthenticationScheme)));

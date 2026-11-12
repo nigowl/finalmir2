@@ -4,6 +4,7 @@ import hashlib, html.parser, http.cookiejar, json, os, pathlib, shutil, socket, 
 repo = pathlib.Path(__file__).resolve().parents[2]
 published = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else repo / 'build').resolve()
 reference = pathlib.Path(os.environ.get('MIR2_DATA_ROOT', repo / 'data/versions/default')).resolve()
+version_error = '管理端与服务端的版本目录不匹配。'
 root = pathlib.Path(tempfile.mkdtemp(prefix='mir2-deployment-')).resolve()
 children, logs = [], []
 completed = False
@@ -67,7 +68,7 @@ def login(address, key):
 
 def client(address, version, flag):
     log = root / ('client-' + flag + '.log')
-    variables = {'MIR2_RUNTIME_ROOT': str(version / 'runtime'), 'MIR2_CLIENT_CACHE': str(root / 'client-cache')}
+    variables = {'MIR2_RUNTIME_ROOT': str(version / 'runtime'), 'MIR2_CLIENT_CACHE': str(root / 'client-cache'), 'MIR2_CLIENT_SETTINGS': str(root / 'client-settings.json')}
     args = [str(root / 'build/client/start.sh'), '--headless', '--max-fps', '60', '--', '--server=' + address, '--smoke-record=' + str(root / 'save.json'), flag]
     with log.open('w') as output:
         child = subprocess.Popen(args, cwd='/tmp', env=environment | variables, stdout=output, stderr=subprocess.STDOUT); children.append(child)
@@ -91,7 +92,7 @@ try:
     admin = start('admin', {'MIR2_ADMIN_PORT': str(admin_port)}, 'admin-original')
     assert ready(admin, admin_address)['gameVersion'] == 'default'
     browser, page = login(admin_address, key)
-    assert 'default' in page and 'version directories do not match' not in page
+    assert 'default' in page and version_error not in page
     for path in ('/app.css', '/_content/MudBlazor/MudBlazor.min.css', '/_content/MudBlazor/MudBlazor.min.js', '/guilds', '/population'):
         assert browser.open(admin_address + path).status == 200, path
     stop(admin); stop(server_a)
@@ -123,12 +124,12 @@ try:
     settings('admin', 'default', address_b)
     admin = start('admin', {'MIR2_ADMIN_PORT': str(admin_port)}, 'admin-mismatched')
     ready(admin, admin_address); _, page = login(admin_address, key)
-    assert 'version directories do not match' in page
+    assert version_error in page
     stop(admin); settings('admin', '复古', address_b)
     admin = start('admin', {'MIR2_ADMIN_PORT': str(admin_port)}, 'admin-classic')
     assert ready(admin, admin_address)['gameVersion'] == '复古'
     _, page = login(admin_address, key)
-    assert '复古' in page and 'version directories do not match' not in page
+    assert '复古' in page and version_error not in page
     refused = subprocess.run([str(repo / 'publish.sh'), str(root / 'build')], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     assert refused.returncode != 0 and '仍在运行' in refused.stdout, refused.stdout
     print('PASS relocated native hosts and Blazor assets; directory configuration, copied versions, concurrent SQLite/world/NPC/map isolation, version labels and mismatched-version rejection.')

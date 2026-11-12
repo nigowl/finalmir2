@@ -72,7 +72,7 @@ public sealed class GameConnection : IDisposable
                 while (count - consumed >= 4)
                 {
                     var length = BitConverter.ToUInt16(buffer, consumed);
-                    if (length < 4) throw new InvalidDataException("Invalid game packet length.");
+                    if (length < 4) throw new InvalidDataException("游戏数据包长度无效。");
                     if (count - consumed < length) break;
                     var packet = Packet.ReceivePacket(buffer.AsSpan(consumed, length).ToArray(), out _);
                     lock (lifecycle)

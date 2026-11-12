@@ -12,11 +12,11 @@ namespace Server.ConsoleHost;
 public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
 {
     private static Envir World => Envir.Main;
-    private static ItemInfo Item(int id) => World.ItemInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("Item not found.");
-    private static MonsterInfo Monster(int id) => World.MonsterInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("Monster not found.");
-    private static MapInfo Map(int id) => World.MapInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("Map not found.");
-    internal static NPCInfo Npc(int id) => World.NPCInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("NPC not found.");
-    private static QuestInfo Quest(int id) => World.QuestInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("Quest not found.");
+    private static ItemInfo Item(int id) => World.ItemInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("未找到物品。");
+    private static MonsterInfo Monster(int id) => World.MonsterInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("未找到怪物。");
+    private static MapInfo Map(int id) => World.MapInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("未找到地图。");
+    internal static NPCInfo Npc(int id) => World.NPCInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("未找到人物。");
+    private static QuestInfo Quest(int id) => World.QuestInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("未找到任务。");
     private static byte[] Serialize(Action<BinaryWriter> write)
     {
         using var memory = new MemoryStream();
@@ -26,26 +26,26 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
     private static string Version(Action<BinaryWriter> write) => Convert.ToHexString(SHA256.HashData(Serialize(write))).ToLowerInvariant();
     private static void Match(string actual, string supplied)
     {
-        if (actual != supplied) throw new InvalidOperationException("Definition changed since it was opened. Reload before saving or copying.");
+        if (actual != supplied) throw new InvalidOperationException("定义已在读取后发生变化，请重新读取再保存或复制。");
     }
     private static string Name(string value, bool fileSafe = false)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > 80 || value.Any(c => char.IsControl(c) || (fileSafe && (c is '/' or '\\' or ':'))))
-            throw new InvalidDataException("Name must contain 1–80 characters without controls or path separators.");
+            throw new InvalidDataException("名称必须为1至80个字符，不能包含控制字符或路径分隔符。");
         return value.Trim();
     }
     private string Script(string folder, string value)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 160 || value.Any(char.IsControl)) throw new InvalidDataException("Invalid script name.");
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 160 || value.Any(char.IsControl)) throw new InvalidDataException("脚本名称无效。");
         var name = value.Trim().Replace('\\', '/');
         var file = ProjectPaths.SafePath(Path.Combine(paths.World, "Envir", folder), name + ".txt");
-        if (!File.Exists(file)) throw new InvalidDataException("Create the referenced script in the file editor before saving this definition.");
+        if (!File.Exists(file)) throw new InvalidDataException("保存此定义前，请先在文件编辑器中创建所引用的脚本。");
         return name;
     }
     private static int Next(int counter, IEnumerable<int> ids)
     {
         var highest = Math.Max(0, Math.Max(counter, ids.DefaultIfEmpty(0).Max()));
-        if (highest == int.MaxValue) throw new InvalidOperationException("Definition IDs are exhausted.");
+        if (highest == int.MaxValue) throw new InvalidOperationException("定义编号已用尽。");
         return highest + 1;
     }
     private void Commit(string label, Action change, Action undo)
@@ -63,7 +63,7 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
     {
         "items" => Read(Item(id)),
         "monsters" => Read(Monster(id)),
-        _ => throw new InvalidDataException("Unknown item/monster definition kind.")
+        _ => throw new InvalidDataException("未知的物品或怪物定义类型。")
     };
     private static DefinitionEdit Read(ItemInfo i) => new("items", i.Index, i.Name, i.RequiredAmount, 0, i.Stats[Stat.HP], i.Stats[Stat.MinDC], i.Stats[Stat.MaxDC], i.Price, i.StackSize, Version(i.Save));
     private static DefinitionEdit Read(MonsterInfo m) => new("monsters", m.Index, m.Name, m.Level, m.Experience, m.Stats[Stat.HP], m.Stats[Stat.MinDC], m.Stats[Stat.MaxDC], 0, 1, Version(m.Save));
@@ -73,10 +73,10 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
         var name = Name(edit.Name, true);
         if (edit.Level is < 0 or > 65535 || (edit.Kind == "items" && edit.Level > 255) || edit.Hp is < 0 or > 100000000 ||
             edit.MinDc < 0 || edit.MaxDc < edit.MinDc || edit.MaxDc > 1000000 || edit.StackSize is < 1 or > 65535)
-            throw new InvalidDataException("Invalid definition values.");
+            throw new InvalidDataException("定义属性值无效。");
         var duplicate = edit.Kind == "items" ? World.ItemInfoList.Any(i => i.Index != edit.Id && i.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) :
             World.MonsterInfoList.Any(i => i.Index != edit.Id && i.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-        if (name != before.Name && duplicate) throw new InvalidOperationException("Another definition already uses that name.");
+        if (name != before.Name && duplicate) throw new InvalidOperationException("已有其他定义使用这个名称。");
         Commit(edit.Kind + "-" + edit.Id, () => Apply(edit with { Name = name }), () => Apply(before));
     }
     private static void Apply(DefinitionEdit edit)
@@ -99,7 +99,7 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
         var before = Read(request.Kind, request.SourceId); Match(before.Version, request.Version); var name = Name(request.Name, true);
         if (request.Kind == "items")
         {
-            if (World.ItemInfoList.Any(i => i.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("Item name already exists.");
+            if (World.ItemInfoList.Any(i => i.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("物品名称已存在。");
             var source = Item(request.SourceId);
             using var reader = new BinaryReader(new MemoryStream(Serialize(source.Save)));
             var copy = new ItemInfo(reader, Envir.Version, Envir.CustomVersion) { Index = Next(World.ItemIndex, World.ItemInfoList.Select(i => i.Index)), Name = name, StartItem = false };
@@ -108,7 +108,7 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
             return Read(copy);
         }
         var monster = Monster(request.SourceId);
-        if (World.MonsterInfoList.Any(i => i.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("Monster name already exists.");
+        if (World.MonsterInfoList.Any(i => i.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("怪物名称已存在。");
         var clone = new MonsterInfo
         {
             Index = Next(World.MonsterIndex, World.MonsterInfoList.Select(i => i.Index)), Name = name, Image = monster.Image, AI = monster.AI,
@@ -130,16 +130,16 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
     public void Save(MapDefinition edit)
     {
         var before = ReadMap(edit.Id); Match(before.Version, edit.Version); var title = Name(edit.Title);
-        if (edit.Light is < 0 or > 4 || edit.Music is < 0 or > 65535) throw new InvalidDataException("Invalid map light or music.");
-        if (string.IsNullOrWhiteSpace(edit.FileName) || edit.FileName.Length > 160 || edit.FileName.Any(char.IsControl)) throw new InvalidDataException("Invalid map resource name.");
+        if (edit.Light is < 0 or > 4 || edit.Music is < 0 or > 65535) throw new InvalidDataException("地图光照或音乐设置无效。");
+        if (string.IsNullOrWhiteSpace(edit.FileName) || edit.FileName.Length > 160 || edit.FileName.Any(char.IsControl)) throw new InvalidDataException("地图资源名称无效。");
         var file = edit.FileName.Trim().Replace('\\', '/');
         ProjectPaths.SafePath(Path.Combine(paths.Assets, "maps"), file + ".map");
         var path = assets.ReadPath("maps", file + ".map");
         if (!file.Equals(before.FileName.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase))
         {
-            var current = World.GetMap(edit.Id) ?? throw new InvalidDataException("Current map must be loaded before its resource can be changed.");
+            var current = World.GetMap(edit.Id) ?? throw new InvalidDataException("更换资源前，必须先加载当前地图。");
             var replacement = new MapReader(path);
-            if (replacement.Width != current.Width || replacement.Height != current.Height) throw new InvalidDataException("Replacement map dimensions must match the existing map to preserve coordinates.");
+            if (replacement.Width != current.Width || replacement.Height != current.Height) throw new InvalidDataException("替换地图的尺寸必须与现有地图相同，以保留坐标含义。");
         }
         Commit("maps-" + edit.Id, () => Apply(edit with { Title = title, FileName = file }), () => Apply(before));
     }
@@ -164,17 +164,17 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
         ArgumentNullException.ThrowIfNull(edit);
         var name = Name(edit.Name); var script = Script("NPCs", edit.FileName);
         if (World.NPCs.Any(n => n.Info.Index != edit.Id && n.Info.FileName.Equals(script, StringComparison.OrdinalIgnoreCase) && n.Quests.Count > 0))
-            throw new InvalidOperationException("This quest NPC script is already assigned. Use a separate script to avoid replacing the quest's NPC links.");
-        var map = World.GetMap(edit.MapId) ?? throw new InvalidDataException("NPC map is not loaded.");
-        if (!map.ValidPoint(edit.X, edit.Y)) throw new InvalidDataException("NPC position must be a walkable tile inside the map.");
+            throw new InvalidOperationException("这个任务人物脚本已被使用。请使用独立脚本，避免覆盖任务的人物关联。");
+        var map = World.GetMap(edit.MapId) ?? throw new InvalidDataException("人物所在地图尚未加载。");
+        if (!map.ValidPoint(edit.X, edit.Y)) throw new InvalidDataException("人物位置必须是地图内可行走的格子。");
         if (edit.Image is < 0 or > 65535 || edit.Rate is < 1 or > 65535 || edit.MinLevel is < 0 or > 32767 || edit.MaxLevel is < 0 or > 32767 ||
             (edit.MaxLevel != 0 && edit.MaxLevel < edit.MinLevel) || edit.FlagNeeded < 0 || edit.FlagNeeded >= Globals.FlagIndexCount || edit.BigMapIcon is < 0 or > 65535)
-            throw new InvalidDataException("Invalid NPC image, rate, level, flag or map icon.");
+            throw new InvalidDataException("人物外观、交易倍率、等级、标记或地图图标无效。");
         if (edit.StartMinute is < 0 or >= 1440 || edit.EndMinute is < 0 or >= 1440 || (edit.TimeVisible && edit.EndMinute <= edit.StartMinute))
-            throw new InvalidDataException("NPC visibility requires a same-day time range, in minutes after midnight.");
+            throw new InvalidDataException("人物可见时间必须是当天内的有效时段，以午夜后的分钟数表示。");
         if (edit.DayOfWeek == null || (edit.DayOfWeek != "" && !Enum.GetNames<DayOfWeek>().Contains(edit.DayOfWeek)) ||
             edit.ClassRequired == null || (edit.ClassRequired != "" && !Enum.GetNames<MirClass>().Contains(edit.ClassRequired)))
-            throw new InvalidDataException("Invalid NPC weekday or class.");
+            throw new InvalidDataException("人物的星期或职业限制无效。");
         return edit with { Name = name, FileName = script };
     }
     internal static void ApplyNpc(NPCInfo npc, NpcDefinition edit)
@@ -196,12 +196,12 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
         var before = ReadQuest(edit.Id); Match(before.Version, edit.Version); var name = Name(edit.Name); var script = Script("Quests", edit.FileName);
         if (edit.Group == null || edit.Group.Length > 80 || edit.Group.Any(char.IsControl) || edit.MinLevel < 0 || edit.MaxLevel < Math.Max(1, edit.MinLevel) || edit.MaxLevel > 65535 ||
             edit.Prerequisite < 0 || edit.RequiredClass is < 1 or > 31 || edit.Type is < 0 or > 3 || edit.TimeLimitSeconds < 0)
-            throw new InvalidDataException("Invalid quest requirements.");
+            throw new InvalidDataException("任务要求无效。");
         var visited = new HashSet<int> { edit.Id }; var prerequisite = edit.Prerequisite;
         while (prerequisite != 0)
         {
-            if (!visited.Add(prerequisite)) throw new InvalidDataException("Quest prerequisites contain a cycle.");
-            var prior = World.QuestInfoList.SingleOrDefault(q => q.Index == prerequisite) ?? throw new InvalidDataException("Prerequisite quest does not exist.");
+            if (!visited.Add(prerequisite)) throw new InvalidDataException("任务前置条件存在循环引用。");
+            var prior = World.QuestInfoList.SingleOrDefault(q => q.Index == prerequisite) ?? throw new InvalidDataException("前置任务不存在。");
             prerequisite = prior.RequiredQuest;
         }
         Commit("quests-" + edit.Id, () => Apply(edit with { Name = name, Group = edit.Group.Trim(), FileName = script }), () => Apply(before));

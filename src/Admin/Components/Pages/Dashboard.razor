@@ -29,11 +29,11 @@
     <MudTable T="PlayerStatus" Items="status.Players" Dense="true" Hover="true" Class="mb-5">
         <ToolBarContent><MudText Typo="Typo.h6">在线玩家</MudText></ToolBarContent>
         <HeaderContent><MudTh>角色</MudTh><MudTh>职业</MudTh><MudTh>等级</MudTh><MudTh>地图</MudTh><MudTh>位置</MudTh><MudTh>队长 / 人数</MudTh><MudTh>交易对象 / 确认</MudTh><MudTh>行会 / 职位</MudTh></HeaderContent>
-        <RowTemplate><MudTd>@context.Name</MudTd><MudTd>@context.Class</MudTd><MudTd>@context.Level</MudTd><MudTd>@context.Map</MudTd><MudTd>@context.X,@context.Y</MudTd><MudTd>@(context.GroupSize > 0 ? $"{context.GroupLeader} / {context.GroupSize}" : "—")</MudTd><MudTd>@(context.TradePartner.Length > 0 ? $"{context.TradePartner} / {(context.TradeLocked ? "已确认" : "未确认")}" : "—")</MudTd><MudTd>@(context.GuildName.Length > 0 ? $"{context.GuildName} / {context.GuildRank}" : "—")</MudTd></RowTemplate>
+        <RowTemplate><MudTd>@context.Name</MudTd><MudTd>@ChineseText.Name(context.Class)</MudTd><MudTd>@context.Level</MudTd><MudTd>@context.Map</MudTd><MudTd>@context.X,@context.Y</MudTd><MudTd>@(context.GroupSize > 0 ? $"{context.GroupLeader} / {context.GroupSize}" : "—")</MudTd><MudTd>@(context.TradePartner.Length > 0 ? $"{context.TradePartner} / {(context.TradeLocked ? "已确认" : "未确认")}" : "—")</MudTd><MudTd>@(context.GuildName.Length > 0 ? $"{context.GuildName} / {context.GuildRank}" : "—")</MudTd></RowTemplate>
         <NoRecordsContent><MudText Class="pa-4">暂无在线玩家</MudText></NoRecordsContent>
     </MudTable>
 }
-<MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.h6" GutterBottom="true">引擎日志</MudText><div class="logs" aria-live="polite">@foreach (var entry in logs) { <div>@entry.Time.ToLocalTime().ToString("HH:mm:ss") [@entry.Category] @entry.Message</div> }</div></MudPaper>
+<MudPaper Class="pa-4" Elevation="0"><MudText Typo="Typo.h6" GutterBottom="true">引擎日志</MudText><div class="logs" aria-live="polite">@foreach (var entry in logs) { <div>@entry.Time.ToLocalTime().ToString("HH:mm:ss") [@(entry.Category switch { "server" => "服务", "debug" => "调试", "chat" => "聊天", _ => entry.Category })] @entry.Message</div> }</div></MudPaper>
 @code {
     private ServerStatus? status; private string? error, notice; private bool busy;
     private readonly List<LogEntry> logs = new(); private readonly CancellationTokenSource cancellation = new(); private Task? polling;

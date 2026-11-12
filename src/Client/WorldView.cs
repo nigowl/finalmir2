@@ -17,9 +17,12 @@ public partial class WorldView : Node2D
     private readonly List<(uint id, int damage, long time)> damage = new();
     private readonly List<(Spell spell, uint caster, uint target, Point source, Point destination, long time)> spells = new();
     public uint Selected;
-    public bool Loading { get; private set; }
+    private bool loadingMap;
+    public bool Loading => loadingMap || Map != null && !initialTerrainReady;
     public string LoadError { get; private set; } = "";
     public Vector2 Centre = new(480, 352);
+    private Vector2 cameraPixels;
+    private long frameTime;
 
     public override void _Ready()
     {
@@ -30,7 +33,7 @@ public partial class WorldView : Node2D
 
     public async Task Load(string file)
     {
-        var ticket = ++mapTicket; Loading = true; LoadError = ""; Map = null; spells.Clear();
+        var ticket = ++mapTicket; loadingMap = true; LoadError = ""; Map = null; spells.Clear(); ResetTerrainPrefetch();
         try
         {
             var map = await Assets.LoadMap(file);
@@ -46,7 +49,7 @@ public partial class WorldView : Node2D
                 if (!Walkable(new Point(x, y))) navigation.SetPointSolid(new Vector2I(x, y));
         }
         catch (Exception error) { if (ticket == mapTicket) LoadError = error.Message; }
-        finally { if (ticket == mapTicket) Loading = false; }
+        finally { if (ticket == mapTicket) loadingMap = false; }
     }
 
     public bool Walkable(Point point) => Map != null && point.X >= 0 && point.Y >= 0 && point.X < Map.Width && point.Y < Map.Height &&
@@ -54,30 +57,49 @@ public partial class WorldView : Node2D
 
     public Point? NextStep(Point target, bool run = false)
     {
-        if (Map == null || State.User == null || !Walkable(target)) return null;
+        return NextStep(target, run, out _);
+    }
+
+    public Point? NextStep(Point target, bool run, out Point[] route)
+    {
+        route = PathTo(target);
+        if (route.Length <= 1) return null;
+        var step = run && route.Length > 2 && Functions.DirectionFromPoint(route[0], route[1]) == Functions.DirectionFromPoint(route[1], route[2]) ? 2 : 1;
+        return route[step];
+    }
+
+    public Point[] PathTo(Point target)
+    {
+        if (Map == null || State.User == null || !Walkable(target)) return [];
         // Players can share a login/revive tile; keep the start open so they can walk apart.
         var occupied = State.Actors.Values.Where(a => a.Id != State.User.ObjectID && a.Location != State.User.Location && a.Kind != ObjectType.Item && !a.Dead && !a.Hidden && Walkable(a.Location)).Select(a => new Vector2I(a.Location.X, a.Location.Y)).Distinct().ToArray();
         foreach (var point in occupied) navigation.SetPointSolid(point);
         var current = State.User.Location;
-        var path = navigation.GetIdPath(new Vector2I(current.X, current.Y), new Vector2I(target.X, target.Y), true);
-        foreach (var point in occupied) navigation.SetPointSolid(point, false);
-        if (path.Count <= 1) return null;
-        var step = run && path.Count > 2 && path[1] - path[0] == path[2] - path[1] ? 2 : 1;
-        return new Point(path[step].X, path[step].Y);
+        try { return navigation.GetIdPath(new Vector2I(current.X, current.Y), new Vector2I(target.X, target.Y)).Select(p => new Point(p.X, p.Y)).ToArray(); }
+        finally { foreach (var point in occupied) navigation.SetPointSolid(point, false); }
+    }
+
+    internal Point? Approach(Actor target)
+    {
+        if (State.User == null) return null;
+        var cells = Enumerable.Range(-1, 3).SelectMany(dx => Enumerable.Range(-1, 3).Select(dy => new Point(target.Location.X + dx, target.Location.Y + dy)))
+            .Where(point => point != target.Location && Walkable(point)).OrderBy(point => Math.Max(Math.Abs(point.X - State.User.Location.X), Math.Abs(point.Y - State.User.Location.Y)));
+        foreach (var point in cells) if (point == State.User.Location || NextStep(point) != null) return point;
+        return null;
     }
 
     public Point CellAt(Vector2 screen)
     {
         var me = State.Me;
         if (me == null) return Point.Empty;
-        var camera = Visual(me);
+        var camera = cameraPixels / new Vector2(48, 32);
         return new Point((int)Math.Floor((screen.X - Centre.X) / 48 + camera.X), (int)Math.Floor((screen.Y - Centre.Y) / 32 + camera.Y));
     }
 
     public Actor? ActorAt(Vector2 screen)
     {
         return State.Actors.Values.Where(a => !a.Hidden && a.Id != State.User?.ObjectID)
-            .OrderByDescending(a => a.Location.Y).FirstOrDefault(a =>
+            .OrderByDescending(a => a.Kind == ObjectType.Item).ThenByDescending(a => a.Location.Y).FirstOrDefault(a =>
             {
                 var p = Screen(a.Location);
                 return a.Kind == ObjectType.Item ? new Rect2(p, new Vector2(48, 32)).HasPoint(screen)
@@ -90,31 +112,48 @@ public partial class WorldView : Node2D
     {
         if (State.Actors.TryGetValue(caster, out var actor)) spells.Add((spell, caster, target, actor.Location, destination, Environment.TickCount64));
     }
-    private static Vector2 Visual(Actor actor)
-    {
-        if (actor.Action is not (MirAction.Walking or MirAction.Running)) return new Vector2(actor.Location.X, actor.Location.Y);
-        var fraction = Math.Clamp((Environment.TickCount64 - actor.MotionTime) / 400f, 0, 1);
-        return new Vector2(actor.Previous.X, actor.Previous.Y).Lerp(new Vector2(actor.Location.X, actor.Location.Y), fraction);
-    }
     public Vector2 Screen(Point point) => Screen(new Vector2(point.X, point.Y));
     private Vector2 Screen(Vector2 point)
     {
-        var camera = State.Me == null ? Vector2.Zero : Visual(State.Me);
-        return (point - camera) * new Vector2(48, 32) + Centre;
+        return (point * new Vector2(48, 32)).Round() - cameraPixels + Centre;
     }
 
-    public override void _Process(double delta) { QueueRedraw(); glowLayer.QueueRedraw(); }
+    public uint Hovered { get; private set; }
+    internal bool ShowNpcNames = true, ShowMonsterNames, ShowItemNames;
+    internal bool NameVisible(Actor actor) => actor.Id == State.User?.ObjectID || (actor.Kind switch
+    {
+        ObjectType.Merchant => ShowNpcNames || actor.Id == Hovered || actor.Id == Selected,
+        ObjectType.Monster => ShowMonsterNames || actor.Id == Hovered || actor.Id == Selected,
+        ObjectType.Item => ShowItemNames || actor.Id == Hovered || actor.Id == Selected,
+        _ => actor.Id == Selected
+    });
+    internal void UpdateHover(Vector2 screen, bool overUi) => Hovered = overUi ? 0 : ActorAt(screen)?.Id ?? 0;
+    public override void _Process(double delta)
+    {
+        frameTime = Environment.TickCount64;
+        // 整帧共用同一个镜头像素位置，避免逐格取时钟让相邻地块在运动时错开。
+        cameraPixels = State.Me == null ? Vector2.Zero : (Visual(State.Me, frameTime) * new Vector2(48, 32)).Round();
+        UpdateHover(GetGlobalMousePosition(), GetViewport().GuiGetHoveredControl() != null);
+        PrefetchTerrain();
+        QueueRedraw(); glowLayer.QueueRedraw();
+    }
     public override void _Draw()
     {
         glow.Clear();
         if (State.User == null) return;
         DrawRect(new Rect2(0, 0, 1024, 768), new GColor("111710"));
         if (Map == null) return;
+        if (Loading)
+        {
+            DrawString(ThemeDB.FallbackFont, new Vector2(410, 320), "正在准备地图素材…", fontSize: 16, modulate: Colors.Wheat);
+            return;
+        }
         var user = State.User.Location;
-        var fromX = Math.Max(0, user.X - 13); var toX = Math.Min(Map.Width - 1, user.X + 13);
-        var fromY = Math.Max(0, user.Y - 12); var toY = Math.Min(Map.Height - 1, user.Y + 17);
-        var now = Environment.TickCount64;
-        for (var y = fromY; y <= toY; y++)
+        // 原客户端物件层向下多扫描 25 行，建筑锚点可能在屏外，屋顶仍伸入当前画面。
+        var bounds = MapViewBounds.Around(user, Map.Width, Map.Height);
+        var fromX = bounds.FromX; var toX = bounds.ToX; var fromY = bounds.FromY;
+        var now = frameTime;
+        for (var y = fromY; y <= bounds.FloorToY; y++)
         for (var x = fromX; x <= toX; x++)
         {
             var cell = Map.MapCells[x, y]; var position = Screen(new Point(x, y));
@@ -124,7 +163,7 @@ public partial class WorldView : Node2D
             var front = Assets.Sprite(MapLibrary(cell.FrontIndex), (cell.FrontImage & 0x7FFF) - 1);
             if (front != null && IsFloor(front) && cell.FrontAnimationFrame == 0) DrawTexture(front.Texture, position);
         }
-        for (var y = fromY; y <= toY; y++)
+        for (var y = fromY; y <= bounds.ObjectToY; y++)
         {
             foreach (var actor in State.Actors.Values.Where(a => a.Location.Y == y && (a.Dead || a.Kind == ObjectType.Item))) DrawActor(actor, now);
             for (var x = fromX; x <= toX; x++)
@@ -137,26 +176,31 @@ public partial class WorldView : Node2D
                     var count = (middleFrames & 0x0f) > 0 ? middleFrames & 0x0f : middleFrames;
                     middleIndex += (int)(now / (100 * (1 + cell.MiddleAnimationTick)) % count);
                 }
-                var mid = Assets.Sprite(MapLibrary(cell.MiddleIndex), middleIndex);
+                var mid = Assets.Sprite(MapLibrary(cell.MiddleIndex), middleIndex) ?? Assets.Sprite(MapLibrary(cell.MiddleIndex), cell.MiddleImage - 1);
                 if (mid != null && !IsFloor(mid)) DrawTexture(mid.Texture, position - new Vector2(0, mid.Size.Y));
                 var index = (cell.FrontImage & 0x7FFF) - 1;
                 var animation = cell.FrontAnimationFrame & 0x7F;
                 if (animation > 0) index += (int)(now / (100 * (1 + cell.FrontAnimationTick)) % animation);
-                var front = Assets.Sprite(MapLibrary(cell.FrontIndex), index);
+                var front = Assets.Sprite(MapLibrary(cell.FrontIndex), index) ?? Assets.Sprite(MapLibrary(cell.FrontIndex), (cell.FrontImage & 0x7FFF) - 1);
                 if (front == null || (IsFloor(front) && animation == 0)) continue;
                 if ((cell.FrontAnimationFrame & 0x80) != 0) glow.Add((front, position - new Vector2(0, front.Size.Y)));
                 else DrawTexture(front.Texture, position - new Vector2(0, front.Size.Y));
             }
             foreach (var actor in State.Actors.Values.Where(a => a.Location.Y == y && !a.Dead && a.Kind != ObjectType.Item).OrderBy(a => a.Location.X)) DrawActor(actor, now);
         }
-        foreach (var actor in State.Actors.Values.Where(a => a.Id == Selected || a.Id == State.User.ObjectID || a.Kind == ObjectType.Merchant))
+        foreach (var actor in State.Actors.Values.Where(NameVisible))
         {
             if (actor.Hidden) continue;
-            var p = Screen(Visual(actor)) + new Vector2(24, -46);
-            DrawString(ThemeDB.FallbackFont, p - new Vector2(ThemeDB.FallbackFont.GetStringSize(actor.Name, fontSize: 13).X / 2, 0), actor.Name,
-                fontSize: 13, modulate: actor.Kind == ObjectType.Monster ? new GColor("f0b09c") : new GColor("f4edca"));
+            var p = NameAnchor(actor, now);
+            var namePosition = p - new Vector2(ThemeDB.FallbackFont.GetStringSize(actor.Name, fontSize: 12).X / 2, 0);
+            if (actor.Kind is ObjectType.Player or ObjectType.Merchant or ObjectType.Monster)
+                namePosition.Y += (ThemeDB.FallbackFont.GetAscent(12) - ThemeDB.FallbackFont.GetDescent(12)) / 2;
+            DrawStringOutline(ThemeDB.FallbackFont, namePosition, actor.Name, fontSize: 12, size: 2, modulate: Colors.Black);
+            DrawString(ThemeDB.FallbackFont, namePosition, actor.Name,
+                fontSize: 12, modulate: actor.Kind == ObjectType.Monster ? new GColor("f0b09c") : new GColor("f4edca"));
             if (actor.Id == Selected && actor.Kind == ObjectType.Monster && !actor.Dead)
             {
+                p = Screen(Visual(actor, now)) + new Vector2(24, -46);
                 DrawRect(new Rect2(p + new Vector2(-25, 5), new Vector2(50, 5)), Colors.Black);
                 DrawRect(new Rect2(p + new Vector2(-24, 6), new Vector2(actor.Health * 0.48f, 3)), Colors.Red);
             }
@@ -164,8 +208,8 @@ public partial class WorldView : Node2D
         damage.RemoveAll(d => now - d.time > 900);
         foreach (var hit in damage)
             if (State.Actors.TryGetValue(hit.id, out var actor))
-                DrawString(ThemeDB.FallbackFont, Screen(Visual(actor)) + new Vector2(22, -55 - (now - hit.time) / 20f),
-                    hit.damage == 0 ? "Miss" : Math.Abs(hit.damage).ToString(), fontSize: 18, modulate: hit.damage > 0 ? Colors.LightGreen : Colors.OrangeRed);
+                DrawString(ThemeDB.FallbackFont, Screen(Visual(actor, now)) + new Vector2(22, -55 - (now - hit.time) / 20f),
+                    hit.damage == 0 ? "未命中" : Math.Abs(hit.damage).ToString(), fontSize: 17, modulate: hit.damage > 0 ? Colors.LightGreen : Colors.OrangeRed);
         DrawSpells(now);
     }
 
@@ -176,7 +220,7 @@ public partial class WorldView : Node2D
         foreach (var spell in spells)
         {
             var elapsed = now - spell.time;
-            var source = State.Actors.TryGetValue(spell.caster, out var caster) ? Screen(Visual(caster)) : Screen(spell.source);
+            var source = State.Actors.TryGetValue(spell.caster, out var caster) ? Screen(Visual(caster, now)) : Screen(spell.source);
             var target = State.Actors.TryGetValue(spell.target, out var actor) ? actor.Location : spell.destination;
             void Effect(string library, int index, Vector2 position)
             {
@@ -213,47 +257,6 @@ public partial class WorldView : Node2D
     private static bool IsFloor(SpriteImage image) => image.Size == new Vector2(48, 32) || image.Size == new Vector2(96, 64);
     private void DrawTile(int library, int index, Vector2 position, bool offset)
     { var image = Assets.Sprite(MapLibrary(library), index); if (image != null) DrawTexture(image.Texture, position + (offset ? image.Offset : Vector2.Zero)); }
-
-    private void DrawActor(Actor actor, long now)
-    {
-        if (actor.Hidden) return;
-        var position = Screen(Visual(actor));
-        if (position.X < -250 || position.X > 1300 || position.Y < -250 || position.Y > 900) return;
-        if (actor.Kind == ObjectType.Item)
-        {
-            var item = Assets.Sprite("DNItems", actor.Image);
-            if (item != null) DrawTexture(item.Texture, position + (new Vector2(48, 32) - item.Size) / 2);
-            return;
-        }
-        var library = actor.Kind == ObjectType.Player ? $"CArmour/{actor.Armour:00}" : actor.Kind == ObjectType.Merchant
-            ? actor.Image >= 1000 ? $"Flag/{actor.Image - 1000:00}" : $"NPC/{actor.Image:00}"
-            : actor.Image >= 10000 ? $"Pet/{actor.Image - 10000:00}" : actor.Image is >= 950 and < 960 ? $"Gate/{actor.Image - 950:00}"
-            : actor.Image is >= 940 and < 950 ? $"Siege/{actor.Image - 940:00}" : $"Monster/{actor.Image:000}";
-        var frames = Assets.Frames(library);
-        if (frames == null) return;
-        var action = actor.Dead ? now - actor.ActionTime > 1000 ? MirAction.Dead : MirAction.Die
-            : now - actor.ActionTime > 550 ? MirAction.Standing : actor.Action;
-        if (!frames.Frames.TryGetValue(action, out var frame) && !frames.Frames.TryGetValue(MirAction.Standing, out frame)) return;
-        var index = frame.Start + (int)actor.Direction * frame.OffSet + (int)((now - (action == MirAction.Standing ? 0 : actor.ActionTime)) / Math.Max(40, frame.Interval) % Math.Max(1, frame.Count));
-        if (actor.Kind == ObjectType.Player)
-        {
-            var weaponBehind = actor.Direction is MirDirection.Left or MirDirection.Up or MirDirection.UpLeft or MirDirection.DownLeft;
-            if (weaponBehind && actor.Weapon >= 0) DrawSprite($"CWeapon/{actor.Weapon:00}", index + (actor.Gender == MirGender.Female ? 416 : 0), position);
-            DrawSprite(library, index + (actor.Gender == MirGender.Female ? 808 : 0), position);
-            DrawSprite($"CHair/{actor.Hair:00}", index + (actor.Gender == MirGender.Female ? 808 : 0), position);
-            if (!weaponBehind && actor.Weapon >= 0) DrawSprite($"CWeapon/{actor.Weapon:00}", index + (actor.Gender == MirGender.Female ? 416 : 0), position);
-        }
-        else DrawSprite(library, index, position);
-        if (actor.Kind == ObjectType.Merchant && State.QuestsAt(actor.Id).FirstOrDefault() is { } quest)
-        {
-            var progress = State.Quests.GetValueOrDefault(quest.Index);
-            var marker = Assets.Sprite("Prguse", 981 + (int)quest.GetQuestIcon(progress != null, progress?.Completed == true) * 2 + (int)(now / 350 % 2));
-            var body = Assets.Sprite(library, frame.Start);
-            if (marker != null && body != null) DrawTexture(marker.Texture, position + body.Offset + new Vector2(body.Size.X / 2 - 28, -40));
-        }
-    }
-    private void DrawSprite(string library, int index, Vector2 position)
-    { var image = Assets.Sprite(library, index); if (image != null) DrawTexture(image.Texture, position + image.Offset); }
 
     public static string MapLibrary(int index) => MapTileLibraries.Resolve(index);
 

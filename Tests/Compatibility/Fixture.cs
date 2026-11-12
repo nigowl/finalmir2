@@ -50,12 +50,21 @@ internal static class Fixture
             sword.StartItem = true; sword.RequiredClass = RequiredClass.Warrior; sword.RequiredGender = RequiredGender.Male;
             sword.RequiredAmount = 0; sword.Weight = 0; sword.Stats[Stat.MinDC] = 100; sword.Stats[Stat.MaxDC] = 100; sword.Stats[Stat.Accuracy] = 100;
             sword.Stats[Stat.MinMC] = 100; sword.Stats[Stat.MaxMC] = 100;
+            var armour = world.ItemInfoList.First(i => i.Type == ItemType.Armour && i.RequiredGender == RequiredGender.Male && i.Shape == 1);
+            armour.StartItem = true; armour.RequiredClass = RequiredClass.Warrior; armour.RequiredAmount = 0; armour.Weight = 0;
             var potion = world.ItemInfoList.First(i => i.Type == ItemType.Potion && i.Shape == 0 && i.Stats[Stat.HP] > 0);
             potion.StartItem = true; potion.RequiredClass = RequiredClass.Warrior; potion.RequiredGender = RequiredGender.Male;
             potion.Price = 2; potion.Weight = 0; potion.StackSize = 20; potion.RequiredAmount = 0;
+            var blue = world.ItemInfoList.First(i => i.Type == ItemType.Potion && i.Shape == 0 && i.Stats[Stat.MP] > 0 && i.Stats[Stat.HP] == 0);
+            blue.StartItem = true; blue.RequiredClass = RequiredClass.Warrior; blue.RequiredGender = RequiredGender.Male; blue.RequiredAmount = 0; blue.Weight = 0;
             var book = world.ItemInfoList.First(i => i.Type == ItemType.Book && i.Shape == (short)Spell.FireBall);
             book.StartItem = true; book.RequiredClass = RequiredClass.Warrior; book.RequiredGender = RequiredGender.Male; book.RequiredAmount = 0; book.Weight = 0;
             world.MagicInfoList.First(m => m.Spell == Spell.FireBall).Level1 = 1;
+            foreach (var shape in new short[] { 1, 2 })
+            {
+                var scroll = world.ItemInfoList.First(i => i.Type == ItemType.Scroll && i.Shape == shape);
+                scroll.StartItem = true; scroll.RequiredClass = RequiredClass.Warrior; scroll.RequiredGender = RequiredGender.Male; scroll.RequiredAmount = 0; scroll.Weight = 0;
+            }
             var monster = new MonsterInfo { Index = 1, Name = "NativeTarget", Image = Monster.Hen, AI = 0, Level = 1,
                 Experience = 60, ViewRange = 0, MoveSpeed = ushort.MaxValue, AttackSpeed = 2500 };
             monster.Stats[Stat.HP] = 20;
@@ -65,17 +74,30 @@ internal static class Fixture
                 ViewRange = 0, MoveSpeed = 1000, AttackSpeed = 700 };
             danger.Stats[Stat.HP] = 9999; danger.Stats[Stat.MinDC] = 9999; danger.Stats[Stat.MaxDC] = 9999; danger.Stats[Stat.Accuracy] = 100;
             world.MonsterInfoList.Add(danger); world.MonsterIndex = 2;
+            if (!catalog)
+            {
+                var guard = new MonsterInfo { Index = 3, Name = "NativePatrol", Image = Monster.Guard, AI = 6, Level = 1,
+                    ViewRange = 0, MoveSpeed = 1000, AttackSpeed = 2000 };
+                guard.Stats[Stat.HP] = 1000; world.MonsterInfoList.Add(guard); world.MonsterIndex = 3;
+                Directory.CreateDirectory(Path.Combine("Envir", "Routes"));
+                File.WriteAllLines(Path.Combine("Envir", "Routes", "NativePatrol.txt"),
+                    new[] { new Point(start.X - 4, start.Y - 4), new Point(start.X - 2, start.Y - 4), new Point(start.X - 2, start.Y - 2), new Point(start.X - 4, start.Y - 2) }
+                        .Select(point => $"{point.X},{point.Y},0"));
+                first.Respawns.Add(new RespawnInfo { MonsterIndex = 3, RespawnIndex = 4, Location = new Point(start.X - 4, start.Y - 4), Count = 1, Delay = 600, RoutePath = "NativePatrol" });
+            }
             first.Respawns.Add(new RespawnInfo { MonsterIndex = 1, RespawnIndex = 1, Location = new Point(start.X + 1, start.Y + 1), Count = 1, Delay = 600 });
             first.Respawns.Add(new RespawnInfo { MonsterIndex = 1, RespawnIndex = 2, Location = new Point(start.X + 3, start.Y + 2), Count = 1, Delay = 600 });
             second.Respawns.Add(new RespawnInfo { MonsterIndex = 2, RespawnIndex = 3, Location = new Point(start.X + 2, start.Y + 2), Count = 1, Delay = 600 });
             world.NPCInfoList.Clear();
             world.NPCInfoList.Add(new NPCInfo { Index = 1, MapIndex = 1, FileName = "NativeShop", Name = "Native Shop", Image = 0,
                 Location = new Point(start.X - 2, start.Y), Colour = Color.White });
-            world.NPCIndex = 1; world.RespawnIndex = 3;
+            world.NPCIndex = 1; world.RespawnIndex = catalog ? 3 : 4;
             world.QuestInfoList.Clear(); world.ConquestInfoList.Clear(); world.GTMapList.Clear(); world.GameShopList.Clear();
             world.DragonInfo.Enabled = false;
             Directory.CreateDirectory(Path.Combine("Envir", "Quests"));
             world.ItemIndex = Math.Max(world.ItemIndex, world.ItemInfoList.Max(i => i.Index));
+            world.ItemInfoList.Add(new ItemInfo { Index = ++world.ItemIndex, Name = "NativeInjury", Type = ItemType.Potion, Shape = 1, Image = potion.Image,
+                StartItem = true, StackSize = 1, RequiredClass = RequiredClass.Warrior, RequiredGender = RequiredGender.Male, Stats = new Stats { [Stat.HP] = -5 } });
             var ring = world.ItemInfoList.First(i => i.Type == ItemType.Ring);
             for (var index = 0; index < 2; index++)
                 world.ItemInfoList.Add(new ItemInfo { Index = ++world.ItemIndex, Name = $"NativeChoice{index}", Type = ItemType.Ring,
@@ -91,9 +113,11 @@ internal static class Fixture
                     (index == 1 ? $"[@FIXEDREWARDS]\n{potion.Name} 2\n[@SELECTREWARDS]\nNativeChoice0 1\nNativeChoice1 1\n[@GOLDREWARD]\n77\n[@EXPREWARD]\n5\n" : ""));
             }
             world.QuestIndex = 3;
+            File.WriteAllText(Path.Combine("Envir", "NPCs", "00Default.txt"), "[@_CustomCommand(UiCommand)]\n#SAY\n自定义命令检查。\n");
             File.WriteAllText(Path.Combine("Envir", "Drops", "NativeTarget.txt"), $"1/1 Gold 1000\n1/1 {potion.Name}\n");
             File.WriteAllText(Path.Combine("Envir", "NPCs", "NativeShop.txt"),
-                $"[@MAIN]\n#SAY\nNative integration shop.\n<Buy/@BUY> <Sell/@SELL> <Storage/@STORAGE>\n\n[@BUY]\n#SAY\nBuy supplies.\n<Back/@MAIN>\n\n[@SELL]\n#SAY\nSell supplies.\n<Back/@MAIN>\n\n[@STORAGE]\n#SAY\nAccount storage.\n<Back/@MAIN>\n\n[Quests]\n1\n2\n3\n\n[Types]\n{(int)ItemType.Potion}\n\n[Trade]\n{potion.Name} 1\n");
+                $"[@MAIN]\n#SAY\nNative integration shop.\n<Buy/@BUY> <Sell/@SELL> <Storage/@STORAGE> <Repair/@REPAIR>\n\n[@SELL]\n#SAY\nSell supplies.\n<Back/@MAIN>\n\n[@REPAIR]\n#SAY\nRepair supplies.\n<Back/@MAIN>\n\n[@STORAGE]\n#SAY\nAccount storage.\n<Back/@MAIN>\n\n[Quests]\n1\n2\n3\n\n[Types]\n{(int)ItemType.Potion}\n{(int)ItemType.Weapon}\n{(int)ItemType.Armour}\n\n[Trade]\n{potion.Name} 1\n" +
+                string.Join("\n", world.ItemInfoList.Where(item => item.Type == ItemType.Weapon).Take(20).Select(item => $"{item.Name} 1")) + "\n");
             File.WriteAllText(Path.Combine("Configs", "WorldMap.ini"), "[Setup]\nEnabled=False\n\n[Layout]\n");
             if (catalog)
             {

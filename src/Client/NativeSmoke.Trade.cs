@@ -39,7 +39,7 @@ public partial class NativeSmoke
         await Until(() => !State.Trading); await botUntil(() => !other.Trading);
         await Invite();
         var ownGold = State.User!.Gold; var peerGold = other.User.Gold;
-        var ownItem = State.User.Inventory.First(i => i?.Info?.Type == ItemType.Potion)!;
+        var ownItem = State.User.Inventory.First(i => i?.Info?.Type == ItemType.Potion && i.Info.Stats[Stat.HP] >= 0)!;
         var peerItem = other.User.Inventory.First(i => i?.Info?.Type == ItemType.Weapon)!;
         var peerPotionCount = other.User.Inventory.Where(i => i?.ItemIndex == ownItem.ItemIndex).Sum(i => i.Count);
         var ownSlot = Array.IndexOf(State.User.Inventory, ownItem); var peerSlot = Array.IndexOf(other.User.Inventory, peerItem);

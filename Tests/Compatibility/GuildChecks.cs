@@ -31,7 +31,7 @@ internal static class GuildChecks
             check(lower.Options == 0, "Repeated permission removal enabled the permission again");
             check(!guild.ChangeRankOption(officer, 1, 1, "true") && higher.Options == (GuildRankOptions.CanChangeRank | GuildRankOptions.CanChangeNotice), "Officer altered their own permission bits");
             var outsider = new GuildPlayer { Info = new CharacterInfo { Name = "Outsider" } };
-            check(!guild.ChangeRankName(outsider, "Forged", 0) && guild.Ranks[0].Name == "Leader", "Unlisted actor renamed a guild rank");
+            check(!guild.ChangeRankName(outsider, "Forged", 0) && guild.Ranks[0].Name == "会长", "Unlisted actor renamed a guild rank");
             officer.GuildMembersChanged = true; officer.RequestGuildInfo(1); var count = officer.Packets.OfType<S.GuildMemberChange>().Count(p => p.Status == 255); officer.RequestGuildInfo(1);
             check(!officer.GuildMembersChanged && officer.Packets.OfType<S.GuildMemberChange>().Count(p => p.Status == 255) == count, "Unchanged roster was repeatedly retransmitted");
             guild.NewRank(leader); check(officer.GuildMembersChanged, "Rank insertion did not invalidate an already-read roster");

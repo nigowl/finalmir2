@@ -2172,11 +2172,26 @@ namespace Server.MirObjects
                     82  // wall
                 };
 
-                switch (parts[0].ToUpper())
+                var commandInfo = Mir2.Commands.GameCommands.Find(parts[0]);
+                if (commandInfo == null && !Envir.CustomCommands.Any(command => command.Equals(parts[0], StringComparison.OrdinalIgnoreCase)))
+                { ReceiveChat($"未知命令：@{parts[0]}。请在管理工具的 GM命令清单中查看用法。" + (IsGM ? "例子：@传送 0 / @mm 0。" : ""), ChatType.System); return; }
+                var commandExample = commandInfo != null && (IsGM || Settings.TestServer) ? $" 用法：@{commandInfo.Name} {commandInfo.Arguments}；例子：{commandInfo.Example}。" : "";
+                var commandError = commandInfo == null ? null : Helpers.CommandInput.Validate(commandInfo, parts, Info.Flags.Length);
+                if (commandError != null) { ReceiveChat($"命令错误：{commandError}{commandExample}", ChatType.System); return; }
+                var commandCompleted = false;
+                try
                 {
+                switch (Mir2.Commands.GameCommands.Resolve(parts[0]))
+                {
+                    case "!":
+                        if (!IsGM || parts.Length < 2) return;
+                        var announcement = ProcessChatItems($"(*){Name}:{string.Join(" ", parts.Skip(1))}", Envir.Players, linkedItems);
+                        Envir.Broadcast(new S.Chat { Message = announcement, Type = ChatType.Announcement });
+                        break;
                     case "LOGIN":
                         GMLogin = true;
                         ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.EnterGmPassword), ChatType.Hint);
+                        commandCompleted = true;
                         return;
 
                     case "KILL":
@@ -2232,6 +2247,7 @@ namespace Server.MirObjects
                                 }
                             }
                         }
+                        commandCompleted = true;
                         return;
 
                     case "CHANGEGENDER":
@@ -2282,7 +2298,7 @@ namespace Server.MirObjects
                                 ReceiveChat(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.PlayerHasBeenLevelled), player.Name, old, player.Level), ChatType.System);
                                 MessageQueue.Enqueue(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.PlayerLevelChangedBy), player.Name, old, player.Level, Name));
                                 Helpers.ChatSystem.SystemMessage(chatMessage: GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.PlayerLevelledByGM), player.Name, old, player.Level, Name));
-
+                                commandCompleted = true;
                                 return;
                             }
                         }
@@ -2302,6 +2318,7 @@ namespace Server.MirObjects
 
                                 ReceiveChat(string.Format("{0} {1} -> {2}.", GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.LevelUp), old, Level), ChatType.System);
                                 MessageQueue.Enqueue(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.PlayerLevelChangedBy), Name, old, Level, Name));
+                                commandCompleted = true;
                                 return;
                             }
                         }
@@ -2330,6 +2347,7 @@ namespace Server.MirObjects
                                 ReceiveChat(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.PlayerHeroLevelled), player.Name, old, hero.Level), ChatType.System);
                                 MessageQueue.Enqueue(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.PlayerHeroLevelledBy), player.Name, old, hero.Level, Name));
                                 Helpers.ChatSystem.SystemMessage(chatMessage: GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.PlayerHeroLevelledByGM), player.Name, old, hero.Level, Name));
+                                commandCompleted = true;
                                 return;
                             }
                         }
@@ -2352,6 +2370,7 @@ namespace Server.MirObjects
 
                                 ReceiveChat(string.Format("{0} {1} -> {2}.", GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.LevelUp), old, hero.Level), ChatType.System);
                                 MessageQueue.Enqueue(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.PlayerHeroLeveledBy), Name, old, hero.Level, Name));
+                                commandCompleted = true;
                                 return;
                             }
                         }
@@ -2391,7 +2410,7 @@ namespace Server.MirObjects
                                     item.GMMade = true;
                                     item.Count = itemCount;
 
-                                    if (CanGainItem(item)) GainItem(item);
+                                    if (CanGainItem(item)) { GainItem(item); commandCompleted = true; }
 
                                     return;
                                 }
@@ -3204,7 +3223,7 @@ namespace Server.MirObjects
 
                             player.ReceiveChat(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.SpellChangedLevel), skill.ToString(), spellLevel), ChatType.Hint);
                             Helpers.ChatSystem.SystemMessage(chatMessage: skillChangeMsg);
-
+                            commandCompleted = true;
                             return;
                         }
                         else
@@ -3331,6 +3350,7 @@ namespace Server.MirObjects
                             }
 
                             player.CallDefaultNPC(DefaultNPCType.Trigger, parts[1]);
+                            commandCompleted = true;
                             return;
                         }
 
@@ -4149,11 +4169,17 @@ namespace Server.MirObjects
                         break;
                 }
 
+                commandCompleted = true;
                 foreach (string command in Envir.CustomCommands)
                 {
                     if (string.Compare(parts[0], command, true) != 0) continue;
 
                     CallDefaultNPC(DefaultNPCType.CustomCommand, parts[0]);
+                }
+                }
+                finally
+                {
+                    ReceiveChat(commandCompleted ? $"命令已处理：@{parts[0]}。" : $"命令未完成：@{parts[0]}。请检查 GM权限、参数、目标是否在线及当前状态。{commandExample}", ChatType.System);
                 }
             }
             else
@@ -7682,7 +7708,7 @@ namespace Server.MirObjects
         }
         public void SearchMap(string text)
         {
-            if (string.IsNullOrWhiteSpace(text) || text.Length < 3) return;
+            if (string.IsNullOrWhiteSpace(text) || text.Length < 2) return;
 
             S.SearchMapResult p = new S.SearchMapResult();
 
@@ -8021,7 +8047,7 @@ namespace Server.MirObjects
 
         public void BuyItem(ulong index, ushort count, PanelType type)
         {
-            if (Dead || count < 1) return;
+            if (Dead || count < 1) { ReceiveChat("购买失败：当前角色状态或购买数量无效。", ChatType.System); return; }
 
             if (NPCPage == null ||
                 !(String.Equals(NPCPage.Key, NPCScript.BuySellKey, StringComparison.CurrentCultureIgnoreCase) ||
@@ -8030,20 +8056,24 @@ namespace Server.MirObjects
                 String.Equals(NPCPage.Key, NPCScript.BuyUsedKey, StringComparison.CurrentCultureIgnoreCase) ||
                 String.Equals(NPCPage.Key, NPCScript.PearlBuyKey, StringComparison.CurrentCultureIgnoreCase) ||
                 String.Equals(NPCPage.Key, NPCScript.BuyNewKey, StringComparison.CurrentCultureIgnoreCase) ||
-                String.Equals(NPCPage.Key, NPCScript.BuySellNewKey, StringComparison.CurrentCultureIgnoreCase))) return;
+                String.Equals(NPCPage.Key, NPCScript.BuySellNewKey, StringComparison.CurrentCultureIgnoreCase)))
+            { ReceiveChat("购买失败：商店会话已失效，请重新与 NPC 对话。", ChatType.System); return; }
 
             for (int i = 0; i < CurrentMap.NPCs.Count; i++)
             {
                 NPCObject ob = CurrentMap.NPCs[i];
                 if (ob.ObjectID != NPCObjectID) continue;
-                if (!Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange)) return;
+                if (!Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange)) { ReceiveChat("购买失败：距离商店过远。", ChatType.System); return; }
 
-                if (type == PanelType.Buy)
+                if (type is PanelType.Buy or PanelType.BuySub)
                 {
                     NPCScript script = NPCScript.Get(NPCScriptID);
                     script.Buy(this, index, count);
                 }
+                else ReceiveChat("购买失败：不支持该商品列表类型。", ChatType.System);
+                return;
             }
+            ReceiveChat("购买失败：商店已不存在，请重新打开对话。", ChatType.System);
         }
         public void CraftItem(ulong index, ushort count, int[] slots)
         {

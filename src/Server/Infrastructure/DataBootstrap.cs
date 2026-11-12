@@ -18,11 +18,11 @@ public static class DataBootstrap
             if (Directory.Exists(source)) CopyTree(source, Path.Combine(paths.World, folder));
         }
         if (!File.Exists(paths.Database) && !File.Exists(Path.Combine(server, "Server.MirDB")))
-            throw new DirectoryNotFoundException($"No SQLite database or seed. Place reference data in {paths.Import}.");
+            throw new DirectoryNotFoundException($"没有 SQLite 数据库或首次导入资料，请将原始数据放入 {paths.Import}。");
         var completed = Path.Combine(paths.Assets, "import-report.json");
         if (!File.Exists(completed))
         {
-            if (!Directory.Exists(client) || !Directory.Exists(server)) throw new DirectoryNotFoundException("Reference import directories are missing.");
+            if (!Directory.Exists(client) || !Directory.Exists(server)) throw new DirectoryNotFoundException("缺少原始数据导入目录。");
             Console.WriteLine("Importing one authoritative resource store (server maps take precedence)...");
             CopyTree(Path.Combine(client, "Data"), Path.Combine(paths.Assets, "libraries"));
             CopyTree(Path.Combine(client, "Sound"), Path.Combine(paths.Assets, "sounds"));

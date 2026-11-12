@@ -30,7 +30,7 @@ public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHost
             var environment = Envir.Main; environment.StatusPortEnabled = false; environment.Start();
             var deadline = Stopwatch.StartNew();
             while (!Ready && environment.Running && deadline.Elapsed < TimeSpan.FromMinutes(2)) await Task.Delay(100, cancellation);
-            if (!Ready) throw new InvalidOperationException("Game engine failed to start; inspect server logs.");
+            if (!Ready) throw new InvalidOperationException("游戏引擎启动失败，请查看服务端日志。");
             Console.WriteLine($"Game server ready on {Settings.IPAddress}:{GamePort}.");
         }
         finally { lifecycle.Release(); }
@@ -43,7 +43,7 @@ public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHost
     }
     public async Task<T> Invoke<T>(Func<T> action, CancellationToken cancellation = default)
     {
-        if (!Ready) throw new InvalidOperationException("Game engine is offline.");
+        if (!Ready) throw new InvalidOperationException("游戏引擎未运行。");
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(20));
         var token = timeout.Token; var state = 0;
@@ -117,14 +117,14 @@ public static class OperationsModule
     {
         group.MapGet("/status", (GameRuntime runtime, CancellationToken token) => runtime.Status(token));
         group.MapGet("/logs", (ServerLogs logs, long? after) => logs.Read(after ?? 0));
-        group.MapPost("/save", async (GameRuntime runtime, CancellationToken token) => { await runtime.Save(token); return new ActionResult("World and player data saved to SQLite."); });
-        group.MapPost("/start", async (GameRuntime runtime, CancellationToken token) => { await runtime.Start(token); return new ActionResult("Game engine started."); });
-        group.MapPost("/stop", async (GameRuntime runtime, CancellationToken token) => { await runtime.Stop(token); return new ActionResult("Game engine stopped and saved."); });
-        group.MapPost("/restart", async (GameRuntime runtime, CancellationToken token) => { await runtime.Restart(token); return new ActionResult("Game engine restarted."); });
+        group.MapPost("/save", async (GameRuntime runtime, CancellationToken token) => { await runtime.Save(token); return new ActionResult("世界和玩家数据已保存到 SQLite。"); });
+        group.MapPost("/start", async (GameRuntime runtime, CancellationToken token) => { await runtime.Start(token); return new ActionResult("游戏引擎已启动。"); });
+        group.MapPost("/stop", async (GameRuntime runtime, CancellationToken token) => { await runtime.Stop(token); return new ActionResult("游戏引擎已停止并保存。"); });
+        group.MapPost("/restart", async (GameRuntime runtime, CancellationToken token) => { await runtime.Restart(token); return new ActionResult("游戏引擎已重启。"); });
         group.MapPost("/reload-scripts", async (GameRuntime runtime, CancellationToken token) =>
         {
             await runtime.Invoke(() => { Envir.Main.ReloadNPCs(); Envir.Main.ReloadDrops(); return true; }, token);
-            return new ActionResult("NPC scripts and drops reloaded. Quest/config changes require an engine restart.");
+            return new ActionResult("人物脚本与掉落规则已重新加载。任务和配置修改需要重启引擎。");
         });
     }
 }
