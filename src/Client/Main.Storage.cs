@@ -12,7 +12,7 @@ public partial class Main
     private TextureRect storageLockedPage = null!;
     private readonly List<Button> storageButtons = new();
     private int storagePage;
-    private bool storageBusy, changingStoragePassword;
+    private bool storageBusy, changingStoragePassword, storagePreview;
     private ulong draggedStorageItem;
     private uint storageNpc;
 
@@ -31,7 +31,7 @@ public partial class Main
         for (var index = 0; index < Globals.StorageGridSize; index++)
         {
             var slot = index;
-            var button = new Button { Position = new Vector2(9 + index % 10 * 37, 60 + index / 10 * 33), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
+            var button = new ItemTipButton { Position = new Vector2(9 + index % 10 * 37, 60 + index / 10 * 33), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
             CellStyle(button); button.GuiInput += input => StorageCellInput(slot, input);
             storageGrid.AddChild(button); storageButtons.Add(button);
         }
@@ -49,23 +49,32 @@ public partial class Main
         Draggable(storage);
     }
 
-    public bool CanUseStorage => State.StorageActive && State.StorageUnlocked && State.User is { } user && State.Me?.Dead == false &&
+    public bool CanUseStorage => !storagePreview && State.StorageActive && State.StorageUnlocked && State.User is { } user && State.Me?.Dead == false &&
         (!user.RequireStoragePassword || user.HasStoragePassword) && State.Actors.TryGetValue(storageNpc, out var npcActor) &&
         Distance(user.Location, npcActor.Location) <= Globals.DataRange;
     private int StorageCapacity => Math.Min(State.Storage.Length, Globals.StorageGridSize * (State.User?.HasExpandedStorage == true ? 2 : 1));
     private void OpenStorage()
     {
         CloseQuests();
+        storagePreview = false;
         storageNpc = npcDialogueId; storageBusy = changingStoragePassword = false; storagePage = 0;
         shopMode = null; npc.Hide(); ClearStoragePasswords(); storageAuthError.Text = ""; storageSubmit.Disabled = false;
         storage.Show(); inventory.Position = storage.Position + new Vector2(391, 0); inventory.Show();
         RenderStorage();
         if (!State.StorageUnlocked) storagePassword.GrabFocus();
     }
+    private void OpenInventoryStorage()
+    {
+        if (storage.Visible) { CloseStorage(); return; }
+        if (State.StorageActive) { OpenStorage(); return; }
+        storagePreview = true; storageBusy = changingStoragePassword = false; storagePage = 0;
+        ClearStoragePasswords(); storage.Show(); inventory.Position = storage.Position + new Vector2(391, 0); inventory.Show(); RenderStorage();
+    }
     private void CloseStorage()
     {
         storage.Hide(); ClearStoragePasswords(); changingStoragePassword = false;
-        State.StorageActive = State.StorageUnlocked = false; storageBusy = false; draggedStorageItem = 0;
+        if (!storagePreview) State.StorageActive = State.StorageUnlocked = false;
+        storagePreview = false; storageBusy = false; draggedStorageItem = 0;
     }
     private void ClearStoragePasswords() { storagePassword.Text = storageNewPassword.Text = storageConfirm.Text = ""; }
     private void RenderStorage()
@@ -75,7 +84,7 @@ public partial class Main
         storageFirstPage.Index = storageFirstPage.HoverIndex = storagePage == 0 ? 743 : 744;
         storageSecondPage.Index = storageSecondPage.HoverIndex = storagePage == 0 ? 746 : 745;
         var setup = State.User.RequireStoragePassword && !State.User.HasStoragePassword;
-        var authenticating = setup || !State.StorageUnlocked || changingStoragePassword;
+        var authenticating = !storagePreview && (setup || !State.StorageUnlocked || changingStoragePassword);
         storageAuth.Visible = authenticating; storageGrid.Visible = !authenticating;
         storageAuthTitle.Text = setup ? "首次使用：设置独立仓库密码" : changingStoragePassword ? "修改仓库密码" : "输入仓库密码解锁";
         storagePassword.PlaceholderText = changingStoragePassword ? "当前仓库密码" : setup ? "新仓库密码" : "仓库密码";
@@ -88,17 +97,18 @@ public partial class Main
             var item = index < StorageCapacity ? State.Storage[index] : null;
             button.Disabled = !CanUseStorage || storageBusy || index >= StorageCapacity;
             button.Icon = null; button.Text = item?.Count > 1 ? item.Count.ToString() : "";
-            button.TooltipText = item == null ? index >= StorageCapacity ? "扩展仓库未租用" : "空格" : ItemText(item);
+            ItemTooltip(button, item, index >= StorageCapacity ? "扩展仓库未租用" : "空格");
             if (item != null) icons.Add((button, item));
         }
-        storageGrid.TooltipText = "双击存取；拖动交换或跨窗口移动";
-        storageLockedPage.Visible = storageNotice.Visible = storagePage == 1 && !State.User.HasExpandedStorage && !authenticating;
-        storageNotice.Text = storagePage == 1 && State.User.HasExpandedStorage == false ? "扩展仓库未租用，请按原服规则开通。" : "双击存取；拖动交换或跨窗口移动";
+        storageGrid.TooltipText = storagePreview ? "仓库预览；存取请与仓库 NPC 对话。" : "双击存取；拖动交换或跨窗口移动";
+        storageLockedPage.Visible = storagePage == 1 && !State.User.HasExpandedStorage && !authenticating;
+        storageNotice.Visible = storagePreview || storageLockedPage.Visible;
+        storageNotice.Text = storagePreview ? State.Storage.Length == 0 ? "仓库尚未读取，请先与仓库 NPC 对话。" : "仓库预览 · 存取请与仓库 NPC 对话。" : "扩展仓库未租用，请按原服规则开通。";
     }
     public void SelectStoragePage(int page) { if (page is < 0 or > 1) return; storagePage = page; RenderStorage(); }
     public void ChangeStoragePassword()
     {
-        if (!State.StorageUnlocked || storageBusy) return;
+        if (storagePreview || !State.StorageUnlocked || storageBusy) return;
         changingStoragePassword = true; ClearStoragePasswords(); storageAuthError.Text = ""; RenderStorage(); storagePassword.GrabFocus();
     }
     public void EnterStoragePassword(string current, string next = "", string confirmation = "")
@@ -141,6 +151,14 @@ public partial class Main
     public void TakeStorage(int from, int to = -1)
     {
         if (!CanUseStorage || storageBusy || State.User == null || (uint)from >= StorageCapacity || State.Storage[from] == null) return;
+        var source = State.Storage[from];
+        var target = to < 0 ? State.User.Inventory.FirstOrDefault(item => source.CanStackWith(item) && item.Count < item.Info.StackSize) : State.User.Inventory.ElementAtOrDefault(to);
+        if (target != null && source.CanStackWith(target) && target.Count < target.Info.StackSize)
+        {
+            storageBusy = true;
+            Send(new C.MergeItem { GridFrom = MirGridType.Storage, GridTo = MirGridType.Inventory, IDFrom = source.UniqueID, IDTo = target.UniqueID });
+            RenderStorage(); return;
+        }
         if (to < 0) to = Array.IndexOf(State.User.Inventory, null);
         if ((uint)to >= State.User.Inventory.Length || State.User.Inventory[to] != null) { Log("背包没有可用空位。"); return; }
         storageBusy = true; Send(new C.TakeBackItem { From = from, To = to }); RenderStorage();
@@ -172,6 +190,7 @@ public partial class Main
     private void ProcessStorage()
     {
         if (!storage.Visible) return;
+        if (storagePreview) { if (State.User == null || State.Me?.Dead != false) CloseStorage(); return; }
         if (!State.StorageActive || State.User == null || State.Me?.Dead != false || !State.Actors.TryGetValue(storageNpc, out var npcActor) ||
             Distance(State.User.Location, npcActor.Location) > Globals.DataRange) CloseStorage();
     }

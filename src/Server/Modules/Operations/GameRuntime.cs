@@ -12,7 +12,10 @@ public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHost
     public SemaphoreSlim Changes { get; } = new(1);
     public int GamePort { get; private set; } = 7000;
     public bool Ready => Envir.Main.Running && Envir.Main.NetworkStarted;
+    public bool Stopping { get; private set; }
     public DateTimeOffset? LastSave { get; private set; }
+    public Func<Task>? BeforeStop { get; set; }
+    public string AssetVersion => assets.Version;
     public Task StartAsync(CancellationToken cancellationToken) => Start(cancellationToken);
     public Task StopAsync(CancellationToken cancellationToken) => Stop(cancellationToken);
     public async Task Start(CancellationToken cancellation)
@@ -21,6 +24,7 @@ public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHost
         try
         {
             if (Ready) return;
+            Stopping = false;
             Settings.MapPath = Path.Combine(paths.Assets, "maps");
             Settings.Load();
             Settings.IPAddress = Environment.GetEnvironmentVariable("MIR2_BIND_ADDRESS") ?? "127.0.0.1";
@@ -30,7 +34,8 @@ public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHost
             var environment = Envir.Main; environment.StatusPortEnabled = false; environment.Start();
             var deadline = Stopwatch.StartNew();
             while (!Ready && environment.Running && deadline.Elapsed < TimeSpan.FromMinutes(2)) await Task.Delay(100, cancellation);
-            if (!Ready) throw new InvalidOperationException("游戏引擎启动失败，请查看服务端日志。");
+            if (!Ready) throw new InvalidOperationException("游戏引擎启动失败：" + string.Join(Environment.NewLine,
+                MessageQueue.Instance.MessageLog.Concat(MessageQueue.Instance.DebugLog).TakeLast(8)));
             Console.WriteLine($"Game server ready on {Settings.IPAddress}:{GamePort}.");
         }
         finally { lifecycle.Release(); }
@@ -38,7 +43,12 @@ public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHost
     public async Task Stop(CancellationToken cancellation)
     {
         await lifecycle.WaitAsync(cancellation);
-        try { await Task.Run(() => Envir.Main.Stop(), CancellationToken.None); LastSave = DateTimeOffset.UtcNow; }
+        try
+        {
+            Stopping = true;
+            try { if (BeforeStop != null) await BeforeStop(); }
+            finally { await Task.Run(() => Envir.Main.Stop(), CancellationToken.None); LastSave = DateTimeOffset.UtcNow; }
+        }
         finally { lifecycle.Release(); }
     }
     public async Task<T> Invoke<T>(Func<T> action, CancellationToken cancellation = default)
@@ -115,6 +125,14 @@ public static class OperationsModule
 {
     public static void MapOperations(this RouteGroupBuilder group)
     {
+        group.MapGet("/settings", (GameRuntime runtime, SystemSettings settings, CancellationToken token) => runtime.Invoke(settings.Read, token));
+        group.MapPut("/settings", async (GameRuntime runtime, SystemSettings settings, ServerSettingsEdit edit, CancellationToken token) =>
+        {
+            var saved = await runtime.Invoke(() => settings.Save(edit), token);
+            // 安全区法术在地图创建时生成，必须正常保存重启才能更新。
+            if (saved.RequiresRestart) await runtime.Restart(CancellationToken.None);
+            return await runtime.Invoke(settings.Read, CancellationToken.None);
+        });
         group.MapGet("/status", (GameRuntime runtime, CancellationToken token) => runtime.Status(token));
         group.MapGet("/logs", (ServerLogs logs, long? after) => logs.Read(after ?? 0));
         group.MapPost("/save", async (GameRuntime runtime, CancellationToken token) => { await runtime.Save(token); return new ActionResult("世界和玩家数据已保存到 SQLite。"); });

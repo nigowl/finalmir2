@@ -56,6 +56,7 @@ public partial class Main
     private void InventoryDragInput(InputEvent input)
     {
         if (input is InputEventMouseMotion motion) itemDragPosition = motion.Position;
+        if (SkillPreparationBusy) return;
         if (input is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mouse || State.User == null || scene != "game") return;
         itemDragPosition = mouse.Position;
         if (mouse.Pressed)
@@ -85,7 +86,12 @@ public partial class Main
         else if (tradeSlot >= 0) OfferTradeItem(from, tradeSlot);
         else if (storageSlot >= 0) StoreInventory(from, storagePage * Globals.StorageGridSize + storageSlot);
         else if (destinationButton.button != null && destinationButton.slot != from)
-            Send(new C.MoveItem { Grid = MirGridType.Inventory, From = from, To = destinationButton.slot });
+        {
+            var source = State.User.Inventory[from]; var target = State.User.Inventory[destinationButton.slot];
+            if (target != null && source.CanStackWith(target) && target.Count < target.Info.StackSize)
+                Send(new C.MergeItem { GridFrom = MirGridType.Inventory, GridTo = MirGridType.Inventory, IDFrom = source.UniqueID, IDTo = target.UniqueID });
+            else Send(new C.MoveItem { Grid = MirGridType.Inventory, From = from, To = destinationButton.slot });
+        }
         else if (inventoryDragSource < 6 && destinationButton.button != null && destinationButton.slot == from) UseItem(draggedItem);
         else if (position.DistanceTo(itemDragStart) >= 4) OfferItemDrop(draggedItem, position);
     }

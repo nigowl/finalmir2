@@ -1,0 +1,25 @@
+@using System.Text.Json
+<AdminDialog Visible="true" Title="保存自定义人格修订" OnClose="OnClose" OnSave="Save" Busy="busy" Dirty="@(original!=Current)">
+<DialogContent>
+    @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
+    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="人格标识（字母、数字、下划线）" Immediate="true" @bind-Value="key" />
+    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="人格名称" Immediate="true" @bind-Value="name" />
+    <MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="新修订号" Min="1" Max="10000" @bind-Value="revision" />
+    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="描述" Immediate="true" @bind-Value="description" />
+    <PersonalityFields Profile="draft" Presets="Presets" />
+    <MudText Typo="Typo.caption">复制参数并保存为新修订。不会自动覆盖已有角色的人格；被引用修订保持可读取。</MudText>
+</DialogContent>
+</AdminDialog>
+@code{
+    [Parameter,EditorRequired]public PersonalityPreset Source{get;set;}=null!;
+    [Parameter]public PersonalityPreset[] Presets{get;set;}=[];
+    [Parameter]public EventCallback OnClose{get;set;}
+    [Parameter]public EventCallback OnSaved{get;set;}
+    private CompanionProfile draft=new();private string key="",name="",description="";private int revision=1;private bool busy;private string? error;
+    private string original="";
+    private string Current=>JsonSerializer.Serialize(new{key,name,description,revision,draft.Traits});
+    protected override void OnInitialized()
+    {key=Source.BuiltIn?Source.Key+"_custom":Source.Key;name=Source.Name;description=Source.Description;revision=Source.BuiltIn?1:Source.Revision+1;draft=new(){PresetKey=Source.Key,PresetRevision=Source.Revision,Traits=Source.Traits};original=Current;}
+    private async Task Save()
+    {busy=true;try{await Api.Post<ActionResult>("management/companions/presets",new PersonalityPreset(key,revision,name,description,draft.Traits,false));await OnSaved.InvokeAsync();}catch(Exception e){error=e.Message;}finally{busy=false;}}
+}

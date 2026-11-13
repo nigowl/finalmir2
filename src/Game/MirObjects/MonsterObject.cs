@@ -750,8 +750,8 @@ namespace Server.MirObjects
             Stats.Add(Info.Stats);
             ApplyMonsterTypeBonuses();
 
-            MoveSpeed = Info.MoveSpeed;
-            AttackSpeed = Info.AttackSpeed;
+            MoveSpeed = Server.Helpers.GameBalance.Interval(Info.MoveSpeed, Settings.MonsterMoveSpeedRate);
+            AttackSpeed = Server.Helpers.GameBalance.Interval(Info.AttackSpeed, Settings.MonsterAttackSpeedRate);
         }
 
         protected virtual void ApplyMonsterTypeBonuses()
@@ -819,6 +819,7 @@ namespace Server.MirObjects
             Stats[Stat.MaxMAC] += PetLevel * 2;
             Stats[Stat.MinDC] += PetLevel;
             Stats[Stat.MaxDC] += PetLevel;
+            Server.Helpers.GameBalance.MonsterStats(Stats);
 
             if (Info.Name == Settings.SkeletonName || Info.Name == Settings.ShinsuName || Info.Name == Settings.AngelName)
             {
@@ -1174,16 +1175,17 @@ namespace Server.MirObjects
                 return true;
             }
 
-            uint count = gold / Settings.MaxDropGold == 0 ? 1 : gold / Settings.MaxDropGold + 1;
-            for (int i = 0; i < count; i++)
+            while (gold > 0)
             {
-                ItemObject ob = new ItemObject(this, i != count - 1 ? Settings.MaxDropGold : gold % Settings.MaxDropGold)
+                var amount = Math.Min(gold, Math.Max(1u, Settings.MaxDropGold));
+                ItemObject ob = new ItemObject(this, amount)
                 {
                     Owner = EXPOwner,
                     OwnerTime = Envir.Time + Settings.Minute,
                 };
 
-                ob.Drop(Settings.DropRange);
+                if (!ob.Drop(Settings.DropRange)) return false;
+                gold -= amount;
             }
 
             return true;
@@ -1465,8 +1467,8 @@ namespace Server.MirObjects
                 {
                     if (poison.PType == PoisonType.Slow)
                     {
-                        MoveSpeed = Info.MoveSpeed;
-                        AttackSpeed = Info.AttackSpeed;
+                        MoveSpeed = Server.Helpers.GameBalance.Interval(Info.MoveSpeed, Settings.MonsterMoveSpeedRate);
+                        AttackSpeed = Server.Helpers.GameBalance.Interval(Info.AttackSpeed, Settings.MonsterAttackSpeedRate);
                         AttackTime = Envir.Time + AttackSpeed;
                     }
                     PoisonList.RemoveAt(i);
@@ -1482,8 +1484,8 @@ namespace Server.MirObjects
                     {
                         if (poison.PType == PoisonType.Slow)
                         {
-                            MoveSpeed = Info.MoveSpeed;
-                            AttackSpeed = Info.AttackSpeed;
+                            MoveSpeed = Server.Helpers.GameBalance.Interval(Info.MoveSpeed, Settings.MonsterMoveSpeedRate);
+                            AttackSpeed = Server.Helpers.GameBalance.Interval(Info.AttackSpeed, Settings.MonsterAttackSpeedRate);
                             AttackTime = Envir.Time + AttackSpeed;
                         }
                         PoisonList.RemoveAt(i);
@@ -1547,8 +1549,8 @@ namespace Server.MirObjects
 
                         if (poison.Time >= poison.Duration)
                         {
-                            MoveSpeed = Info.MoveSpeed;
-                            AttackSpeed = Info.AttackSpeed;
+                            MoveSpeed = Server.Helpers.GameBalance.Interval(Info.MoveSpeed, Settings.MonsterMoveSpeedRate);
+                            AttackSpeed = Server.Helpers.GameBalance.Interval(Info.AttackSpeed, Settings.MonsterAttackSpeedRate);
                             //Reset the Attack time
                             AttackTime = Envir.Time + AttackSpeed;
                         }
@@ -2442,6 +2444,9 @@ namespace Server.MirObjects
 
             switch (attacker.AMode)
             {
+                case AttackMode.Couple:
+                case AttackMode.Mentor:
+                    return !Server.Helpers.AttackModeProtection.Protects(attacker, Master);
                 case AttackMode.Group:
                     return Master.GroupMembers == null || !Master.GroupMembers.Contains(attacker);
                 case AttackMode.Guild:
@@ -2494,6 +2499,10 @@ namespace Server.MirObjects
 
                 switch (attacker.Master.AMode)
                 {
+                    case AttackMode.Couple:
+                    case AttackMode.Mentor:
+                        if (Server.Helpers.AttackModeProtection.Protects(attacker.Master, Master)) return false;
+                        break;
                     case AttackMode.Group:
                         if (Master.GroupMembers != null && Master.GroupMembers.Contains((PlayerObject)attacker.Master)) return false;
                         break;
@@ -2545,6 +2554,9 @@ namespace Server.MirObjects
 
             switch (ally.AMode)
             {
+                case AttackMode.Couple:
+                case AttackMode.Mentor:
+                    return Server.Helpers.AttackModeProtection.Protects(ally, Master);
                 case AttackMode.Group:
                     return Master.GroupMembers != null && Master.GroupMembers.Contains(ally);
                 case AttackMode.Guild:
@@ -2583,7 +2595,8 @@ namespace Server.MirObjects
 
             if (damageWeapon)
                 attacker.DamageWeapon();
-            damage += attacker.Stats[Stat.AttackBonus];
+            damage = (int)Math.Clamp((long)damage + attacker.Stats[Stat.AttackBonus], int.MinValue, int.MaxValue);
+            damage = Server.Helpers.GameBalance.HumanDamage(this, damage, type);
 
             if (armour >= damage)
             {
@@ -2594,7 +2607,7 @@ namespace Server.MirObjects
             if (Envir.Random.Next(100) < (attacker.Stats[Stat.CriticalRate] * Settings.CriticalRateWeight))
             {
                 Broadcast(new S.ObjectEffect { ObjectID = ObjectID, Effect = SpellEffect.Critical });
-                damage = Math.Min(int.MaxValue, damage + (int)Math.Floor(damage * (((double)attacker.Stats[Stat.CriticalDamage] / (double)Settings.CriticalDamageWeight) * 10)));
+                damage = (int)Math.Clamp(Math.Floor(damage * (1 + (double)attacker.Stats[Stat.CriticalDamage] / Settings.CriticalDamageWeight * 10)), 0, int.MaxValue);
                 BroadcastDamageIndicator(DamageType.Critical);
             }
 
@@ -2660,7 +2673,7 @@ namespace Server.MirObjects
                     if (player != null && player.CurrentMap == attacker.CurrentMap && Functions.InRange(player.CurrentLocation, attacker.CurrentLocation, Globals.DataRange) && !player.Dead)
                     {
                         if (GroupMembers != null && GroupMembers.Contains(player))
-                            damage += (int)Math.Round((double)(damage * attacker.Stats[Stat.MentorDamageRatePercent]) / 100);
+                            damage = (int)Math.Clamp(damage + Math.Round((double)damage * attacker.Stats[Stat.MentorDamageRatePercent] / 100), int.MinValue, int.MaxValue);
                     }
                 }
             }
@@ -2685,6 +2698,7 @@ namespace Server.MirObjects
 
         public override int Attacked(MonsterObject attacker, int damage, DefenceType type = DefenceType.ACAgility)
         {
+            damage = Server.Helpers.GameBalance.MonsterDamage(attacker, damage);
             if (Target == null && attacker.IsAttackTarget(this))
                 Target = attacker;
 
@@ -2801,6 +2815,7 @@ namespace Server.MirObjects
             }
 
             if (p.PType == PoisonType.None) return;
+            p = Server.Helpers.GameBalance.Poison(p);
 
             for (int i = 0; i < PoisonList.Count; i++)
             {

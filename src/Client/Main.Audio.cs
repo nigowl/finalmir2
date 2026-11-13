@@ -54,7 +54,9 @@ public partial class Main
         switch (packet)
         {
             case S.ObjectAttack attack when State.Actors.TryGetValue(attack.ObjectID, out var actor):
-                _ = PlaySound(actor.Kind == ObjectType.Monster ? actor.Image * 10 + 1 : OriginalSoundRules.Swing(actor.Weapon, actor.Class == MirClass.Assassin)); break;
+                _ = PlaySound(actor.Kind == ObjectType.Monster ? actor.Image * 10 + 1 : OriginalSoundRules.Swing(actor.Weapon, actor.Class == MirClass.Assassin));
+                if (actor.Kind == ObjectType.Player) PlayMeleeSound(attack.Spell, actor.Gender);
+                break;
             case S.ObjectStruck struck when State.Actors.TryGetValue(struck.ObjectID, out var actor):
                 _ = PlaySound(actor.Kind == ObjectType.Monster ? actor.Image * 10 + 2 : actor.Gender == MirGender.Male ? 10138 : 10139);
                 if (struck.AttackerID == State.User?.ObjectID) _ = PlaySound(10070);
@@ -64,8 +66,12 @@ public partial class Main
                 _ = PlaySound(actor.Kind == ObjectType.Monster ? actor.Image * 10 + 3 : actor.Gender == MirGender.Male ? 10144 : 10145); break;
             case S.Death: _ = PlaySound(State.Me?.Gender == MirGender.Female ? 10145 : 10144); break;
             case S.MapChanged: _ = PlaySound(10110); break;
-            case S.ObjectMagic magic when magic.Cast && (magic.ObjectID != State.User?.ObjectID || magic.SelfBroadcast):
-                _ = PlaySound(20000 + (int)magic.Spell * 10); break;
         }
+    }
+
+    private void PlayMeleeSound(Spell spell, MirGender gender)
+    {
+        if (spell is Spell.Slaying or Spell.Thrusting or Spell.HalfMoon or Spell.CrossHalfMoon or Spell.DoubleSlash or Spell.TwinDrakeBlade or Spell.FlamingSword)
+            _ = PlaySound(20000 + (int)spell * 10 + (spell == Spell.FlamingSword || spell == Spell.Slaying && gender == MirGender.Female ? 1 : 0));
     }
 }

@@ -308,6 +308,8 @@
   "AttackMode_EnemyGuild": "敌对行会",
   "AttackMode_RedBrown": "红名与灰名",
   "AttackMode_All": "全体",
+  "AttackMode_Couple": "夫妻",
+  "AttackMode_Mentor": "师徒",
   "PetMode_Both": "攻击和移动",
   "PetMode_MoveOnly": "仅移动",
   "PetMode_AttackOnly": "仅攻击",

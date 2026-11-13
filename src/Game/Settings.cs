@@ -6,7 +6,7 @@ using Shared;
 
 namespace Server
 {
-    public static class Settings
+    public static partial class Settings
     {
         private static MessageQueue MessageQueue
         {
@@ -377,7 +377,8 @@ namespace Server
 
         public static void Load()
         {
-            Reader = new InIReader(Path.Combine(ConfigPath, "Setup.ini"));            
+            Reader = new InIReader(Path.Combine(ConfigPath, "Setup.ini"));
+            LoadBalance();
             //General
             VersionPath = Reader.ReadString("General", "VersionPath", VersionPath);
             CheckVersion = Reader.ReadBoolean("General", "CheckVersion", CheckVersion);
@@ -667,6 +668,7 @@ namespace Server
 
         public static void Save()
         {
+            SaveBalance();
             //General
             Reader.Write("General", "VersionPath", VersionPath);
             Reader.Write("General", "CheckVersion", CheckVersion);

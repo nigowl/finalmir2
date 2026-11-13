@@ -23,7 +23,7 @@
         </MudSelect>
     </MudItem>
     <MudItem xs="12" sm="7"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="string" @bind-Value="search" Label="搜索资源路径" /></MudItem>
-    <MudItem xs="12" sm="2"><MudButton OnClick="Load" Disabled="busy" Class="mt-4">搜索 / 刷新</MudButton></MudItem>
+    <MudItem xs="12" sm="2"><MudButton OnClick="Load" Disabled="busy" Class="mt-4" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">搜索 / 刷新</MudButton></MudItem>
 </MudGrid>
 @if (listing != null)
 {
@@ -32,7 +32,7 @@
         <RowTemplate>
             <MudTd>@(context.Kind switch { "libraries" => "素材库", "maps" => "地图", "sounds" => "声音", _ => context.Kind })</MudTd><MudTd Class="path">@context.Path</MudTd><MudTd>@((context.Size / 1024d).ToString("N1")) KiB</MudTd><MudTd><MudTooltip Text="@context.Sha256"><span class="path">@context.Sha256[..12]</span></MudTooltip></MudTd>
             <MudTd>
-                @if (context.Kind is "libraries" or "maps") { <MudButton Size="Size.Small" OnClick="@(() => Inspect(context))">预览</MudButton> }
+                @if (context.Kind is "libraries" or "maps") { <MudButton Size="Size.Small" OnClick="@(() => Inspect(context))" Variant="Variant.Text" Color="Color.Primary">预览</MudButton> }
                 <MudLink Href="@($"/asset-download/{context.Kind}/{AdminApi.Escape(context.Path)}")">下载</MudLink>
             </MudTd>
         </RowTemplate>

@@ -65,7 +65,7 @@ VersionDirectory 是完整版本目录，支持绝对路径；相对路径始终
 
 管理密钥在所选版本的 runtime/admin.key 内。管理界面显示版本名称；管理端请求携带版本目录身份，服务端会拒绝目录不匹配的请求，即使两个复制版本仍使用相同的管理密钥。
 
-根目录原有 start-server.sh、start-admin.sh、start-client.sh 保留为开发入口，仍先构建并安全替换所属实例，默认同样使用 data/versions/default。
+根目录 start-server.sh、start-admin.sh、start-client.sh 是 Debug/Development 开发入口，先构建并安全替换所属实例，默认使用 data/versions/default；管理仅本机开发免密。publish.sh 和发布程序仍为 Release，管理密钥登录不变。
 
 ## 增加玩法版本
 
@@ -101,3 +101,5 @@ python3 tests/Deployment/smoke.py
 ```
 
 部署测试将三端复制到项目外的临时目录，在不把 dotnet 或 Godot 加入 PATH 的环境运行发布程序。测试通过完整目录复制生成两个版本，检查并行运行、账户/怪物/地图/NPC 脚本隔离、管理版本标签和错配拒绝、Blazor 静态资源、Godot 完整游玩及存档重启、SQLite 完整性，以及重复发布保留配置。素材库在测试 fixture 中只读复用，正式版本数据不参与测试；失败保留隔离目录供排查。
+
+陪玩执行组件随服务端发布在 `server/companion/`，由宿主启动；不要混用不同构建的 `Mir2.Shared.dll`。发布脚本确保两者协议指纹一致。陪玩人格、昵称池、模型/密钥、日程和用量随版本SQLite复制，改为新目录后总开关默认关闭；使用方法见 [陪玩管理](COMPANIONS_OPERATIONS.md)。

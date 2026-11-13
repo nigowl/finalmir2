@@ -10,13 +10,13 @@
 @if (notice != null) { <MudAlert Severity="Severity.Success" Class="my-3">@notice</MudAlert> }
 @if (busy) { <MudProgressLinear Indeterminate="true" /> }
 <fieldset disabled="@busy" style="border:0;padding:0;min-width:0">
-<MudStack Row="true" Class="mb-3"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="行会名称 / 编号" @bind-Value="search" /><MudButton OnClick="Load">查询 / 刷新</MudButton></MudStack>
-<MudButton Class="mb-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="New">新增行会</MudButton>
+<MudStack Row="true" Class="mb-3"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="行会名称 / 编号" @bind-Value="search" /><MudButton OnClick="Load" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">查询</MudButton></MudStack>
+<MudButton Class="mb-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="New" Size="Size.Small">新增行会</MudButton>
 <MudTable T="GuildRow" Items="rows" Dense="true" Hover="true" RowsPerPage="10">
     <HeaderContent><MudTh>行会</MudTh><MudTh>等级</MudTh><MudTh>资金</MudTh><MudTh>成员 / 在线</MudTh><MudTh>会长</MudTh><MudTh>操作</MudTh></HeaderContent>
-    <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>@context.Level</MudTd><MudTd>@context.Gold</MudTd><MudTd>@context.Members / @context.Online</MudTd><MudTd>@context.Leader</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))">管理</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
+    <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>@context.Level</MudTd><MudTd>@context.Gold</MudTd><MudTd>@context.Members / @context.Online</MudTd><MudTd>@context.Leader</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))" Variant="Variant.Text" Color="Color.Primary">管理</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
 </MudTable>
-<AdminDialog @bind-Visible="createOpen" Title="创建行会" OnClose="CloseCreate" OnSave="Create" CanSave="@(!string.IsNullOrWhiteSpace(newName) && leaderId > 0)" Busy="busy" Dirty="CreateDirty" SaveText="创建行会">
+<AdminDialog @bind-Visible="createOpen" Title="创建行会" OnClose="CloseCreate" OnSave="Create" CanSave="@(!string.IsNullOrWhiteSpace(newName) && leaderId > 0)" Busy="busy" Dirty="CreateDirty">
     <DialogContent>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
     <MudStack Row="true"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="行会名称" @bind-Value="newName" MaxLength="20" /><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="会长角色编号" @bind-Value="leaderId" Min="1" /></MudStack>
@@ -24,25 +24,25 @@
 </AdminDialog>
 @if (detail != null)
 {
-    <AdminDialog Visible="true" Title="编辑行会" OnClose="CloseEdit" OnSave="Save" CanSave="@(!busy && CanSubmit)" Busy="busy" Dirty="@(Draft != original)" SaveText="备份并保存行会">
+    <AdminDialog Visible="true" Title="编辑行会" OnClose="CloseEdit" OnSave="Save" CanSave="@(!busy && CanSubmit)" Busy="busy" Dirty="@(Draft != original)">
     <DialogContent>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }<MudText Typo="Typo.h6">#@detail.Id @detail.Name · @detail.Members.Length / @detail.Capacity 人</MudText>
         <MudGrid Spacing="2" Class="my-3"><MudItem xs="12" sm="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="行会名称" @bind-Value="name" MaxLength="20" /></MudItem><MudItem xs="6" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="等级" @bind-Value="level" Min="0" /></MudItem><MudItem xs="6" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="可分配点数" @bind-Value="points" Min="0" Max="255" /></MudItem>
         <MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="long" Immediate="true" Label="当前等级经验" @bind-Value="experience" Min="0" /></MudItem><MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="uint" Immediate="true" Label="行会资金" @bind-Value="gold" /></MudItem><MudItem xs="12"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="行会公告" @bind-Value="guildNotice" Lines="5" /></MudItem></MudGrid>
-        <MudStack Row="true" Wrap="Wrap.Wrap" Class="my-3"><MudButton OnClick="@(() => Open(detail.Id))">重新读取</MudButton><MudButton Disabled="@(!CanSubmit)" Color="Color.Error" OnClick="Disband">解散行会</MudButton></MudStack>
+        <MudStack Row="true" Wrap="Wrap.Wrap" Class="my-3"><MudButton OnClick="@(() => Open(detail.Id))" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">重新读取</MudButton><MudButton Disabled="@(!CanSubmit)" Color="Color.Error" OnClick="Disband" Size="Size.Small" Variant="Variant.Outlined">解散行会</MudButton></MudStack>
         <MudAlert Severity="Severity.Warning">会长至少保留一人。占领领地、结盟或战争中的行会不能改名；解散前须清空资金和仓库并解除以上关系；新手行会由引擎管理。</MudAlert>
         <MudText Typo="Typo.h6" Class="mt-5">成员</MudText>
         <MudTable T="GuildMemberRow" Items="detail.Members" Dense="true" RowsPerPage="10">
             <HeaderContent><MudTh>角色</MudTh><MudTh>职位</MudTh><MudTh>状态</MudTh><MudTh>操作</MudTh></HeaderContent>
-            <RowTemplate><MudTd><MudLink Href="@($"/characters?selected={context.CharacterId}")">#@context.CharacterId @context.Name</MudLink></MudTd><MudTd>@context.RankName</MudTd><MudTd>@(context.Online ? "在线" : "离线")</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => memberId = context.CharacterId)">选中</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
+            <RowTemplate><MudTd><MudLink Href="@($"/characters?selected={context.CharacterId}")">#@context.CharacterId @context.Name</MudLink></MudTd><MudTd>@context.RankName</MudTd><MudTd>@(context.Online ? "在线" : "离线")</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => memberId = context.CharacterId)" Variant="Variant.Text" Color="Color.Primary">选中</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
         </MudTable>
         <MudStack Row="true" Wrap="Wrap.Wrap" Class="my-3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="目标角色编号" @bind-Value="memberId" Min="1" /><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="int" Label="目标职位" @bind-Value="memberRank">@foreach (var rank in detail.Ranks.Where(r => r.Id > 0)) { <MudSelectItem Value="rank.Id">@rank.Name</MudSelectItem> }</MudSelect></MudStack>
-        <MudStack Row="true" Wrap="Wrap.Wrap"><MudButton Disabled="@(!CanSubmit || memberId <= 0)" OnClick="@(() => Member("add"))">添加成员</MudButton><MudButton Disabled="@(!CanSubmit || memberId <= 0)" OnClick="@(() => Member("rank"))">调整成员职位</MudButton><MudButton Disabled="@(!CanSubmit || memberId <= 0)" Color="Color.Warning" OnClick="@(() => Member("leader"))">转交会长</MudButton><MudButton Disabled="@(!CanSubmit || memberId <= 0)" Color="Color.Error" OnClick="@(() => Member("remove"))">移除成员</MudButton></MudStack>
+        <MudStack Row="true" Wrap="Wrap.Wrap"><MudButton Disabled="@(!CanSubmit || memberId <= 0)" OnClick="@(() => Member("add"))" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">添加成员</MudButton><MudButton Disabled="@(!CanSubmit || memberId <= 0)" OnClick="@(() => Member("rank"))" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">调整成员职位</MudButton><MudButton Disabled="@(!CanSubmit || memberId <= 0)" Color="Color.Warning" OnClick="@(() => Member("leader"))" Size="Size.Small" Variant="Variant.Outlined">转交会长</MudButton><MudButton Disabled="@(!CanSubmit || memberId <= 0)" Color="Color.Error" OnClick="@(() => Member("remove"))" Size="Size.Small" Variant="Variant.Outlined">移除成员</MudButton></MudStack>
         <MudExpansionPanels Class="mt-5" MultiExpansion="true"><MudExpansionPanel Text="职位名称与权限">
             <MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="int" Label="编辑职位" Value="rankId" ValueChanged="SelectRank"><MudSelectItem Value="-1">新增职位</MudSelectItem>@foreach (var rank in detail.Ranks) { <MudSelectItem Value="rank.Id">#@rank.Id @rank.Name</MudSelectItem> }</MudSelect>
             <MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="职位名称" @bind-Value="rankName" MaxLength="20" />
             <MudStack Row="true" Wrap="Wrap.Wrap">@for (var i = 0; i < permissionNames.Length; i++) { var flag = 1 << i; var label = permissionNames[i]; <MudCheckBox Dense="true" T="bool" Label="@label" Value="@((permissions & flag) != 0)" ValueChanged="@((bool value) => permissions = value ? permissions | flag : permissions & ~flag)" Disabled="@(rankId == 0)" /> }</MudStack>
-            <MudButton Disabled="@(!CanSubmit)" OnClick="SaveRank">保存职位权限</MudButton>
+            <MudButton Disabled="@(!CanSubmit)" OnClick="SaveRank" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">保存职位权限</MudButton>
         </MudExpansionPanel><MudExpansionPanel Text="行会仓库（只读）"><ItemTable Items="detail.Storage" /></MudExpansionPanel></MudExpansionPanels>
     </DialogContent>
     </AdminDialog>

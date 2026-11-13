@@ -19,10 +19,10 @@
     <MudPaper Class="pa-4 mb-5" Elevation="0">
         <MudText Typo="Typo.h6" GutterBottom="true">运行操作</MudText>
         <MudStack Row="true" Wrap="Wrap.Wrap">
-            <MudButton Disabled="busy || !status.Ready" Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Run("save"))">立即保存</MudButton>
-            <MudButton Disabled="busy" Variant="Variant.Outlined" OnClick="@(() => Run(status.Ready ? "stop" : "start"))">@(status.Ready ? "保存并停止游戏" : "启动游戏")</MudButton>
-            <MudButton Disabled="busy" Color="Color.Warning" Variant="Variant.Outlined" OnClick="@(() => Run("restart"))">保存并重启游戏</MudButton>
-            <MudButton Disabled="busy || !status.Ready" Variant="Variant.Outlined" OnClick="@(() => Run("reload-scripts"))">重载 NPC / 掉落脚本</MudButton>
+            <MudButton Disabled="busy || !status.Ready" Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Run("save"))" Size="Size.Small">立即保存</MudButton>
+            <MudButton Disabled="busy" Variant="Variant.Outlined" OnClick="@(() => Run(status.Ready ? "stop" : "start"))" Size="Size.Small" Color="Color.Default">@(status.Ready ? "保存并停止游戏" : "启动游戏")</MudButton>
+            <MudButton Disabled="busy" Color="Color.Warning" Variant="Variant.Outlined" OnClick="@(() => Run("restart"))" Size="Size.Small">保存并重启游戏</MudButton>
+            <MudButton Disabled="busy || !status.Ready" Variant="Variant.Outlined" OnClick="@(() => Run("reload-scripts"))" Size="Size.Small" Color="Color.Default">重载 NPC / 掉落脚本</MudButton>
         </MudStack>
         <MudText Typo="Typo.caption" Class="mt-3 path">SQLite：@status.DatabasePath<br />资源版本：@status.AssetVersion · 上次手动保存：@(status.LastSaveUtc?.ToLocalTime().ToString("G") ?? "—")</MudText>
     </MudPaper>

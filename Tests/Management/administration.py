@@ -1,5 +1,5 @@
 """Real administration API + original TCP sessions; disposable world only."""
-import base64, datetime, json, os, pathlib, sqlite3, struct, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import base64, datetime, hashlib, json, os, pathlib, sqlite3, struct, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 
 root = pathlib.Path(sys.argv[1]).resolve()
 repo = pathlib.Path(__file__).resolve().parents[2]
@@ -12,7 +12,7 @@ last_connection = 0
 
 def call(path, method='GET', value=None, expected=200, auth=True, raw=False):
     global checks
-    headers = {'Authorization': 'Bearer '+key} if auth else {}
+    headers = {'Authorization': 'Bearer '+key, 'X-Mir2-Version':hashlib.sha256(str(root).encode()).hexdigest().upper()} if auth else {}
     data = None if value is None else json.dumps(value).encode()
     if data is not None: headers['Content-Type'] = 'application/json'
     req = urllib.request.Request(base+path, data=data, headers=headers, method=method)
@@ -72,7 +72,29 @@ def guild(id): return call(f'{prefix}/guilds/{id}')
 def kick(a): call(f"{prefix}/accounts/{a['id']}/kick",'POST',command(a['accountID']))
 
 try:
+    if '--verify' not in sys.argv:
+        system=call('/management/settings')
+        call('/management/settings',auth=False,expected=401)
+        status_before=call('/management/status')
+        edited=system['values']|{'maxUser':system['values']['maxUser']+1,'maxIP':system['values']['maxIP']+2,'expRate':1.5,'dropRate':1.75,'monsterDamageRate':1.4,'playerPhysicalDamageRate':1.2,'playerMagicDamageRate':1.3,'playerPvpDamageRate':.8,'petDamageRate':1.6,'poisonDamageRate':1.7,'monsterHpRate':1.8,'monsterDefenceRate':1.9,'monsterAttackSpeedRate':1.1,'monsterMoveSpeedRate':.9,'poisonDurationRate':1.2,'controlDurationRate':.7,'skillBuffDurationRate':1.8,'playerAttackSpeedBonus':4,'criticalDamageWeight':45,'maxDropGold':3000,'dropRange':5,'dropStackSize':6,'maxBossTames':2}
+        hot=call('/management/settings','PUT',{'values':edited,'version':system['version']})
+        check(hot['values']==edited,'System settings failed to apply live values')
+        status_after=call('/management/status')
+        check(status_before['lastSaveUtc']==status_after['lastSaveUtc'],'MaxIP change unexpectedly restarted the engine')
+        call('/management/settings','PUT',{'values':edited,'version':system['version']},expected=409)
+        call('/management/settings','PUT',{'values':edited|{'dropRate':0},'version':hot['version']},expected=400)
+        cold=call('/management/settings','PUT',{'values':edited|{'skillCooldownRate':.75},'version':hot['version']})
+        check(call('/management/status')['lastSaveUtc']!=status_after['lastSaveUtc'],'Skill cooldown change skipped required metadata restart')
+        check(cold['values']==edited|{'skillCooldownRate':.75},'Balance values changed after engine reload')
+        status_after=call('/management/status')
+        safe=call('/management/settings','PUT',{'values':edited|{'safeZoneBorder':not edited['safeZoneBorder']},'version':cold['version']})
+        check(call('/management/status')['lastSaveUtc']!=status_after['lastSaveUtc'],'Safe zone change skipped the required engine restart')
+        restored=call('/management/settings','PUT',{'values':system['values']|{'monsterDamageRate':1.25,'poisonDurationRate':1.5},'version':safe['version']})
+        check(restored['values']==system['values']|{'monsterDamageRate':1.25,'poisonDurationRate':1.5},'Settings did not survive safe engine restart')
+        (runtime/'settings-saved.json').write_text(json.dumps(restored['values']))
+        print('PASS system settings live MaxIP/rates, authorization/conflicts/validation, safe zone restart and restoration.')
     if '--verify' in sys.argv:
+        check(call('/management/settings')['values']==json.loads((runtime/'settings-saved.json').read_text()),'System settings lost after full-host restart')
         saved=json.loads((runtime/'administration-saved.json').read_text())
         for path, expected in saved.items():
             actual=call(path)
@@ -88,7 +110,7 @@ try:
     call(prefix+'/catalog/monsters?page=0',expected=400)
     call(prefix+'/catalog/unknown?page=1',expected=400)
     monsters=call(prefix+'/catalog/monsters?page=1')
-    check(monsters['total']==2 and len(monsters['items'])==2 and monsters['items'][1]['attributes']['HP']=='9999','Monster figure catalog lost original attributes')
+    check(monsters['total']==3 and len(monsters['items'])==3 and next(m for m in monsters['items'] if m['name']=='NativeDanger')['attributes']['生命']=='9999','Monster figure catalog lost original attributes')
     npcs=call(prefix+'/catalog/npcs?page=1&search=Native')
     check(npcs['total']==1 and npcs['items'][0]['name']=='Native Shop','Global NPC catalog did not return the original definitions')
     check(call(prefix+'/catalog/npcs?page=2')['items']==[],'Out-of-range catalog page did not remain empty')
@@ -143,6 +165,8 @@ try:
     check(account(aid)==a,'Failed storage write leaked an in-memory account edit')
     call('/management/restart','POST'); check(account(aid)==a,'Failed storage write persisted partial data')
     check(account(other['id'])==other,'Engine restart discarded an account without characters')
+    for invalid_class in (3,4,255):
+        call(prefix+'/characters','POST',{'accountId':aid,'name':'InvalidClass','class':invalid_class,'gender':0},expected=400)
     c=call(prefix+'/characters','POST',{'accountId':aid,'name':'OpsHero','class':0,'gender':0,})
     cid=c['id']; check(c['level']==0 and not c['inventory'], 'New character bypassed original first-login initialization')
     call(prefix+'/characters','POST',{'accountId':aid,'name':'OpsHero','class':0,'gender':0,},expected=409)
@@ -157,6 +181,13 @@ try:
     call(f'{prefix}/accounts/{aid}/password','POST',{'password':'Wrong123','requireChange':False,**command(a['accountID'],a['version'])},expected=409)
     kick(a); live.wait(timeout=15)
     live,native=session('OpsAccount','Start123',cid)
+    until(lambda: native().get('baseStatsReady'))
+    speed=call('/management/settings'); before_speed=native()['attackSpeed']
+    faster=call('/management/settings','PUT',{'values':speed['values']|{'playerAttackSpeedBonus':3},'version':speed['version']})
+    until(lambda: native()['attackSpeed']==before_speed+3)
+    call('/management/settings','PUT',{'values':speed['values'],'version':faster['version']})
+    until(lambda: native()['attackSpeed']==before_speed)
+    print('PASS online original BaseStatsInfo updates attack speed and restores it without reconnecting.')
     c=character(cid); check(c['online'] and c['level']>=1 and c['inventory'],'Original login did not initialize the character')
     call(prefix+'/characters','PUT',character_edit(c),expected=409)
     spawns=call(prefix+'/spawns?mapId=1'); sx=spawns[0]['x']-1; sy=spawns[0]['y']-1

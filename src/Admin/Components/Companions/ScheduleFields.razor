@@ -1,0 +1,47 @@
+<MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="在线时区" @bind-Value="Schedule.TimeZone" Immediate="true" />
+@for(var i=0;i<Schedule.Windows.Length;i++)
+{
+    var index=i;var window=Schedule.Windows[index];
+    <MudPaper Outlined="true" Class="pa-3 my-2">
+        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
+        @for(var d=0;d<7;d++){var day=d;<MudCheckBox T="bool" Dense="true" Label="@Days[day]" Value="@((window.Days&(1<<day))!=0)" ValueChanged="@(v=>SetDays(index,day,v))" />}
+        </MudStack>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" InputType="InputType.Time" Label="开始" Value="@Time(window.StartMinute)" ValueChanged="@(v=>SetTime(index,v,false))" />
+            <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" InputType="InputType.Time" Label="结束（早于开始表示次日）" Value="@Time(window.EndMinute)" ValueChanged="@(v=>SetTime(index,v,true))" />
+            <MudCheckBox T="bool" Dense="true" Label="全天" Value="window.AllDay" ValueChanged="@(v=>Replace(index,window with{AllDay=v}))" />
+            <MudButton Color="Color.Error" Disabled="@(Schedule.Windows.Length==1)" OnClick="@(()=>Remove(index))" Size="Size.Small" Variant="Variant.Outlined">移除此时段</MudButton>
+        </MudStack>
+    </MudPaper>
+}
+<MudButton OnClick="Add" Disabled="@(Schedule.Windows.Length>=14)" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">增加在线时段</MudButton>
+<MudGrid Spacing="2" Class="my-2">
+    <MudItem xs="6" sm="4"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="出勤概率（%）" Min="0" Max="100" @bind-Value="Schedule.Attendance" /></MudItem>
+    <MudItem xs="6" sm="4"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="上线抖动（分钟）" Min="0" Max="120" @bind-Value="Schedule.JitterMinutes" /></MudItem>
+    <MudItem xs="6" sm="4"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="单次最长在线（分钟）" Min="1" Max="720" @bind-Value="Schedule.SessionMinutes" /></MudItem>
+    <MudItem xs="6" sm="4"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="会话休息（分钟）" Min="0" Max="720" @bind-Value="Schedule.RestMinutes" /></MudItem>
+    <MudItem xs="6" sm="4"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="每日及24小时上限（分钟）" Min="1" Max="1440" @bind-Value="Schedule.DailyMinutes" /></MudItem>
+</MudGrid>
+<MudButton OnClick="Preview" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">预览未来七天</MudButton>
+@if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
+@foreach(var p in preview.Take(14)){<MudText Typo="Typo.body2">@Local(p.Start) — @Local(p.End) · @(p.Attending?"预计出勤":"本次休息")</MudText>}
+<MudText Typo="Typo.caption">窗口是允许在线范围；错过不补练，重启不清空用量。预览不会登录或修改存档。</MudText>
+@code{
+    [Parameter,EditorRequired]public CompanionSchedule Schedule{get;set;}=null!;
+    [Parameter]public Guid Id{get;set;}
+    private static readonly string[] Days=["周日","周一","周二","周三","周四","周五","周六"];
+    private SchedulePreview[] preview=[];private string? error;
+    private static string Time(int m)=>$"{m/60:00}:{m%60:00}";
+    private void Replace(int i,OnlineWindow w){var copy=Schedule.Windows.ToArray();copy[i]=w;Schedule.Windows=copy;}
+    private void SetDays(int i,int d,bool value)=>Replace(i,Schedule.Windows[i] with{Days=value?Schedule.Windows[i].Days|(1<<d):Schedule.Windows[i].Days&~(1<<d)});
+    private void SetTime(int i,string value,bool end)
+    {
+        if(!TimeOnly.TryParse(value,out var time))return;var m=time.Hour*60+time.Minute;
+        Replace(i,end?Schedule.Windows[i] with{EndMinute=m}:Schedule.Windows[i] with{StartMinute=m});
+    }
+    private void Add()=>Schedule.Windows=[..Schedule.Windows,new()];
+    private void Remove(int i)=>Schedule.Windows=Schedule.Windows.Where((_,j)=>j!=i).ToArray();
+    private string Local(DateTimeOffset t)=>TimeZoneInfo.ConvertTime(t,CompanionScheduling.Zone(Schedule.TimeZone)).ToString("MM-dd ddd HH:mm");
+    private async Task Preview()
+    {try{preview=await Api.Post<SchedulePreview[]>("management/companions/schedule-preview",new CompanionProfile{Id=Id,Schedule=Schedule});error=null;}catch(Exception e){error=e.Message;}}
+}

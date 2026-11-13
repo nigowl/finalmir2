@@ -1454,6 +1454,7 @@ namespace Server.MirNetwork
         private void ChangeAMode(C.ChangeAMode p)
         {
             if (Stage != GameStage.Game) return;
+            if (!Enum.IsDefined(p.Mode)) { Player.ReceiveChat("攻击模式无效，请重新选择。", ChatType.Hint); return; }
 
             Player.AMode = p.Mode;
 
@@ -1567,11 +1568,13 @@ namespace Server.MirNetwork
             if (Stage != GameStage.Game) return;
 
             HumanObject actor = Player;
-            if (p.Key > 16 || p.OldKey > 16)
+            if (SkillKeys.IsHero(p.Key) || SkillKeys.IsHero(p.OldKey))
             {
+                if (p.Key != 0 && !SkillKeys.IsHero(p.Key) || p.OldKey != 0 && !SkillKeys.IsHero(p.OldKey)) return;
                 if (!Player.HeroSpawned || Player.Hero.Dead) return;
                 actor = Player.Hero;
             }
+            else if (!SkillKeys.IsPlayer(p.Key) || !SkillKeys.IsPlayer(p.OldKey)) return;
 
             for (int i = 0; i < actor.Info.Magics.Count; i++)
             {
@@ -2384,5 +2387,7 @@ namespace Server.MirNetwork
         public string IPAddress = "";
         public List<long> AccountsMade = new List<long>();
         public List<long> CharactersMade = new List<long>();
+        public void PruneAccounts(long now) => AccountsMade.RemoveAll(time => now - time >= 60 * 60 * 1000);
+        public void PruneCharacters(long now) => CharactersMade.RemoveAll(time => now - time >= 60 * 60 * 1000);
     }
 }

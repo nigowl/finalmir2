@@ -25,9 +25,8 @@ public partial class Main
 
     private void StopBattleForInput(InputEvent input)
     {
-        if (gameMenu?.Visible == true) return;
-        if (input is InputEventMouseButton mouse && gameMenuButton != null && gameMenuButton.GetGlobalRect().HasPoint(mouse.Position)) return;
-        if (input is InputEventKey { Pressed: true, Echo: false } or InputEventMouseButton { Pressed: true }) StopAutoBattle();
+        if (GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit) return;
+        if (input is InputEventKey { Pressed: true, Echo: false, PhysicalKeycode: Key.Escape }) { preparedSkill = null; StopAutoBattle(); }
     }
 
     private void ToggleAutoBattle()
@@ -36,15 +35,15 @@ public partial class Main
         if (State.Me?.Dead != false || World.Loading || State.Trading || State.StorageActive) { Log("当前状态不能开始挂机。"); return; }
         CloseSettings(); if (settingsDialog.Visible) return;
         automation.Resume(); autoBattleEnabled = true; nextBattleScan = noMonsterSince = 0; battleMapIndex = State.Map?.MapIndex ?? 0;
-        destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; gameMenu.SetItemText(7, "停止挂机");
-        Log("挂机已开始；手动操作或 Esc 停止。");
+        destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; RefreshBattleMenu();
+        Log("挂机已开始；Ctrl+Z、Esc或菜单可停止，点击地面时确认停止。");
     }
 
     private void StopAutoBattle()
     {
         if (!autoBattleEnabled) return;
         autoBattleEnabled = false; actionTarget = 0; destination = null; pendingAttack = null; MiniMap.Route = [];
-        noMonsterSince = 0; gameMenu.SetItemText(7, "开始挂机");
+        noMonsterSince = 0; RefreshBattleMenu();
         Log("挂机已停止。");
     }
 
@@ -52,16 +51,18 @@ public partial class Main
     {
         if (!HandshakeReady || World.Loading || State.Me?.Dead != false || settingsDialog.Visible || pendingDrop != 0 || dropDialog.Visible) return;
         var now = Environment.TickCount64;
+        if (skillEquipmentPending != 0) { ProcessSkillPreparation(now); return; }
         var idleRandom = autoBattleEnabled && preferences.NoMonsterRandom && noMonsterSince > 0 && now - noMonsterSince >= 3000;
-        if (automation.NextItem(State, preferences, now, idleRandom) is { } item)
+        if (!npc.Visible && !GuildStorageOpen && automation.NextItem(State, preferences, now, idleRandom) is { } item)
         {
             if (item.Info.Type == ItemType.Scroll) { destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; }
             Send(new C.UseItem { Grid = MirGridType.Inventory, UniqueID = item.UniqueID });
         }
         if (automation.Notice != automationNotice) { automationNotice = automation.Notice; if (automationNotice.Length > 0) Log(automationNotice); }
+        if (automation.PendingItem != 0 || ProcessSkillPreparation(now) || ProcessClassSkills(now)) return;
         if (!autoBattleEnabled || automation.PendingScrollShape != null || now < nextBattleScan) return;
         nextBattleScan = now + 350;
-        if (State.Trading || State.StorageActive || npc.Visible || GuildStorageOpen) { StopAutoBattle(); return; }
+        if (State.Trading || State.StorageActive || npc.Visible || GuildStorageOpen) return;
         var targets = ClientAutomation.Targets(State).Take(16).ToArray();
         if (targets.Length > 0) noMonsterSince = 0; else if (noMonsterSince == 0) noMonsterSince = now;
         if (targets.Any(target => target.Id == actionTarget)) return;
@@ -79,15 +80,17 @@ public partial class Main
             if (target == State.User.Location || World.NextStep(target) == null) continue;
             SetDestination(target, true); roamDirection = Random.Shared.Next(8); return;
         }
-        StopAutoBattle(); Log("附近没有可行路线，已停止挂机；请手动选择位置。");
+        nextBattleScan = now + 5000;
     }
 
     private void AutomationPacket(Packet packet)
     {
         automation.Apply(packet, Environment.TickCount64);
+        if (packet is S.Death or S.MapChanged) CloseGroundMove();
         if (packet is S.MapChanged map && autoBattleEnabled && automation.PendingScrollShape == 2 && map.MapIndex == battleMapIndex)
         { noMonsterSince = 0; nextBattleScan = Environment.TickCount64 + 500; return; }
-        if (packet is S.Death or S.MapChanged) StopAutoBattle();
+        if (packet is S.Death) StopAutoBattle();
+        if (packet is S.MapChanged changed) { battleMapIndex = changed.MapIndex; noMonsterSince = 0; }
     }
 
     private bool BattleSkill(Actor target, long now)
@@ -96,11 +99,13 @@ public partial class Main
         if (now < spellTime) return true;
         var skill = ClientAutomation.SkillFor(State, preferences, target, now);
         if (skill == null) return false;
+        if (skillPreparationPaused && SkillMaterials.Required(State, skill.Spell, target).Length > 0) return false;
         var distance = Distance(State.User!.Location, target.Location);
         if (ClientAutomation.IsAttackSkill(skill.Spell))
         {
             if (distance > 1) return false;
-            if (!State.ActiveSkills.Contains(skill.Spell)) Cast(State.User.Magics.IndexOf(skill));
+            if (preferences.SmartHalfMoon && skill.Spell is Spell.HalfMoon or Spell.CrossHalfMoon) return false;
+            if (ClientSkillRules.IsTrigger(skill.Spell) && !State.ActiveSkills.Contains(skill.Spell)) { Cast(State.User.Magics.IndexOf(skill), true, true); return true; }
             Attack(Direction(State.User.Location, target.Location), skill.Spell); return true;
         }
         if (distance > 9) return false;

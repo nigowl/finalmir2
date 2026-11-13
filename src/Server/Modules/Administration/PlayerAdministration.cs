@@ -89,7 +89,7 @@ public sealed class PlayerAdministration(AdminChanges changes)
         var account = Account(request.AccountId); Offline(account);
         if (!Envir.IsCharacterNameValid(request.Name)) throw new InvalidDataException("角色名称无效或属于保留名称。");
         if (World.CharacterList.Any(c => c.Name.Equals(request.Name, StringComparison.OrdinalIgnoreCase)) || World.HeroList.Any(c => c.Name.Equals(request.Name, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("角色名称已被使用。");
-        if (request.Class is < 0 or > 4 || request.Gender is < 0 or > 1) throw new InvalidDataException("角色职业或性别无效。");
+        if (request.Class is < 0 or > 2 || request.Gender is < 0 or > 1) throw new InvalidDataException("仅开放战士、法师、道士；角色性别须为男或女。");
         if (account.Characters.Count(c => !c.Deleted) >= Globals.MaxCharacterCount) throw new InvalidOperationException("账户的角色位置已满。");
         var character = new CharacterInfo { Index = AdminChanges.Next(World.NextCharacterID, World.CharacterList.Select(c => c.Index)), Name = request.Name, Class = (MirClass)request.Class, Gender = (MirGender)request.Gender,
             AccountInfo = account, CreationDate = World.Now, CreationIP = "127.0.0.1", Heroes = new HeroInfo[1] };

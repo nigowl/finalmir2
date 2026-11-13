@@ -61,13 +61,14 @@ public partial class Main : Control
         Theme = theme;
         GetWindow().Theme = theme;
         BuildScreenEffects(); BuildLogin(); BuildSelection(); BuildGame();
-        State.Message += text => Log(text);
+        State.ChatMessage += (text, type) => Log(text, type);
         var address = OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--server="))?[9..]
             ?? Environment.GetEnvironmentVariable("MIR2_SERVER") ?? "http://127.0.0.1:5080";
         server.Text = address;
         _ = Connect(address);
         if (OS.GetCmdlineUserArgs().Any(a => a is "--smoke" or "--verify-save" or "--reference-world"))
             AddChild(new NativeSmoke { Client = this });
+        if (OS.GetCmdlineUserArgs().Contains("--spell-effects")) AddChild(new NativeSpellSmoke { Client = this });
     }
 
     private Label Text(Control parent, string text, float x, float y, float width = 250)
@@ -78,12 +79,12 @@ public partial class Main : Control
     private Button Button(Control parent, string text, float x, float y, float width, Action action)
     {
         var button = new Button { Text = text, Position = new Vector2(x, y), Size = new Vector2(width, 28), FocusMode = FocusModeEnum.None };
-        button.Pressed += () => { StopAutoBattle(); action(); _ = PlaySound(10103); }; parent.AddChild(button); return button;
+        button.Pressed += () => { action(); _ = PlaySound(10103); }; parent.AddChild(button); return button;
     }
-    private OriginalButton ArtButton(Control parent, string library, int index, float x, float y, string hint, Action action, bool stopBattle = true)
+    private OriginalButton ArtButton(Control parent, string library, int index, float x, float y, string hint, Action action)
     {
         var button = new OriginalButton { Assets = Assets, Library = library, Index = index, Position = new Vector2(x, y), Size = new Vector2(24, 20), TooltipText = hint };
-        button.Pressed += () => { if (stopBattle) StopAutoBattle(); action(); _ = PlaySound(10103); }; parent.AddChild(button); return button;
+        button.Pressed += () => { action(); _ = PlaySound(10103); }; parent.AddChild(button); return button;
     }
     private LineEdit Edit(Control parent, float x, float y, float width, string placeholder, bool secret = false)
     {
@@ -144,30 +145,26 @@ public partial class Main : Control
         selectionLocation.HorizontalAlignment = HorizontalAlignment.Center; selectionLocation.ClipText = true; selectionLocation.AddThemeFontSizeOverride("font_size", 10);
         characterList = new VBoxContainer { Position = new Vector2(637, 194), Size = new Vector2(278, 390) }; characterList.AddThemeConstantOverride("separation", 24); selection.AddChild(characterList);
         ArtButton(selection, "Title", 340, 132, 736, "进入游戏", () => { if (State.Characters.Count > selectedCharacter) Send(new C.StartGame { CharacterIndex = State.Characters[selectedCharacter].Index }); });
-        ArtButton(selection, "Title", 343, 296, 736, "创建角色", () => characterCreation.Show());
+        ArtButton(selection, "Title", 343, 296, 736, "创建角色", OpenCharacterCreation);
         ArtButton(selection, "Title", 352, 788, 736, "退出", () => _ = Quit());
-        var create = characterCreation = Panel(selection, 105, 630, 810, 70); create.Hide();
-        characterName = Edit(create, 15, 18, 210, "新角色名称（3–15 位）"); characterName.MaxLength = 15;
-        characterClass = new OptionButton { Position = new Vector2(240, 18), Size = new Vector2(120, 28) };
-        foreach (var job in new[] { "战士", "法师", "道士" }) characterClass.AddItem(job); create.AddChild(characterClass);
-        gender = new OptionButton { Position = new Vector2(375, 18), Size = new Vector2(90, 28) }; gender.AddItem("男"); gender.AddItem("女"); create.AddChild(gender);
-        Button(create, "创建角色", 485, 18, 120, () => Send(new C.NewCharacter { Name = characterName.Text.Trim(), Class = (MirClass)characterClass.Selected, Gender = (MirGender)gender.Selected }));
-        Button(create, "取消", 665, 18, 120, () => create.Hide());
+        BuildCharacterCreation();
     }
     private void BuildGame()
     {
         game = new Control { Size = new Vector2(1024, 768), Visible = false, MouseFilter = MouseFilterEnum.Ignore }; AddChild(game);
         var viewport = new Control { Size = new Vector2(1024, 768), ClipContents = true, MouseFilter = MouseFilterEnum.Ignore }; game.AddChild(viewport);
-        World = new WorldView { State = State, Assets = Assets }; viewport.AddChild(World);
+        World = new WorldView { State = State, Assets = Assets }; World.SoundRequested += sound => _ = PlaySound(sound); viewport.AddChild(World);
         BuildHud();
         BuildInventory(); BuildStorage();
         BuildEquipment();
         BuildNpc();
-        skills = new ScrollContainer { Position = new Vector2(8, 92), Size = new Vector2(248, 280), Visible = false }; equipment.AddChild(skills);
-        skillList = new VBoxContainer { CustomMinimumSize = new Vector2(230, 260) }; skills.AddChild(skillList);
+        skills = new ScrollContainer { Position = new Vector2(12, 96), Size = new Vector2(240, 270), Visible = false,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled }; equipment.AddChild(skills);
+        skillList = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill }; skills.AddChild(skillList);
         BuildQuests(); BuildGroup(); BuildTrade(); BuildGuild();
         BuildSettings();
         BuildItemDrag();
+        BuildAutoBattleConfirmation();
         foreach (var dialog in new[] { inventory, equipment, npc }) Draggable(dialog);
     }
     private static void Draggable(Control panel)
@@ -183,9 +180,10 @@ public partial class Main : Control
     private void BuildInventory()
     {
         inventory = Panel(game, 700, 35, 316, 236); inventory.Visible = false;
-        Picture(inventory, "Title", 196, 0, 0); Text(inventory, "背包", 9, 5, 120);
-        var questTab = ArtButton(inventory, "Title", 739, 146, 7, "任务物品", () => { questBag.Visible = !questBag.Visible; RenderQuestBag(); });
+        Picture(inventory, "Title", 196, 0, 0); Text(inventory, "背包", 9, 5, 90);
+        var questTab = ArtButton(inventory, "Title", 739, 114, 7, "任务物品", () => { questBag.Visible = !questBag.Visible; RenderQuestBag(); });
         questTab.HoverIndex = questTab.PressedIndex = 198;
+        var warehouse = Button(inventory, "仓库物品", 198, 5, 82, OpenInventoryStorage); warehouse.Name = "InventoryStorage"; warehouse.Size = new Vector2(82, 24);
         ArtButton(inventory, "Prguse2", 360, 289, 3, "关闭背包", () => inventory.Hide());
         inventory.AddChild(new OriginalArt { Assets = Assets, State = State, Page = "inventory" });
         bagGold = Text(inventory, "", 40, 212, 111); bagGold.Size = new Vector2(111, 14); bagGold.AddThemeFontSizeOverride("font_size", 10);
@@ -198,12 +196,15 @@ public partial class Main : Control
             var button = ItemButton(inventory, index, 9 + slot % 8 * 37, 37 + slot / 8 * 33);
             inventorySlots.Add((button, index));
         }
-        Picture(game, "Prguse", 1932, 230, 618);
         for (var i = 0; i < 6; i++)
         {
-            inventorySlots.Add((ItemButton(game, i, 242 + i * 35, 621), i));
-            var key = Text(game, (i + 1).ToString(), 236 + i * 35, 619, 12);
-            key.AddThemeFontSizeOverride("font_size", 9); key.Size = new Vector2(12, 14);
+            var position = OriginalArt.QuickSlotPosition(i);
+            var item = (OriginalItemButton)ItemButton(quickBars, i, position.X, position.Y);
+            item.Size = new Vector2(32, 32); item.SlotAssets = Assets;
+            inventorySlots.Add((item, i));
+            var key = Text(item, (i + 1).ToString(), 1, 0, 26);
+            key.AddThemeFontSizeOverride("font_size", 9); key.Size = new Vector2(26, 14);
+            key.AddThemeColorOverride("font_shadow_color", Colors.Black); key.AddThemeConstantOverride("shadow_offset_x", 1); key.AddThemeConstantOverride("shadow_offset_y", 1);
         }
     }
     private Button ItemButton(Control parent, int slot, float x, float y)
@@ -267,15 +268,21 @@ public partial class Main : Control
             State.Apply(packet); Handle(packet); PacketReceived?.Invoke(packet);
         }
         while (Connection.Errors.TryDequeue(out var error)) { Connection.Received.Clear(); State.Reset(); HandshakeReady = false; ResetLoginPassword(); SetScene("login"); status.Text = error; Log(error); }
+        ProcessCharacterCreation(Environment.TickCount64);
         if (Assets.Errors.TryDequeue(out var resourceError)) { lastResourceError = resourceError; GD.PrintErr(resourceError); }
         pictures.RemoveAll(p => !IsInstanceValid(p.rect));
         foreach (var (rect, library, index) in pictures)
             if (rect.Texture == null) { var image = Assets.Sprite(library, index); if (image != null) { rect.Texture = image.Texture; rect.Size = image.Size; } }
         foreach (var (button, item) in icons)
-            if (IsInstanceValid(button) && button.Icon == null && item.Info != null) button.Icon = Assets.Sprite("Items", item.Info.Image)?.Texture;
+            if (IsInstanceValid(button) && item.Info != null)
+            {
+                if (button is OriginalItemButton { SlotAssets: not null } slot) slot.SlotIcon ??= Assets.Sprite("Items", item.Info.Image)?.Texture;
+                else if (button.Icon == null) button.Icon = Assets.Sprite("Items", item.Info.Image)?.Texture;
+            }
         if (State.User != null && scene == "game")
         {
             UpdateHud();
+            RefreshSkillBar();
             if (revision != State.InventoryRevision) { RenderInventory(); RenderStorage(); RenderQuestBag(); RenderTrade(); RenderGuildStorage(); revision = State.InventoryRevision; }
             ProcessStorage(); ProcessQuests(); ProcessGroup(); ProcessTrade(); ProcessGuild(); ProcessAutomation(); ProcessActions(); ProcessFootsteps();
             ProcessNpc();
@@ -296,6 +303,9 @@ public partial class Main : Control
         TradePacket(packet);
         GuildPacket(packet);
         ItemDropPacket(packet);
+        World.SpellPacket(packet);
+        SkillPreparationPacket(packet);
+        ClassSkillPacket(packet);
         switch (packet)
         {
             case S.Connected: Send(new C.ClientVersion { VersionHash = [] }); break;
@@ -312,24 +322,25 @@ public partial class Main : Control
             case S.ChangePasswordBanned p: ResetLoginPassword(); status.Text = p.Reason; break;
             case S.LoginBanned p: status.Text = p.Reason; break;
             case S.LoginSuccess: SetScene("selection"); RenderCharacters(); _ = PlaySound(10147, true); break;
-            case S.NewCharacterSuccess: characterCreation.Hide(); RenderCharacters(); break;
+            case S.NewCharacterSuccess p: CharacterCreated(p.CharInfo); break;
             case S.CharacterLocation p:
                 if (scene == "selection" && State.Characters.ElementAtOrDefault(selectedCharacter)?.Index == p.CharacterIndex)
                 { selectionLocation.Text = p.Found ? $"{p.MapTitle} · {p.Location.X},{p.Location.Y}" : "新角色 · 尚未进入地图"; selectionLocation.TooltipText = selectionLocation.Text; }
                 break;
-            case S.NewCharacter p: Log($"角色创建失败：{p.Result}"); break;
+            case S.NewCharacter p: CharacterCreationFailed(p.Result); break;
             case S.StartGame p: if (p.Result != 4) Log($"进入游戏失败：{p.Result}"); break;
             case S.UserInformation p: SetScene("game"); MiniMap.SetExpanded(false); pendingAttack = null; destination = null; actionTarget = 0; moveTime = 0; moving = false; confirmedLocation = p.Location; lastMoved = 0; RenderInventory(); RenderSkills(); SetMapMusic(); break;
             case S.MapInformation p: _ = World.Load(p.FileName); break;
             case S.MapChanged p: MiniMap.SetExpanded(false); MiniMap.Route = []; pendingAttack = null; moveTime = 0; npc.Hide(); shopMode = null; CloseStorage(); CloseQuests(); destination = null; actionTarget = 0; moving = false; lastMoved = 0; confirmedLocation = p.Location; _ = World.Load(p.FileName); SetMapMusic(); break;
-            case S.Death: destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; moving = false; break;
+            case S.Death: destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; moving = false; ShowDeathDialog(); break;
+            case S.Revived: deathDialog.Hide(); break;
             case S.UserLocation p: if (moving) moveTime = Environment.TickCount64; moving = false; lastMoved = p.Location == confirmedLocation ? 0 : Environment.TickCount64; confirmedLocation = p.Location; break;
             case S.DamageIndicator p: World.ShowDamage(p.ObjectID, p.Damage); break;
             case S.Magic p:
-                if (p.Cast && State.User != null) { World.ShowSpell(p.Spell, State.User.ObjectID, p.TargetID, p.Target); _ = PlaySound(20000 + (int)p.Spell * 10); }
+                if (State.User != null) World.ShowSpell(p.Spell, State.User.ObjectID, p.TargetID, p.Target, p.Cast, p.Level, p.SecondaryTargetIDs);
                 break;
             case S.ObjectMagic p:
-                if (p.Cast && (p.ObjectID != State.User?.ObjectID || p.SelfBroadcast)) World.ShowSpell(p.Spell, p.ObjectID, p.TargetID, p.Target);
+                if (p.ObjectID != State.User?.ObjectID || p.SelfBroadcast || p.Spell == Spell.TwinDrakeBlade) World.ShowSpell(p.Spell, p.ObjectID, p.TargetID, p.Target, p.Cast, p.Level, p.SecondaryTargetIDs);
                 break;
             case S.NPCResponse p: RenderNpc(p.Page); break;
             case S.NPCGoods p: RenderGoods(p); break;
@@ -344,16 +355,22 @@ public partial class Main : Control
             case S.ItemRepaired p: if (p.UniqueID == repairItem) { repairItem = 0; RefreshRepair(); } break;
             case S.LogOutSuccess: SetScene("selection"); RenderCharacters(); break;
             case S.LogOutFailed: Log("战斗中暂时无法退出角色，请稍候。"); break;
+            case S.ChangeAMode: RefreshAttackModes(); break;
             case S.ReturnToLogin: HandshakeReady = true; SetScene("login"); break;
-            case S.NewMagic: case S.MagicLeveled: RenderSkills(); break;
+            case S.NewMagic: case S.MagicLeveled: case S.SpellToggle: RefreshSkillRows(); break;
+            case S.MergeItem p: if (p.GridFrom == MirGridType.Storage || p.GridTo == MirGridType.Storage) { storageBusy = false; RenderStorage(); } break;
             case S.UseItem p: if (p.Success) _ = PlaySound(10107); break;
             case S.LevelChanged: _ = PlaySound(10156); break;
         }
     }
     private void SetScene(string name)
     {
-        StopAutoBattle(); automation.Reset(); automationNotice = ""; CloseSettings(); CancelItemDrag(); dropDialog.Hide(); dropCandidate = pendingDrop = 0;
+        StopAutoBattle(); automation.Reset(); automationNotice = ""; CloseSettings(); CloseGroundMove(); CancelItemDrag(); dropDialog.Hide(); dropCandidate = pendingDrop = 0;
+        preparedSkill = null; skillEquipmentPending = 0; skillPreparationPaused = false; ResetClassSkills();
         scene = name; login.Visible = name == "login"; selection.Visible = name == "selection"; game.Visible = name == "game";
+        deathDialog.Hide(); sessionDialog.Hide(); gameMenu.Hide();
+        if (name == "game" && State.Me?.Dead == true) ShowDeathDialog();
+        ResetCharacterCreation();
         destination = null; actionTarget = 0; pendingAttack = null; moving = false; MiniMap.Route = []; MiniMap.SetExpanded(false); GetViewport().GuiReleaseFocus();
         CloseStorage(); CloseQuests(); inventory.Hide(); equipment.Hide(); npc.Hide(); questBag.Hide(); CloseGroup(); CloseTradeUi(); CloseGuildUi(); shopMode = null;
     }
@@ -378,9 +395,6 @@ public partial class Main : Control
             Send(new C.CharacterLocationRequest { CharacterIndex = selected.Index });
     }
     private static void Clear(Node node) { foreach (var child in node.GetChildren()) { node.RemoveChild(child); child.QueueFree(); } }
-    private string ItemText(UserItem item) => item.Info == null ? $"物品 {item.ItemIndex}" :
-        $"{item.Info.FriendlyName} ×{item.Count}\n要求 {item.Info.RequiredType.ToLocalizedString()} {item.Info.RequiredAmount} · {item.Info.RequiredClass.ToLocalizedString()}\n耐久 {item.CurrentDura / 1000f:0.###}/{item.MaxDura / 1000f:0.###}\n" +
-        string.Join("\n", item.Info.Stats.Values.Select(s => $"{s.Key.ToLocalizedString()}: {item.GetTotal(s.Key)}")) + "\n" + item.Info.ToolTip;
     private void RenderInventory()
     {
         if (State.User == null) return;
@@ -388,19 +402,20 @@ public partial class Main : Control
         foreach (var (button, slot) in inventorySlots)
         {
             var item = slot < State.User.Inventory.Length ? State.User.Inventory[slot] : null;
-            button.Icon = null; button.Text = ""; ((OriginalItemButton)button).Count = item?.Count ?? 0;
-            button.TooltipText = item != null ? ItemText(item) : "空格";
+            button.Icon = null; button.Text = ""; ((OriginalItemButton)button).Count = item?.Count ?? 0; ((OriginalItemButton)button).SlotIcon = null;
+            ItemTooltip(button, item);
             if (item != null) icons.Add((button, item));
         }
         for (var i = 0; i < State.User.Equipment.Length; i++)
         {
             var item = State.User.Equipment[i]; var button = equipmentButtons[i];
-            button.Icon = null; button.TooltipText = item == null ? ((EquipmentSlot)i).ToLocalizedString() : ItemText(item);
+            button.Icon = null; ItemTooltip(button, item, ((EquipmentSlot)i).ToLocalizedString());
             if (item != null) icons.Add((button, item));
         }
     }
     private void RemoveEquipment(int slot)
     {
+        if (SkillPreparationBusy) { Log("正在等待毒符换装回执，请稍候。"); return; }
         var item = State.User?.Equipment[slot]; if (item == null) return;
         var to = Array.IndexOf(State.User!.Inventory, null);
         if (to >= 0) Send(new C.RemoveItem { Grid = MirGridType.Inventory, UniqueID = item.UniqueID, To = to }); else Log("背包已满。");
@@ -412,25 +427,18 @@ public partial class Main : Control
         equipment.Show(); paperdoll.Visible = page == 0; equipmentSlots.Visible = page == 0;
         attributes.Visible = attributesRight.Visible = attributeExperience.Visible = page is 1 or 2; skills.Visible = page == 3;
         if (page == 3) RenderSkills();
-        else if (attributes.Visible && State.User is { } user)
-        {
-            var stats = State.CalculateStats();
-            attributes.Text = $"生命 {user.HP}/{stats[Stat.HP]}\n" + string.Join("\n",
-                new[] { Stat.MinAC, Stat.MinMAC, Stat.MinDC, Stat.MinMC, Stat.MinSC, Stat.Accuracy }.Select(s => $"{s.ToLocalizedString()} {stats[s]}"));
-            attributesRight.Text = $"魔力 {user.MP}/{stats[Stat.MP]}\n" + string.Join("\n",
-                new[] { Stat.MaxAC, Stat.MaxMAC, Stat.MaxDC, Stat.MaxMC, Stat.MaxSC, Stat.Agility }.Select(s => $"{s.ToLocalizedString()} {stats[s]}"));
-            attributeExperience.Text = $"经验\n{user.Experience}/{user.MaxExperience}";
-        }
+        else RefreshEquipmentStats(State.CalculateStats());
     }
     private void ToggleEquipmentPage(int page) { if (equipment.Visible && equipmentPage == page) equipment.Hide(); else ShowEquipmentPage(page); }
     public void UseItem(ulong id)
     {
+        if (SkillPreparationBusy) { Log("正在等待毒符换装回执，请稍候。"); return; }
         if (automation.PendingItem == id || pendingDrop == id) { Log("正在等待该物品的服务端回执。"); return; }
         var item = State.User?.Inventory.FirstOrDefault(i => i?.UniqueID == id);
         if (item?.Info == null) return;
         if (State.Trading) { OfferTradeItem(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
         if (GuildStorageOpen) { StoreGuildItem(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
-        if (storage.Visible) { StoreInventory(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
+        if (storage.Visible && !storagePreview) { StoreInventory(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
         if (shopMode == PanelType.Sell) { Send(new C.SellItem { UniqueID = id, Count = 1 }); return; }
         if (shopMode is PanelType.Repair or PanelType.SpecialRepair) { SelectRepairItem(id); return; }
         int? slot = item.Info.Type switch
@@ -443,34 +451,20 @@ public partial class Main : Control
         Send(slot.HasValue ? new C.EquipItem { Grid = MirGridType.Inventory, UniqueID = id, To = slot.Value }
             : new C.UseItem { Grid = MirGridType.Inventory, UniqueID = id });
     }
-    private void RenderSkills()
-    {
-        Clear(skillList);
-        if (State.User == null) return;
-        for (var i = 0; i < State.User.Magics.Count; i++)
-        {
-            var index = i; var magic = State.User.Magics[i];
-            var row = new HBoxContainer(); skillList.AddChild(row);
-            var button = new Button { Text = $"{magic.Name} {magic.Level + 1}级", CustomMinimumSize = new Vector2(140, 32) };
-            button.Pressed += () => Cast(index); row.AddChild(button);
-            var key = new OptionButton(); key.AddItem("无");
-            for (var k = 1; k <= 16; k++) key.AddItem(k <= 8 ? $"F{k}" : $"Shift+F{k - 8}");
-            key.Selected = magic.Key <= 16 ? magic.Key : 0;
-            key.ItemSelected += selected => { BindMagic(index, (byte)selected); RenderSkills(); }; row.AddChild(key);
-        }
-    }
     public void BindMagic(int index, byte key)
     {
-        if (State.User == null || index < 0 || index >= State.User.Magics.Count || key > 16) return;
+        if (State.User == null || index < 0 || index >= State.User.Magics.Count || !SkillKeys.IsPlayer(key)) return;
         var magic = State.User.Magics[index];
         Send(new C.MagicKey { Spell = magic.Spell, Key = key, OldKey = magic.Key });
         foreach (var other in State.User.Magics) if (other.Key == key) other.Key = 0;
         magic.Key = key;
     }
-    public void Log(string text)
+    public void Log(string text, ChatType type = ChatType.System)
     {
         if (messages == null) return;
+        messages.PushColor(ChatColour(type));
         messages.AddText(text + "\n");
+        messages.Pop();
         while (messages.GetParagraphCount() > 101) messages.RemoveParagraph(0);
         if (scene != "game" && status != null) status.Text = text;
     }
@@ -488,6 +482,9 @@ public partial class Main : Control
         if (input is InputEventMouseButton mouse && mouse.Pressed && mouse.Position.Y < 616 && !MiniMap.Expanded)
         {
             var actor = World.ActorAt(mouse.Position);
+            if (actor == null && !Input.IsPhysicalKeyPressed(Key.Shift) && mouse.ButtonIndex is MouseButton.Left or MouseButton.Right &&
+                ConfirmGroundMove(World.CellAt(mouse.Position), mouse.ButtonIndex == MouseButton.Left ? preferences.DefaultRun : !preferences.DefaultRun))
+            { GetViewport().SetInputAsHandled(); return; }
             if (mouse.ButtonIndex == MouseButton.Left)
             {
                 if (Input.IsPhysicalKeyPressed(Key.Shift)) Attack(Direction(State.User.Location, World.CellAt(mouse.Position)));
@@ -502,6 +499,7 @@ public partial class Main : Control
             }
         }
         if (input is not InputEventKey key || !key.Pressed || key.Echo) return;
+        if (MenuShortcut(key)) { GetViewport().SetInputAsHandled(); return; }
         switch (key.PhysicalKeycode)
         {
             case Key.I: inventory.Visible = !inventory.Visible; break;
@@ -519,9 +517,11 @@ public partial class Main : Control
             default:
                 if (key.PhysicalKeycode >= Key.Key1 && key.PhysicalKeycode <= Key.Key6)
                 { var slot = (int)(key.PhysicalKeycode - Key.Key1); var item = State.User.Inventory[slot]; if (item != null) UseItem(item.UniqueID); }
-                else if (key.PhysicalKeycode >= Key.F1 && key.PhysicalKeycode <= Key.F8)
+                else if (key.PhysicalKeycode >= Key.F1 && key.PhysicalKeycode <= Key.F12)
                 {
-                    var binding = (byte)(key.PhysicalKeycode - Key.F1 + 1 + (key.ShiftPressed ? 8 : 0));
+                    if ((int)(key.PhysicalKeycode - Key.F1 + 1) > Assets.FunctionKeys) return;
+                    var binding = SkillKeys.FunctionKey((int)(key.PhysicalKeycode - Key.F1 + 1), key.ShiftPressed);
+                    if (binding == 0) return;
                     var index = State.User.Magics.FindIndex(m => m.Key == binding); if (index >= 0) Cast(index);
                 }
                 break;

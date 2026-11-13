@@ -2,8 +2,11 @@
 set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 ROLE="${1:?server, client or admin required}"; shift
+WATCH=false
+if [ "$ROLE" = admin ] && [ "${1:-}" = --watch ]; then WATCH=true; shift; fi
 cd "$ROOT"
 export MIR2_PROJECT_ROOT="$ROOT"
+export ASPNETCORE_ENVIRONMENT=Development DOTNET_ENVIRONMENT=Development
 export MIR2_DATA_ROOT="${MIR2_DATA_ROOT:-$ROOT/data/versions/default}"
 mkdir -p "$MIR2_DATA_ROOT"
 export MIR2_DATA_ROOT="$(cd -- "$MIR2_DATA_ROOT" && pwd -P)"
@@ -28,8 +31,8 @@ printf '%s\n' "$$" > "$LOCK/pid"
 trap 'rm -rf -- "$LOCK"' EXIT
 command -v dotnet >/dev/null 2>&1 || { echo "请安装 .NET 8 SDK。" >&2; exit 1; }
 case "$ROLE" in
-  server) PROJECT="$ROOT/src/Server/Mir2.Server.csproj"; DLL="$ROOT/src/Server/bin/Release/net8.0/Mir2.Server.dll"; CONFIG=Release ;;
-  admin) PROJECT="$ROOT/src/Admin/Mir2.Admin.csproj"; DLL="$ROOT/src/Admin/bin/Release/net8.0/Mir2.Admin.dll"; CONFIG=Release ;;
+  server) PROJECT="$ROOT/src/Server/Mir2.Server.csproj"; DLL="$ROOT/src/Server/bin/Debug/net8.0/Mir2.Server.dll"; CONFIG=Debug ;;
+  admin) PROJECT="$ROOT/src/Admin/Mir2.Admin.csproj"; DLL="$ROOT/src/Admin/bin/Debug/net8.0/Mir2.Admin.dll"; CONFIG=Debug ;;
   client)
     PROJECT="$ROOT/src/Client/Client.Godot.csproj"; CONFIG=Debug
     GODOT="${GODOT_BIN:-godot}"
@@ -56,8 +59,8 @@ owned() {
   # Adopt a manually started default instance, but never another configured runtime.
   [[ "$MIR2_RUNTIME_ROOT" == "$ROOT/data/versions/default/runtime" && "$command" != *--mir2-instance=* ]] || return 1
   case "$ROLE:$executable" in
-    server:*dotnet*) [[ "$command" == *"$DLL"* || "$command" == *"$ROOT/Server.Console/bin/"* ]] ;;
-    admin:*dotnet*) [[ "$command" == *"$DLL"* ]] ;;
+    server:*dotnet*) [[ "$command" == *"$DLL"* || "$command" == *"$ROOT/src/Server/bin/Release/net8.0/Mir2.Server.dll"* || "$command" == *"$ROOT/Server.Console/bin/"* ]] ;;
+    admin:*dotnet*) [[ "$command" == *"$DLL"* || "$command" == *"$ROOT/src/Admin/bin/Release/net8.0/Mir2.Admin.dll"* ]] ;;
     client:*Godot*|client:*godot*) [[ "$command" == *"$ROOT/src/Client"* || "$command" == *"$ROOT/Client.Godot"* ]] ;;
     *) return 1 ;;
   esac
@@ -69,8 +72,20 @@ while read -r candidate command; do
 done < <(ps -ww -axo pid=,command=)
 for pid in $(printf '%s\n' $PIDS | sort -un); do
   if ! owned "$pid"; then continue; fi
+  command="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
+  # CLI 包装进程不转发中断，先通知实际 watcher 正常关闭它的应用。
+  if [[ "$command" == *"/dotnet-watch.dll "* ]]; then kill -INT "$pid" 2>/dev/null || true; fi
+done
+for pid in $(printf '%s\n' $PIDS | sort -un); do
+  if ! owned "$pid"; then continue; fi
   echo "正在停止旧 ${ROLE} 进程 ${pid}（先正常退出并保存）…"
-  kill -TERM "$pid" 2>/dev/null || true
+  command="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
+  if [[ "$command" == *"dotnet watch "* || "$command" == *"/dotnet-watch.dll "* ]]; then
+    # watcher 通过 Ctrl+C 路径关闭其子进程，避免只停应用后又被拉起。
+    kill -INT "$pid" 2>/dev/null || true
+  else
+    kill -TERM "$pid" 2>/dev/null || true
+  fi
   for ((attempt=0; attempt<600; attempt++)); do
     if ! kill -0 "$pid" 2>/dev/null || ! owned "$pid"; then break; fi
     sleep 0.1
@@ -85,5 +100,9 @@ if [ "$ROLE" = client ]; then
   if "$HAS_SEPARATOR"; then exec "$GODOT" --path "$ROOT/src/Client" "$@" "$IDENTITY";
   else exec "$GODOT" --path "$ROOT/src/Client" "$@" -- "$IDENTITY"; fi
 else
+  if "$WATCH"; then
+    echo '管理端开发模式：支持的修改热更新，其他修改自动重启管理端；游戏服务端不重启。'
+    exec dotnet watch --project "$PROJECT" --non-interactive run --configuration Debug --no-launch-profile -- "$IDENTITY" "$@"
+  fi
   exec dotnet "$DLL" "$IDENTITY" "$@"
 fi

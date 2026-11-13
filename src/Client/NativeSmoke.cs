@@ -53,8 +53,12 @@ public partial class NativeSmoke : Node
             stage = "character";
             if (!verify)
             {
-                Client.Send(new C.NewCharacter { Name = name, Class = MirClass.Warrior, Gender = MirGender.Male });
-                await Packet<S.NewCharacterSuccess>();
+                if (reference)
+                {
+                    Client.Send(new C.NewCharacter { Name = name, Class = MirClass.Warrior, Gender = MirGender.Male });
+                    await Packet<S.NewCharacterSuccess>();
+                }
+                else await VerifyCharacterCreation(name);
             }
             if (reference && Argument("--screenshot") is { Length: > 0 } selectShot)
             {
@@ -116,13 +120,15 @@ public partial class NativeSmoke : Node
                 await VerifyHud();
                 await VerifyInventoryPresentation();
                 await VerifySettings();
+                await VerifyAttackModes();
                 await VerifyChatInteraction();
                 await VerifyCommandFeedback();
                 await VerifyItemDrag();
                 stage = "learn spell";
-                Client.UseItem(State.User.Inventory.First(i => i?.Info?.Type == ItemType.Book).UniqueID);
+                Client.UseItem(State.User.Inventory.First(i => i?.Info is { Type: ItemType.Book } info && info.Shape == (short)Spell.FireBall).UniqueID);
                 if (!(await Packet<S.UseItem>()).Success) throw new Exception("Skill book failed.");
                 await Packet<S.NewMagic>();
+                await VerifySkillControls();
                 stage = "potion";
                 await UseQuickPotion(false);
                 stage = "accept and abandon quests";
@@ -131,7 +137,7 @@ public partial class NativeSmoke : Node
                 Client.OpenQuestJournal(questNpc.Id);
                 for (var id = 1; id <= 3; id++) { Client.AcceptQuest(id); await Until(() => State.Quests.ContainsKey(id)); }
                 if (State.User.QuestInventory.Count(i => i != null) != 3) throw new Exception("Quest carry items were not delivered.");
-                Client.AbandonQuest(3);
+                await VerifyQuestSelectionAndConfirmation(3);
                 await Until(() => !State.Quests.ContainsKey(3) && State.User.QuestInventory.Count(i => i != null) == 2);
                 stage = "movement";
                 await VerifyMapAndMovement(start);
@@ -260,8 +266,16 @@ public partial class NativeSmoke : Node
                 await Until(() => State.Actors.Values.Any(a => a.Kind == ObjectType.Monster && !a.Dead));
                 Client.SelectTarget(State.Actors.Values.Single(a => a.Kind == ObjectType.Monster && !a.Dead).Id);
                 await Until(() => State.Me!.Dead);
-                Client.Send(new C.TownRevive());
+                var death = (ConfirmationDialog)Client.FindChild("DeathConfirmation", true, false);
+                if (!death.Visible || death.GetOkButton().Text != "回城复活") throw new Exception("死亡后未弹出原风格复活确认。");
+                death.GetCancelButton().EmitSignal(BaseButton.SignalName.Pressed);
+                await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+                await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+                using (var reviveKey = new InputEventKey { PhysicalKeycode = Key.R, Pressed = true }) Client._UnhandledInput(reviveKey);
+                if (!death.Visible) throw new Exception("取消后R键无法重新打开复活确认。");
+                await Screenshot("death-confirmation"); death.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed);
                 await Until(() => State.Map?.MapIndex == 1 && !State.Me!.Dead && State.User.HP > 0 && !Client.World.Loading);
+                if (death.Visible) throw new Exception("原复活成功后确认框未清除。");
                 stage = "chat";
                 Client.Send(new C.Chat { Message = "Native Godot integration" });
                 await Packet<S.ObjectChat>();
@@ -269,6 +283,7 @@ public partial class NativeSmoke : Node
                 await VerifyGroup();
                 await VerifyNpcRepair();
                 await VerifyAutomaticRoam();
+                await VerifyAutoBattleInput();
                 await VerifyAutomaticEscape(start);
                 await VerifyTerrainCache();
                 stage = "native guild bank durable item";
@@ -309,6 +324,7 @@ public partial class NativeSmoke : Node
         }
         catch (Exception error)
         {
+            if (Argument("--screenshot") is { Length: > 0 } failureShot) Capture(Path.ChangeExtension(failureShot, "failure.png"));
             GD.PrintErr($"FAIL native smoke at {stage}: {error}\nRecent packets: {string.Join(", ", packets.TakeLast(15).Select(p => p.GetType().Name))}");
             GD.PrintErr($"World: {State.Map?.Title}; user {State.User?.Location}, HP {State.User?.HP}; actors {string.Join("; ", State.Actors.Values.Select(a => $"{a.Name}@{a.Location}, health={a.Health}, dead={a.Dead}"))}");
             GetTree().Quit(1);

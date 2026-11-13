@@ -31,6 +31,7 @@ public partial class NativeSmoke
         var handle = (Control)Client.FindChild("ChatResizeHandle", true, false);
         var input = Client.FindChildren("*", "LineEdit", true, false).Cast<LineEdit>().Single(edit => edit.MaxLength == Globals.MaxChatLength);
         var original = messages.GetParsedText(); var location = State.User!.Location; var inputRect = input.GetRect();
+        var quickBars = (Control)Client.FindChild("QuickBars", true, false);
         for (var line = 0; line < 40; line++) Client.Log($"聊天滚动检查 {line:00}");
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         var bar = messages.GetVScrollBar(); var bottom = bar.Value;
@@ -43,12 +44,20 @@ public partial class NativeSmoke
         if (bar.Value != reading) throw new Exception("A new message displaced the chat history being read.");
         point = handle.GetGlobalRect().GetCenter(); await MoveMouse(point); MouseButtonAt(point, true);
         await MoveMouse(point - new Vector2(0, 200), true); MouseButtonAt(point - new Vector2(0, 200), false);
-        if (frame.Size != new Vector2(629, 136) || frame.Position != new Vector2(230, 600) || input.GetRect() != inputRect)
+        if (frame.Size != new Vector2(629, 136) || frame.Position != new Vector2(230, 600) || input.GetRect() != inputRect || quickBars.Position != new Vector2(0, -68))
             throw new Exception($"Top resize exceeded twice the original height or moved the fixed input/bottom edge: frame={frame.GetRect()}, handle={handle.GetRect()}, input={input.GetRect()} vs {inputRect}.");
+        if (quickBars.GetChildren().OfType<SkillIconButton>().Any(button => button.GetGlobalRect().End.Y >= frame.Position.Y))
+            throw new Exception("拖高聊天框时技能快捷栏没有同步上移。");
+        foreach (var type in new[] { ChatType.Normal, ChatType.System, ChatType.Hint, ChatType.Group, ChatType.Guild, ChatType.WhisperIn })
+            Client.Log($"{type.ToLocalizedString()}消息颜色检查", type);
+        if (new[] { ChatType.Normal, ChatType.System, ChatType.Hint, ChatType.Group, ChatType.Guild, ChatType.WhisperIn }.Select(Main.ChatColour).Distinct().Count() != 6)
+            throw new Exception("聊天消息类型没有使用不同颜色。");
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        bar.Value = bar.MaxValue;
         await Screenshot("chat-expanded");
         point = handle.GetGlobalRect().GetCenter(); await MoveMouse(point); MouseButtonAt(point, true);
         await MoveMouse(point + new Vector2(0, 300), true); MouseButtonAt(point + new Vector2(0, 300), false);
-        if (frame.Size != new Vector2(629, 68) || frame.Position != new Vector2(230, 668)) throw new Exception("Chat shrank below its original height.");
+        if (frame.Size != new Vector2(629, 68) || frame.Position != new Vector2(230, 668) || quickBars.Position != Vector2.Zero) throw new Exception("Chat shrank below its original height or shortcut bars did not return.");
         point = frame.GetRect().End - Vector2.One; await MoveMouse(point); MouseButtonAt(point, true);
         await MoveMouse(point - new Vector2(0, 35), true); MouseButtonAt(point - new Vector2(0, 35), false);
         if (frame.Size.Y != 68) throw new Exception("Dragging the bottom resized chat.");
@@ -72,7 +81,7 @@ public partial class NativeSmoke
         using var key = new InputEventKey { PhysicalKeycode = Key.I, Pressed = true }; Client._UnhandledInput(key);
         // 按原格位位置定位，避免依赖翻译后的物品提示文本。
         OriginalItemButton Cell(int slot) => Client.FindChildren("*", "Button", true, false).OfType<OriginalItemButton>().Single(button =>
-            button.Position == (slot < 6 ? new Vector2(242 + slot * 35, 621) : new Vector2(9 + (slot - 6) % 8 * 37, 37 + (slot - 6) / 8 * 33)));
+            button.Position == (slot < 6 ? OriginalArt.QuickSlotPosition(slot) : new Vector2(9 + (slot - 6) % 8 * 37, 37 + (slot - 6) / 8 * 33)));
         var from = Array.IndexOf(State.User.Inventory, item); var source = Cell(from).GetGlobalRect().GetCenter();
         var to = Enumerable.Range(6, 40).First(slot => State.User.Inventory[slot] == null); var target = Cell(to).GetGlobalRect().GetCenter();
         await MoveMouse(source); MouseButtonAt(source, true); await MoveMouse(target, true);

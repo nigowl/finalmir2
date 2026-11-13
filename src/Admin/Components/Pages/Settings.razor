@@ -1,0 +1,85 @@
+@page "/settings"
+@attribute [Authorize]
+@using System.Text.Json
+<PageTitle>系统设置 · Mir2</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1">系统设置</MudText>
+<MudText Color="Color.Secondary" Class="my-3">当前版本的运行与平衡参数；每项注明作用范围。安全区和技能冷却变更需保存并重启引擎。</MudText>
+@if(error!=null){<MudAlert Severity="Severity.Error" Dense="true" Class="my-2">@error</MudAlert>}
+@if(notice!=null){<MudAlert Severity="Severity.Success" Dense="true" Class="my-2">@notice</MudAlert>}
+@if(document!=null)
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="my-3">
+        <MudChip T="string" Size="Size.Small">连接 @document.Connections / @document.Values.MaxUser</MudChip><MudChip T="string" Size="Size.Small">游戏内角色 @document.Players</MudChip><MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Edit" Size="Size.Small">编辑</MudButton><MudButton OnClick="Load" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">刷新</MudButton>
+    </MudStack>
+    <MudTabs>
+        <MudTabPanel Text="连接与权限"><SettingsSummary Settings="document.Values" Group="access" /></MudTabPanel>
+        <MudTabPanel Text="成长与掉落"><SettingsSummary Settings="document.Values" Group="game" /></MudTabPanel>
+        <MudTabPanel Text="战斗平衡"><SettingsSummary Settings="document.Values" Group="combat" /></MudTabPanel>
+        <MudTabPanel Text="状态效果"><SettingsSummary Settings="document.Values" Group="effects" /></MudTabPanel>
+        <MudTabPanel Text="怪物平衡"><SettingsSummary Settings="document.Values" Group="monster" /></MudTabPanel>
+        <MudTabPanel Text="存档与保护"><SettingsSummary Settings="document.Values" Group="protection" /></MudTabPanel>
+    </MudTabs>
+    <MudAlert Severity="Severity.Info" Dense="true" Class="my-3">总连接数包含登录、选角及游戏内连接。陪玩全部来自本机，同 IP 上限至少设为“陪玩人数 + 本机真人连接 + 1”；总连接数也需留出真人名额。修改上限不会踢下已有玩家。</MudAlert>
+}
+@if(draft!=null&&document!=null)
+{
+    <AdminDialog Visible="true" Title="编辑系统设置" OnClose="@(()=>draft=null)" OnSave="Save" Busy="busy" Dirty="@(original!=JsonSerializer.Serialize(draft))" SaveConfirmation="@(RestartRequired?"安全区效果或技能冷却变更将保存数据并重启游戏引擎，在线玩家需要重新连接。确认保存？":"保存当前版本系统设置？原配置将保留备份，运行参数立即更新，已有连接不会被强制断开。")">
+        <DialogContent>
+            @if(error!=null){<MudAlert Severity="Severity.Error" Dense="true" Class="my-2">@error</MudAlert>}
+            <MudTabs KeepPanelsAlive="true">
+                <MudTabPanel Text="连接与权限">
+                    <MudGrid Spacing="2" Class="my-2">
+                        <MudItem xs="12" sm="6"><MudNumericField T="int" Label="最大在线连接数" Min="1" Max="65535" @bind-Value="draft.MaxUser" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" HelperText="包含登录和选角连接，对应 MaxUser" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudNumericField T="int" Label="同 IP 最大连接数" Min="1" Max="65535" @bind-Value="draft.MaxIP" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" HelperText="陪玩共用本机 IP，对应 MaxIP" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许注册账户" @bind-Value="draft.AllowNewAccount" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许登录" @bind-Value="draft.AllowLogin" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许修改密码" @bind-Value="draft.AllowChangePassword" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许创建角色" @bind-Value="draft.AllowNewCharacter" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许删除角色" @bind-Value="draft.AllowDeleteCharacter" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="要求仓库密码" @bind-Value="draft.RequireStoragePassword" /></MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+                <MudTabPanel Text="成长与掉落">
+                    <MudGrid Spacing="2" Class="my-2">
+                        <MudItem xs="6"><MudNumericField T="float" Label="经验倍率" Min=".01f" Max="100f" Step=".1f" @bind-Value="draft.ExpRate" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
+                        <MudItem xs="6"><MudNumericField T="float" Label="掉落倍率" Min=".01f" Max="100f" Step=".1f" @bind-Value="draft.DropRate" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
+                        <MudItem xs="6"><MudNumericField T="int" Label="普通掉落保留（分钟）" Min="1" Max="1440" @bind-Value="draft.ItemTimeOut" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
+                        <MudItem xs="6"><MudNumericField T="int" Label="死亡掉落保留（分钟）" Min="1" Max="1440" @bind-Value="draft.PlayerDiedItemTimeOut" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
+                        <MudItem xs="6"><MudNumericField T="int" Label="PK 值衰减间隔（秒）" Min="1" Max="3600" @bind-Value="draft.PKDelay" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="经验受怪物等级差影响" @bind-Value="draft.ExpMobLevelDifference" /></MudItem>
+                    </MudGrid>
+                    <BalanceSettingsFields Settings="draft" Group="game" Changed="StateHasChanged" />
+                    <MudText Typo="Typo.caption">倍率沿用原引擎规则；掉落倍率也影响原任务金币奖励。物品保留时间应用于后续新掉落，已有物品倒计时不重算。</MudText>
+                </MudTabPanel>
+                <MudTabPanel Text="战斗平衡"><BalanceSettingsFields Settings="draft" Group="combat" Changed="StateHasChanged" /></MudTabPanel>
+                <MudTabPanel Text="状态效果"><BalanceSettingsFields Settings="draft" Group="effects" Changed="StateHasChanged" /></MudTabPanel>
+                <MudTabPanel Text="怪物平衡"><BalanceSettingsFields Settings="draft" Group="monster" Changed="StateHasChanged" /></MudTabPanel>
+                <MudTabPanel Text="存档与保护">
+                    <MudGrid Spacing="2" Class="my-2">
+                        <MudItem xs="12" sm="6"><MudNumericField T="int" Label="自动存档间隔（分钟）" Min="1" Max="60" @bind-Value="draft.SaveDelay" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" HelperText="从下一次已安排的自动存档后使用新间隔" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="显示安全区边界" @bind-Value="draft.SafeZoneBorder" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="安全区自动恢复" @bind-Value="draft.SafeZoneHealing" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许怪物召回" @bind-Value="draft.MonsterRecallEnabled" /></MudItem>
+                        <MudItem xs="6"><MudNumericField T="int" Label="怪物召回距离（格）" Min="1" Max="100" @bind-Value="draft.MonsterRecallRange" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
+                        <MudItem xs="6"><MudNumericField T="int" Label="怪物召回冷却（毫秒）" Min="100" Max="600000" @bind-Value="draft.MonsterRecallCooldown" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
+                    </MudGrid>
+                    <MudText Typo="Typo.caption">修改安全区边界或恢复效果会正常保存并重启引擎。怪物召回仍需怪物定义允许。自动存档沿用原引擎周期，不代表断电时逐笔资产零丢失。</MudText>
+                </MudTabPanel>
+            </MudTabs>
+        </DialogContent>
+    </AdminDialog>
+}
+@code {
+    private ServerSettingsDocument? document; private ServerSettings? draft; private string original=""; private string? error,notice; private bool busy;
+    protected override Task OnInitializedAsync()=>Load();
+    private async Task Load(){try{document=await Api.Get<ServerSettingsDocument>("management/settings");error=null;}catch(Exception e){error=e.Message;}}
+    private bool RestartRequired=>draft!=null&&document!=null&&(draft.SafeZoneBorder!=document.Values.SafeZoneBorder||draft.SafeZoneHealing!=document.Values.SafeZoneHealing||draft.SkillCooldownRate!=document.Values.SkillCooldownRate);
+    private void Edit(){draft=document!.Values with{};original=JsonSerializer.Serialize(draft);error=null;}
+    private async Task Save()
+    {
+        if(draft==null||document==null)return;busy=true;
+        try{document=await Api.Put<ServerSettingsDocument>("management/settings",new ServerSettingsEdit(draft,document.Version));draft=null;error=null;notice="已保存并生效。";}
+        catch(Exception e){error=e.Message;}finally{busy=false;}
+    }
+}

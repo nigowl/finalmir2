@@ -48,7 +48,11 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["X-Frame-Options"] = "DENY"; await next();
 });
-app.UseStaticFiles(); app.UseAuthentication(); app.UseAuthorization(); app.UseRateLimiter(); app.UseAntiforgery();
+app.UseStaticFiles(); app.UseAuthentication();
+#if DEBUG
+if (app.Environment.IsDevelopment()) app.UseLocalDevelopmentAuthentication();
+#endif
+app.UseAuthorization(); app.UseRateLimiter(); app.UseAntiforgery();
 app.MapPost("/auth/login", async (HttpContext context, IAntiforgery antiforgery) =>
 {
     try { await antiforgery.ValidateRequestAsync(context); }
@@ -60,7 +64,9 @@ app.MapPost("/auth/login", async (HttpContext context, IAntiforgery antiforgery)
 }).RequireRateLimiting("login").AllowAnonymous();
 app.MapPost("/auth/logout", async (HttpContext context, IAntiforgery antiforgery) =>
 {
-    await antiforgery.ValidateRequestAsync(context); await context.SignOutAsync(); return Results.Redirect("/login");
+    try { await antiforgery.ValidateRequestAsync(context); }
+    catch (AntiforgeryValidationException) { return Results.BadRequest("表单验证失败，请刷新后重试。"); }
+    await context.SignOutAsync(); return Results.Redirect("/login");
 }).RequireAuthorization();
 app.MapGet("/asset-preview", async (string library, int index, AdminApi api, HttpContext context) =>
     await api.Proxy($"management/resources/preview/{AdminApi.Escape(library)}?index={index}", context, "image/png")).RequireAuthorization();

@@ -35,7 +35,8 @@ public sealed class ClientAutomation
         bool Low(Stat stat, int value, int threshold) => value * 100L <= (long)Math.Max(value, stats[stat]) * threshold;
         var lowTown = preferences.AutoTown && Low(Stat.HP, user.HP, preferences.TownPercent);
         var lowRandom = preferences.AutoRandom && Low(Stat.HP, user.HP, preferences.RandomPercent);
-        if (!lowTown) townTriggered = false;
+        // 地图暂时屏蔽回城不能重置同一次低血保护，实际恢复生命后才重新布防。
+        if (!Low(Stat.HP, user.HP, preferences.TownPercent)) townTriggered = false;
         if (!lowRandom) randomTriggered = false;
         // 回城优先于随机和喝药；同一次低血量只触发一张保护卷，恢复后才重新布防。
         UserItem? item = null;
@@ -73,13 +74,16 @@ public sealed class ClientAutomation
     public static bool IsAreaSkill(Spell spell) => spell is Spell.None or Spell.HalfMoon or Spell.CrossHalfMoon or Spell.HellFire or Spell.FireBang
         or Spell.Lightning or Spell.ThunderStorm or Spell.IceStorm or Spell.FlameField or Spell.Blizzard or Spell.MeteorStrike or Spell.IceThrust or Spell.PoisonCloud;
 
+    // 原Tree仅接受ACAgility普攻；AI来自原ObjectMonster包，不依赖版本内名称/物品编号。
+    public static bool RequiresPhysicalAttack(Actor target) => target.Kind==ObjectType.Monster && target.AI==3;
+
     public static ClientMagic? SkillFor(GameState state, ClientPreferences preferences, Actor target, long now)
     {
-        if (state.User == null) return null;
+        if (state.User == null || RequiresPhysicalAttack(target)) return null;
         var crowded = Targets(state).Count(actor => Functions.MaxDistance(actor.Location, target.Location) <= 2) >= 2;
         foreach (var spell in crowded ? new[] { preferences.AreaSkill, preferences.SingleSkill } : new[] { preferences.SingleSkill })
         {
-            if (spell == Spell.None) continue;
+            if (spell == Spell.None || state.DisabledSkills.Contains(spell)) continue;
             var skill = state.User.Magics.FirstOrDefault(magic => magic.Spell == spell);
             if (skill != null && skill.BaseCost + skill.LevelCost * skill.Level <= state.User.MP && now >= skill.CastTime + skill.Delay) return skill;
         }

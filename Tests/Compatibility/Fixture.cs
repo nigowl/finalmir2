@@ -7,7 +7,7 @@ using Server.MirEnvir;
 internal static class Fixture
 {
     // Keep deterministic gameplay changes in disposable data, never in the reference world.
-    public static void Create(string destination, bool tradeAccounts = false, bool guildAccount = false, bool catalog = false)
+    public static void Create(string destination, bool tradeAccounts = false, bool guildAccount = false, bool catalog = false, bool guidedCompanions = false, bool gmAccount = false, bool skillEffects = false)
     {
         var reference = new Mir2.Hosting.ProjectPaths().Data;
         var root = Path.GetFullPath(destination);
@@ -32,6 +32,8 @@ internal static class Fixture
             Directory.SetCurrentDirectory(database);
             var world = Envir.Main;
             if (!world.LoadDB()) throw new InvalidDataException("Cannot load reference world.");
+            var skillSummons = skillEffects ? new[] { Server.Settings.SkeletonName, Server.Settings.ShinsuName, Server.Settings.AngelName }
+                .Select(name => world.GetMonsterInfo(name) ?? throw new InvalidDataException($"原版本缺少召唤兽：{name}")).Distinct().ToArray() : [];
             var map = new MapReader(Path.Combine(reference, "assets", "maps", "0.map"));
             bool Clear(int x, int y) => x >= 0 && y >= 0 && x < map.Width && y < map.Height &&
                 (map.MapCells[x, y].BackImage & 0x20000000) == 0 && (map.MapCells[x, y].FrontImage & 0x8000) == 0;
@@ -60,6 +62,16 @@ internal static class Fixture
             var book = world.ItemInfoList.First(i => i.Type == ItemType.Book && i.Shape == (short)Spell.FireBall);
             book.StartItem = true; book.RequiredClass = RequiredClass.Warrior; book.RequiredGender = RequiredGender.Male; book.RequiredAmount = 0; book.Weight = 0;
             world.MagicInfoList.First(m => m.Spell == Spell.FireBall).Level1 = 1;
+            if (guildAccount)
+            {
+                foreach (var spell in new[] { Spell.Thrusting, Spell.Fencing })
+                {
+                    var skillBook = world.ItemInfoList.First(i => i.Type == ItemType.Book && i.Shape == (short)spell);
+                    skillBook.StartItem = true; skillBook.RequiredClass = RequiredClass.Warrior; skillBook.RequiredGender = RequiredGender.Male;
+                    skillBook.RequiredAmount = 0; skillBook.Weight = 0;
+                    world.MagicInfoList.First(m => m.Spell == spell).Level1 = 1;
+                }
+            }
             foreach (var shape in new short[] { 1, 2 })
             {
                 var scroll = world.ItemInfoList.First(i => i.Type == ItemType.Scroll && i.Shape == shape);
@@ -129,6 +141,22 @@ internal static class Fixture
                         Location = new Point(start.X - 2, start.Y), Colour = Color.White });
                 }
                 File.WriteAllText(Path.Combine("Envir", "NPCs", "CatalogList.txt"), "[@MAIN]\n#SAY\nCatalog fixture.\n");
+            }
+            if (guidedCompanions) CompanionGuidanceFixture.Configure(world, start, point => Clear(point.X, point.Y), potion);
+            if (gmAccount)
+            {
+                world.ItemInfoList.Add(new ItemInfo { Index = ++world.ItemIndex, Name = "NativeStackMeat", Type = ItemType.Meat, Image = potion.Image, Weight = 0 });
+                world.ItemInfoList.Add(new ItemInfo { Index = ++world.ItemIndex, Name = "NativeEquipFixture", Type = ItemType.Weapon, Image = sword.Image, Weight = 0, StackSize = 999 });
+                var account = new AccountInfo { Index = ++world.NextAccountID, AccountID = "NativeGM", Password = "Native123", AdminAccount = true, CreationIP = "127.0.0.1", CreationDate = DateTime.UtcNow };
+                var character = new CharacterInfo { Index = ++world.NextCharacterID, Name = "NativeGM", AccountInfo = account, Class = MirClass.Warrior, Gender = MirGender.Male,
+                    Level = 50, CurrentMapIndex = first.Index, CurrentLocation = start, BindMapIndex = first.Index, BindLocation = start, CreationIP = "127.0.0.1", CreationDate = DateTime.UtcNow, Heroes = new HeroInfo[1] };
+                account.Characters.Add(character); world.AccountList.Add(account); world.CharacterList.Add(character); world.SaveAccounts();
+            }
+            if (skillEffects)
+            {
+                second.NoPets = true;
+                second.Respawns.Clear();
+                SkillEffectFixture.Configure(world, first, start, skillSummons);
             }
             world.SaveDB();
             if (tradeAccounts)

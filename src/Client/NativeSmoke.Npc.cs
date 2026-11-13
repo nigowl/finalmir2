@@ -64,7 +64,7 @@ public partial class NativeSmoke
         Client._UnhandledInput(equipment);
         var slot = Array.FindIndex(State.User.Inventory, value => value?.UniqueID == item.UniqueID);
         var source = Client.FindChildren("*", "Button", true, false).OfType<OriginalItemButton>().Single(button =>
-            button.Position == (slot < 6 ? new Vector2(242 + slot * 35, 621) : new Vector2(9 + (slot - 6) % 8 * 37, 37 + (slot - 6) / 8 * 33)));
+            button.Position == (slot < 6 ? OriginalArt.QuickSlotPosition(slot) : new Vector2(9 + (slot - 6) % 8 * 37, 37 + (slot - 6) / 8 * 33)));
         await MoveMouse(source.GetGlobalRect().GetCenter()); MouseButtonAt(source.GetGlobalRect().GetCenter(), true);
         await MoveMouse(cell.GetGlobalRect().GetCenter(), true); MouseButtonAt(cell.GetGlobalRect().GetCenter(), false);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);

@@ -35,7 +35,7 @@ public sealed partial class GameState
                         GuildStorage[p.From] = null!; break;
                     case 2 when (uint)p.From < GuildStorage.Length && (uint)p.To < GuildStorage.Length && p.From != p.To && p.Item?.Item != null:
                         Bind(p.Item.Item); GuildStorage[p.From] = GuildStorage[p.To]; GuildStorage[p.To] = p.Item; break;
-                    case >= 3: Message?.Invoke("行会仓库操作未完成，请检查安全区、职位权限、物品限制及目标空位。"); break;
+                    case >= 3: NotifyMessage("行会仓库操作未完成，请检查安全区、职位权限、物品限制及目标空位。", ChatType.Hint); break;
                 }
                 GuildStorageRevision++; InventoryRevision++; break;
             case S.GuildStorageGoldChange p when Guild != null:

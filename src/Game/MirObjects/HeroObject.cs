@@ -1262,7 +1262,7 @@ namespace Server.MirObjects
         }
         protected override void SendBaseStats()
         {
-            Owner.Enqueue(new S.HeroBaseStatsInfo { Stats = Settings.HeroBaseStats[(byte)Class] });
+            Owner.Enqueue(new S.HeroBaseStatsInfo { Stats = Server.Helpers.GameBalance.ClientStats(Settings.HeroBaseStats[(byte)Class]) });
         }
 
         protected override void RefreshLevelStats()

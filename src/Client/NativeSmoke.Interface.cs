@@ -15,7 +15,9 @@ public partial class NativeSmoke
         if (!vitals.Text.Contains($"{State.User!.HP}/") || !vitals.Text.Contains($"{State.User.MP}/") || !vitals.Text.Contains('\n'))
             throw new Exception("Player health/mana labels omitted their current values.");
         var dialogs = Client.FindChildren("*", "AcceptDialog", true, false).OfType<AcceptDialog>().ToArray();
-        if (dialogs.Length < 5 || dialogs.Any(dialog => dialog.GetOkButton().Text != "确定" || dialog is ConfirmationDialog confirm && confirm.GetCancelButton().Text != "取消"))
+        if (dialogs.Length < 5 || dialogs.Any(dialog => dialog.Name == "DeathConfirmation"
+            ? dialog.GetOkButton().Text != "回城复活" || ((ConfirmationDialog)dialog).GetCancelButton().Text != "暂不复活"
+            : dialog.GetOkButton().Text != "确定" || dialog is ConfirmationDialog confirm && confirm.GetCancelButton().Text != "取消"))
             throw new Exception("系统确认弹窗仍含英文按钮。");
         if (vitals.GetRect().End.X > 104 || vitals.GetRect().Position.Y < 646 || vitals.GetRect().End.Y > 726)
             throw new Exception("HP/MP labels escaped the original orb.");
@@ -45,9 +47,24 @@ public partial class NativeSmoke
         if (!Client.World.NameVisible(npc)) throw new Exception("Disabled NPC name display also hid its hover name.");
         Client.World.UpdateHover(Vector2.Zero, true); Client.World.ShowNpcNames = true;
         await VerifyActorNameCentres(npc, monster);
-        var belt = Client.FindChildren("*", "Button", true, false).OfType<OriginalItemButton>().Where(button => button.Position.Y == 621).ToArray();
-        if (belt.Length != 6 || belt.Select(button => button.GetRect()).Any(rect => rect.Position.Y < 618 || rect.End.Y > 656 || rect.End.X > 454))
+        var belt = Client.FindChildren("*", "Button", true, false).OfType<OriginalItemButton>().Where(button => button.SlotAssets != null).ToArray();
+        if (belt.Length != 6 || belt.Any(button => button.Size != new Vector2(32, 32)) || belt.Select(button => button.GetRect()).Any(rect => rect.Position.Y != 629 || rect.End.Y != 661 || rect.End.X > 454))
             throw new Exception($"Quick item hitboxes do not match the original belt: {string.Join(", ", belt.Select(button => button.GetRect()))}.");
+        var quickBars = (Control)Client.FindChild("QuickBars", true, false);
+        var squares = quickBars.GetChildren().OfType<Button>().OrderBy(button => button.Position.X).ToArray();
+        if (squares.Length != 18 || squares.Any(button => button.Size != new Vector2(32, 32) || button.Position.Y != 629) ||
+            squares.SelectMany(button => button.GetChildren().OfType<Label>()).Any(label => label.Position != new Vector2(1, 0) || label.Size.Y != 14 || label.GetThemeFontSize("font_size") != 9))
+            throw new Exception("物品/技能快捷格或数字未使用相同尺寸、基线和字体：" + string.Join("；", squares.Select(button =>
+                $"{button.Name} {button.GetRect()} " + string.Join(",", button.GetChildren().OfType<Label>().Select(label => $"{label.Text}/{label.GetRect()}/{label.GetThemeFontSize("font_size")}")))));
+        for (var index = 1; index < squares.Length; index++)
+            if (squares[index].Position.X - squares[index - 1].GetRect().End.X != (index == 6 ? 8 : 2))
+                throw new Exception("快捷格间距未按整数像素对齐。");
+        for (var number = 1; number <= 6; number++)
+            if (!belt.Any(button => button.Position == OriginalArt.QuickSlotPosition(number - 1) && button.SlotAssets != null &&
+                button.GetChildren().OfType<Label>().Any(label => label.Text == number.ToString() && label.Position == new Vector2(1, 0))))
+                throw new Exception("物品快捷栏数字未对齐原版格子。");
+        if (quickBars.GetChildren().OfType<TextureRect>().Any()) throw new Exception("快捷栏仍保留无效拖条或旋转/关闭装饰。");
+        await Until(() => Client.Assets.Sprite("Prguse", 1933) != null);
         using var equipment = new InputEventKey { PhysicalKeycode = Key.C, Pressed = true };
         Client._UnhandledInput(equipment);
         await Screenshot("presentation-equipment");
@@ -161,7 +178,10 @@ public partial class NativeSmoke
     {
         stage = "server-authoritative character selection location";
         if (!Client.Assets.SupportsCharacterLocation) throw new Exception("The disposable server did not advertise character-location support.");
-        var location = await Packet<S.CharacterLocation>();
+        var selected=Client.FindChildren("*","Control",true,false).OfType<OriginalArt>().Single(art=>art.Page=="select").Character!.Index;
+        await Until(()=>packets.OfType<S.CharacterLocation>().Any(packet=>packet.CharacterIndex==selected));
+        var location = packets.OfType<S.CharacterLocation>().Last(packet=>packet.CharacterIndex==selected);
+        packets.Remove(location);
         var expected = location.Found ? $"{location.MapTitle} · {location.Location.X},{location.Location.Y}" : "新角色 · 尚未进入地图";
         var label = Client.FindChildren("*", "Label", true, false).Cast<Label>().Single(label => label.Text == expected);
         if (!new Rect2(198, 613, 176, 19).Encloses(label.GetRect())) throw new Exception("The last map/coordinate label escaped the original gold field.");
@@ -192,14 +212,24 @@ public partial class NativeSmoke
             if (columns.Any(label => label.Visible != (tab.TooltipText is "属性" or "状态")) || experience.Visible != columns[0].Visible)
                 throw new Exception("Attribute columns leaked into the equipment/skill pages.");
             if (!columns[0].Visible) continue;
-            if (columns.Any(label => label.GetThemeFontSize("font_size") != 11 || label.GetLineCount() != 7 || label.GetRect().End.Y > experience.Position.Y || label.GetRect().End.X > 246) ||
-                columns[0].GetRect().Intersects(columns[1].GetRect()) || !columns[0].Text.Contains($"生命 {State.User!.HP}/") || !columns[1].Text.Contains($"魔力 {State.User.MP}/") ||
-                !columns[0].Text.Contains($"{Stat.Accuracy.ToLocalizedString()} {State.CalculateStats()[Stat.Accuracy]}") || !columns[1].Text.Contains($"{Stat.Agility.ToLocalizedString()} {State.CalculateStats()[Stat.Agility]}") ||
+            if (columns.Any(label => label.GetThemeFontSize("font_size") != 11 || label.GetLineCount() > 9 || label.GetRect().End.Y > experience.Position.Y || label.GetRect().End.X > 246) ||
+                columns[0].GetRect().Intersects(columns[1].GetRect()) ||
                 experience.GetRect().End.Y > panel.Size.Y - 24 || !experience.Text.Contains($"{State.User.Experience}/{State.User.MaxExperience}"))
                 throw new Exception("The two attribute columns overlap, overflow or omit vital/stat/experience values.");
-            if (tab.TooltipText == "属性") await Screenshot("attributes-two-columns");
+            if (tab.TooltipText == "属性")
+            {
+                if (!columns[0].Text.Contains($"生命 {State.User.HP}/") || !columns[1].Text.Contains($"魔力 {State.User.MP}/") || !columns[0].Text.Contains(Stat.AttackSpeed.ToLocalizedString()))
+                    throw new Exception("属性页缺少战斗属性。");
+                await Screenshot("attributes-two-columns");
+            }
+            else
+            {
+                if (!columns[0].Text.Contains($"背包负重 {State.InventoryWeight}/") || !columns[1].Text.Contains(Stat.PoisonRecovery.ToLocalizedString()) || columns[0].Text.Contains("最低攻击"))
+                    throw new Exception("状态页仍与属性页相同或未显示负重和抗性。");
+                await Screenshot("status-two-columns");
+            }
         }
-        panel.Hide(); GD.Print("PASS native equipment: K/icon toggles, active tabs and two bounded attribute columns with full experience.");
+        panel.Hide(); GD.Print("PASS native equipment: K/icon toggles, distinct combat/status pages, bounded columns and live full experience.");
     }
 
     private async Task UseQuickPotion(bool mouse)

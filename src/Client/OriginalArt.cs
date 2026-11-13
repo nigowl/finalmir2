@@ -4,6 +4,16 @@ using Godot;
 // Geometry and library indices follow MainDialogs, CharacterDialog and SelectScene.
 public partial class OriginalArt : Control
 {
+    internal static Vector2 QuickSlotPosition(int slot) => new(237 + slot * 34 + (slot >= 6 ? 6 : 0), 629);
+    internal static void DrawQuickSlot(Control control, ResourceCache assets)
+    {
+        var rect = new Rect2(Vector2.Zero, control.Size);
+        var source = new Rect2(10, 0, 37, 38);
+        var background = assets.Sprite("Prguse", 1933);
+        if (background != null) control.DrawTextureRectRegion(background.Texture, rect, source, new Color(1, 1, 1, .5f));
+        var border = assets.Sprite("Prguse", 1932);
+        if (border != null) control.DrawTextureRectRegion(border.Texture, rect, source);
+    }
     public ResourceCache Assets = null!;
     public GameState State = null!;
     public string Page = "hud";
@@ -95,11 +105,23 @@ public partial class OriginalButton : Button
     }
 }
 
-public partial class OriginalItemButton : Button
+public partial class OriginalItemButton : ItemTipButton
 {
+    public ResourceCache? SlotAssets;
+    public Texture2D? SlotIcon;
     public uint Count;
+    public override void _Process(double delta) { if (SlotAssets != null && IsVisibleInTree()) QueueRedraw(); }
     public override void _Draw()
     {
+        if (SlotAssets != null)
+        {
+            OriginalArt.DrawQuickSlot(this, SlotAssets);
+            if (SlotIcon != null)
+            {
+                var size = (SlotIcon.GetSize() * Math.Min((Size.X - 4) / SlotIcon.GetWidth(), (Size.Y - 4) / SlotIcon.GetHeight())).Floor();
+                DrawTextureRect(SlotIcon, new Rect2(((Size - size) / 2).Floor(), size), false, Disabled ? new Color(1, 1, 1, .4f) : Colors.White);
+            }
+        }
         if (Count <= 1) return;
         var text = Count.ToString();
         var position = new Vector2(Size.X - ThemeDB.FallbackFont.GetStringSize(text, fontSize: 10).X - 1, Size.Y - 1);

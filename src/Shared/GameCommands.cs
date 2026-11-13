@@ -7,7 +7,7 @@ public static class GameCommands
     // 只统一命令名称；权限、参数和游戏规则仍由原引擎对应分支执行。
     public static IReadOnlyList<GameCommandInfo> All { get; } = Array.AsReadOnly(new GameCommandInfo[]
     {
-        new("传送", "mm", "MAPMOVE", "地图代码 [实例号] [X Y]", "@传送 0 300 300 / @mm 0", "传送到地图；省略坐标时随机落点。原 MAPMOVE 继续可用。"),
+        new("传送", "mm", "MAPMOVE", "地图名称/地图代码 [实例号] [X Y]", "@传送 比奇省 300 300 / @mm 0", "按地图名称或代码传送；重名请用代码，含空格的名称用双引号。省略坐标时随机落点。"),
         new("移动", "mv", "MOVE", "[X Y]", "@移动 300 300", "同图坐标移动；无坐标时随机移动。保留传送装备与地图限制。"),
         new("前往玩家", "go", "GOTO", "角色名", "@前往玩家 张三", "GM 前往在线角色所在位置。"),
         new("召回玩家", "rc", "RECALL", "角色名", "@召回玩家 张三", "GM 将在线角色召到身边。"),
@@ -20,6 +20,7 @@ public static class GameCommands
         new("给予真珠", "gp", "GIVEPEARLS", "[角色名] 数量", "@给予真珠 100", "给予宠物真珠；修改他人仍要求 GM。"),
         new("给予元宝", "gc", "GIVECREDIT", "[角色名] 数量", "@给予元宝 100", "给予账户元宝；修改他人仍要求 GM。"),
         new("给予技能", "gs", "GIVESKILL", "[角色名] 技能枚举 等级", "@给予技能 FireBall 3", "学习或设置技能，等级 0–3；参数沿用原技能枚举。"),
+        new("获取职业技能书", "books", "GIVEBOOKS", "职业", "@获取职业技能书 战士 / @books Wizard", "GM 获得当前版本指定职业的全部技能书，每种技能一本；支持中文或英文职业。检查背包容量和负重，不自动学习。"),
         new("删除技能", "ds", "DELETESKILL", "[角色名] 技能枚举", "@删除技能 FireBall", "GM 删除自己或在线角色的指定技能。"),
         new("无敌", "sm", "SUPERMAN", "", "@无敌", "切换无敌模式；GM/测试服。"),
         new("管理员模式", "gm", "GAMEMASTER", "", "@管理员模式", "切换原 GM 模式；不会授予账户 GM 权限。"),

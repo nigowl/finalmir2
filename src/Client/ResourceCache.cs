@@ -36,6 +36,8 @@ public sealed partial class ResourceCache : IDisposable
     public string Host { get; private set; } = "127.0.0.1";
     public int GamePort { get; private set; }
     public bool SupportsCharacterLocation { get; private set; }
+    public int FunctionKeys { get; private set; } = 8;
+    public int AttackModes { get; private set; } = 6;
     private int downloads, cachedFiles, pendingDownloads;
     private long downloadBytes;
     public int Downloads => Volatile.Read(ref downloads);
@@ -65,6 +67,8 @@ public sealed partial class ResourceCache : IDisposable
         if (manifest.RootElement.GetProperty("checksumAlgorithm").GetString() != "sha256") throw new InvalidDataException("不支持此资源校验方式。");
         GamePort = manifest.RootElement.GetProperty("gamePort").GetInt32();
         SupportsCharacterLocation = manifest.RootElement.TryGetProperty("characterLocation", out var capability) && capability.ValueKind == JsonValueKind.True;
+        FunctionKeys = manifest.RootElement.TryGetProperty("functionKeys", out var keys) && keys.TryGetInt32(out var count) && count == 12 ? 12 : 8;
+        AttackModes = manifest.RootElement.TryGetProperty("attackModes", out var modes) && modes.TryGetInt32(out var modeCount) && modeCount == 8 ? 8 : 6;
         root = new Uri(uri, $"assets/{Version}/").ToString();
         directory = Path.Combine(cacheRoot, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(uri.ToString())))[..12], Version);
         Directory.CreateDirectory(directory);
@@ -226,7 +230,7 @@ public sealed partial class ResourceCache : IDisposable
             using var decoded = Image.CreateFromData(width, height, false, Image.Format.Rgba8, pixels);
             image = new SpriteImage(ImageTexture.CreateFromImage(decoded),
                 new Vector2(BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(4)), BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(6))), new Vector2(width, height));
-            if (library.StartsWith("NPC/") || library.StartsWith("Monster/") || library.StartsWith("CArmour/") ||
+            if (library.StartsWith("NPC/") || library.StartsWith("Monster/") || library.StartsWith("CArmour/") || library.StartsWith("AArmour/") || library.StartsWith("ARArmour/") ||
                 library.StartsWith("Pet/") || library.StartsWith("Flag/") || library.StartsWith("Gate/") || library.StartsWith("Siege/"))
                 image = image with { BodyCentre = MeasureBodyCentre(pixels, width, height) };
             CacheTexture(key, image);

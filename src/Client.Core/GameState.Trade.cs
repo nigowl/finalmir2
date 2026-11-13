@@ -39,8 +39,8 @@ public sealed partial class GameState
                 TradeGold += PendingTradeGold; PendingTradeGold = 0; TradeLocked = false; TradeRevision++; break;
             case S.TradeCancel { Unlock: true }:
                 TradeLocked = false; TradeRevision++; break;
-            case S.TradeCancel: ClearTrade(); Message?.Invoke("交易已取消，报价已退回。"); break;
-            case S.TradeConfirm: ClearTrade(); Message?.Invoke("交易成功。"); break;
+            case S.TradeCancel: ClearTrade(); NotifyMessage("交易已取消，报价已退回。"); break;
+            case S.TradeConfirm: ClearTrade(); NotifyMessage("交易成功。", ChatType.System2); break;
         }
     }
 }

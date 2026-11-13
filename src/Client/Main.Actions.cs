@@ -17,6 +17,7 @@ public partial class Main
     private static int Distance(Point a, Point b) => Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
     public void SetDestination(Point point, bool run = false)
     {
+        preparedSkill = null;
         destination = point; actionTarget = 0; pendingAttack = null; running = run;
         MiniMap.Route = State.User?.Location == point ? [] : World.PathTo(point);
     }
@@ -25,6 +26,9 @@ public partial class Main
     {
         var me = State.Me; var user = State.User;
         if (me == null || user == null || me.Dead || World.Loading || World.Map == null || !HandshakeReady) return;
+        if (SkillPreparationBusy && !skillPreparationPaused || classPendingSpell != Spell.None) return;
+        if (autoBattleEnabled && (State.Trading || State.StorageActive || npc.Visible || GuildStorageOpen))
+        { destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; return; }
         var now = Environment.TickCount64;
         if (moving)
         {
@@ -41,6 +45,12 @@ public partial class Main
             { destination = null; MiniMap.Route = []; State.NpcId = target.Id; Send(new C.CallNPC { ObjectID = target.Id, Key = "[@MAIN]" }); actionTarget = 0; return; }
             if (target.Kind == ObjectType.Item && distance == 0) { Send(new C.PickUp()); actionTarget = 0; return; }
             if (target.Kind == ObjectType.Monster && !target.Dead && BattleSkill(target, now)) return;
+            if (target.Kind == ObjectType.Monster && !target.Dead && user.Class == MirClass.Warrior && preferences.SmartThrusting && distance == 2 &&
+                target.Location == Functions.PointMove(user.Location, Direction(user.Location, target.Location), 2) &&
+                State.User.Magics.FirstOrDefault(magic => magic.Spell == Spell.Thrusting) is { } thrust && !State.DisabledSkills.Contains(thrust.Spell) && !ClientAutomation.RequiresPhysicalAttack(target))
+            { Attack(Direction(user.Location, target.Location), Spell.Thrusting); return; }
+            if (target.Kind == ObjectType.Monster && !target.Dead && OriginalPlayerArt.HasBow(user.Class, me.Weapon) && distance <= Globals.MaxAttackRange)
+            { RangeAttack(target); return; }
             if (target.Kind == ObjectType.Monster && distance <= 1)
             {
                 if (target.Dead) { Send(new C.Harvest { Direction = Direction(user.Location, target.Location) }); actionTarget = 0; }
@@ -65,8 +75,25 @@ public partial class Main
         var ready = World.PlayerAnimationReady(dir, MirAction.Walking);
         if (running) ready &= World.PlayerAnimationReady(dir, MirAction.Running);
         if (!ready) return;
+        for(var distance=1;distance<=Distance(user.Location,step.Value);distance++)
+        {
+            var cell=Functions.PointMove(user.Location,dir,distance);
+            var door=World.Map.MapCells[cell.X,cell.Y].DoorIndex;
+            if(door!=0)Send(new C.Opendoor{DoorIndex=door});
+        }
         Send(run ? new C.Run { Direction = dir } : new C.Walk { Direction = dir });
         moveTime = now; moving = true;
+    }
+    private void RangeAttack(Actor target)
+    {
+        var user = State.User!; var me = State.Me!;
+        var now = Environment.TickCount64;
+        var speed = Math.Max(550, 1400 - State.CalculateStats()[Stat.AttackSpeed] * 60 - Math.Min(370, user.Level * 14));
+        var direction = Direction(user.Location, target.Location);
+        if (now - attackTime < speed + 200 || !World.PlayerAnimationReady(direction, MirAction.AttackRange1)) return;
+        me.Direction = direction;
+        Send(new C.RangeAttack { Direction = direction, Location = user.Location, TargetID = target.Id, TargetLocation = target.Location });
+        attackTime = now;
     }
     public void Attack(MirDirection direction, Spell? automaticSpell = null)
     {
@@ -74,42 +101,47 @@ public partial class Main
         var speed = Math.Max(550, 1400 - State.CalculateStats()[Stat.AttackSpeed] * 60 - Math.Min(370, State.User.Level * 14));
         var now = Environment.TickCount64;
         if (moving || now - moveTime < Actor.MoveDuration || now - attackTime < speed) return;
-        if (!World.PlayerAnimationReady(direction, MirAction.Attack1)) { pendingAttack = direction; pendingAttackSpell = automaticSpell; return; }
-        pendingAttack = null;
         var spell = automaticSpell ?? Spell.None;
+        var smart = preferences.SmartHalfMoon && State.User.Class == MirClass.Warrior ? ClassSkillRules.SmartMelee(State, direction) : Spell.None;
         foreach (var candidate in new[] { Spell.Slaying, Spell.Thrusting, Spell.HalfMoon, Spell.CrossHalfMoon, Spell.DoubleSlash, Spell.TwinDrakeBlade, Spell.FlamingSword })
         {
             if (automaticSpell.HasValue) break;
-            if (!State.ActiveSkills.Contains(candidate)) continue;
+            if (preferences.SmartHalfMoon && State.User.Class == MirClass.Warrior && candidate is Spell.HalfMoon or Spell.CrossHalfMoon && candidate != smart) continue;
+            if (!State.ActiveSkills.Contains(candidate) || State.DisabledSkills.Contains(candidate)) continue;
             if (candidate == Spell.Thrusting && !State.Actors.Values.Any(a => !a.Dead && a.Kind == ObjectType.Monster && a.Location == Functions.PointMove(State.User.Location, direction, 2))) continue;
             var magic = State.User.Magics.FirstOrDefault(m => m.Spell == candidate);
-            if (magic != null && magic.BaseCost + magic.LevelCost * magic.Level <= State.User.MP) spell = candidate;
+            if (magic != null && (candidate == Spell.FlamingSword || magic.BaseCost + magic.LevelCost * magic.Level <= State.User.MP)) spell = candidate;
         }
+        if (spell is Spell.None or Spell.Slaying or Spell.Thrusting && smart != Spell.None) spell = smart;
+        var level = State.User.Magics.FirstOrDefault(magic => magic.Spell == spell)?.Level ?? 0;
+        if (!World.MeleeReady(spell, level, direction)) { pendingAttack = direction; pendingAttackSpell = automaticSpell; return; }
+        pendingAttack = null;
         Send(new C.Attack { Direction = direction, Spell = spell }); attackTime = Environment.TickCount64;
         _ = PlaySound(OriginalSoundRules.Swing(State.Me.Weapon, State.Me.Class == MirClass.Assassin));
-        if (spell != Spell.None && State.User.Magics.FirstOrDefault(m => m.Spell == spell) is { } used) used.CastTime = attackTime;
+        PlayMeleeSound(spell, State.Me.Gender);
+        if (spell == Spell.FlamingSword && State.User.Magics.FirstOrDefault(m => m.Spell == spell) is { } used) used.CastTime = attackTime;
         if (spell is Spell.Slaying or Spell.TwinDrakeBlade or Spell.FlamingSword) State.ActiveSkills.Remove(spell);
-        State.Me.Direction = direction; State.Me.Action = MirAction.Attack1; State.Me.ActionTime = attackTime;
+        State.StartAttack(State.Me, direction, spell, level);
     }
-    public void Cast(int index, bool automatic = false)
+    public void Cast(int index, bool automatic = false, bool profession = false)
     {
-        if (State.User == null || index >= State.User.Magics.Count || Environment.TickCount64 < spellTime) return;
+        if (State.User == null || index < 0 || index >= State.User.Magics.Count || State.Me?.Dead != false || SkillPreparationBusy || classPendingSpell != Spell.None || State.Trading || State.StorageActive) return;
         var magic = State.User.Magics[index];
-        if (magic.Spell is Spell.Fencing or Spell.SpiritSword or Spell.Slaying or Spell.FatalSword or Spell.MPEater or Spell.Hemorrhage or Spell.Focus or Spell.Meditation) { Log("此技能为被动技能。"); return; }
-        if (magic.Spell is Spell.Thrusting or Spell.HalfMoon or Spell.CrossHalfMoon or Spell.DoubleSlash or Spell.TwinDrakeBlade or Spell.FlamingSword or Spell.CounterAttack)
+        if (!ClientSkillRules.IsImplemented(magic.Spell)) { Log("当前原引擎尚未实现此技能，无法施放。", ChatType.Hint); return; }
+        if (ClientSkillRules.IsPassive(magic.Spell)) { Log("此技能为被动技能。"); return; }
+        if (ClientSkillRules.IsToggle(magic.Spell))
         {
-            var enabled = !State.ActiveSkills.Contains(magic.Spell);
-            Send(new C.SpellToggle { Spell = magic.Spell, CanUse = enabled });
-            if (enabled) State.ActiveSkills.Add(magic.Spell); else State.ActiveSkills.Remove(magic.Spell);
-            Log($"{magic.Name}: {(enabled ? "开启" : "关闭")}"); return;
+            SetSkillToggle(index, !State.ActiveSkills.Contains(magic.Spell)); return;
         }
-        destination = null; if (!automatic) actionTarget = 0; pendingAttack = null; MiniMap.Route = []; moveTime = Environment.TickCount64;
+        if (State.DisabledSkills.Contains(magic.Spell)) { Log("该技能已关闭。"); return; }
+        if (magic.Spell == Spell.MentalState) { Send(new C.SpellToggle { Spell = magic.Spell, CanUse = true }); return; }
+        var now = Environment.TickCount64;
+        if (now < spellTime || now < magic.CastTime + Math.Max(0, magic.Delay)) return;
+        if (ClientSkillRules.IsTrigger(magic.Spell))
+        { Send(new C.SpellToggle { Spell = magic.Spell, CanUse = true }); if (profession) AwaitClassSkill(magic.Spell, 0, 0, now); return; }
         var targetId = World.Selected;
         var point = State.Actors.TryGetValue(targetId, out var selected) ? selected.Location : World.CellAt(World.GetGlobalMousePosition());
-        if (magic.Spell == Spell.Healing) { targetId = State.User.ObjectID; point = State.User.Location; }
-        if (State.Me != null) State.Me.Direction = Direction(State.User.Location, point);
-        Send(new C.Magic { ObjectID = State.User.ObjectID, Spell = magic.Spell, Direction = Direction(State.User.Location, point), TargetID = targetId, Location = point });
-        magic.CastTime = Environment.TickCount64;
-        spellTime = magic.CastTime + Math.Max(1800, magic.Delay);
+        if (magic.Spell == Spell.Healing && (selected == null || selected.Kind != ObjectType.Player || selected.Dead)) { targetId = State.User.ObjectID; point = State.User.Location; }
+        RequestSkillCast(magic, targetId, point, automatic, profession);
     }
 }

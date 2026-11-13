@@ -39,7 +39,36 @@ public partial class NativeSmoke
         using var motion = new InputEventMouseMotion { Position = button.GetGlobalRect().GetCenter(), GlobalPosition = button.GetGlobalRect().GetCenter() };
         GetViewport().PushInput(motion, true);
         await Screenshot("inventory-task-hover");
+        var warehouse = bag.GetNode<Button>("InventoryStorage");
+        if (warehouse.Position.X <= button.Position.X || warehouse.GetRect().End.X > 289) throw new Exception("仓库物品按钮没有放在任务物品旁边。");
+        warehouse.EmitSignal(BaseButton.SignalName.Pressed);
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        var storage = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "关闭仓库").GetParent<Control>();
+        if (!storage.Visible || Client.CanUseStorage || State.StorageActive) throw new Exception("背包仓库入口没有打开预览或绕过了NPC会话。");
+        await Screenshot("inventory-storage-preview"); warehouse.EmitSignal(BaseButton.SignalName.Pressed);
+        if (storage.Visible) throw new Exception("背包仓库入口再次点击没有关闭。");
         bag.Hide();
+        await VerifyItemComparison();
         GD.Print("PASS native inventory: matching original task hover art, aligned gold and populated weight/free-cell fields.");
+    }
+
+    private async Task VerifyItemComparison()
+    {
+        var item = new UserItem(new ItemInfo { Name = "对比测试长剑", Type = ItemType.Weapon, RequiredClass = RequiredClass.Wizard,
+            RequiredGender = RequiredGender.Female, RequiredAmount = 100, Stats = new Stats { [Stat.MinDC] = 3, [Stat.MaxDC] = 9, [Stat.MinMC] = 2, [Stat.MaxMC] = 5 } })
+            { UniqueID = ulong.MaxValue, Count = 1, CurrentDura = 10000, MaxDura = 10000 };
+        var details = Client.BuildItemTooltip(item);
+        var wrapper = new PanelContainer { Position = new Vector2(260, 210), MouseFilter = Control.MouseFilterEnum.Ignore };
+        wrapper.AddThemeStyleboxOverride("panel", Client.Theme.GetStylebox("panel", "PopupMenu")); wrapper.AddChild(details); Client.AddChild(wrapper);
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        var columns = details.GetChildren().OfType<VBoxContainer>().Select(column => column.GetChildren().OfType<RichTextLabel>().First()).ToArray();
+        if (columns.Length != 2 || !columns[0].GetParsedText().Contains("攻击 3–9") || !columns[0].GetParsedText().Contains("魔法 2–5") ||
+            columns[0].GetParsedText().Contains("×1") || !columns[1].GetParsedText().Contains("已装备") || wrapper.GetRect().End.X > 1024)
+            throw new Exception("装备对比缺少区间、已有装备或超出逻辑画布。");
+        if (details.GetChildren().OfType<VSeparator>().Count() != 1 || details.FindChildren("*", "HSeparator", true, false).Count != 1 ||
+            details.FindChild("ComparisonDifference", true, false) is not RichTextLabel diff || !diff.GetParsedText().Contains("换上左侧装备后"))
+            throw new Exception("装备对比列间或底部差异缺少独立分隔线。");
+        await Screenshot("equipment-comparison"); wrapper.QueueFree();
+        GD.Print("PASS native item presentation: quantity labels, red unmet requirements, stat ranges, equipped comparison and NPC-protected storage preview.");
     }
 }

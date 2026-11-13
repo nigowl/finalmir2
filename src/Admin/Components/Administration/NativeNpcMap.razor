@@ -2,7 +2,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime Js
 @* shortcut: 运营视图显示静态地形和 NPC 站立首帧，需要实时游戏场景预览时再接入动画与光照。 *@
-<MudText Typo="Typo.body2" Class="mb-2">原始 1:1 比例 · 每格 48 × 32 像素 · 滚动或点击小地图定位 · 点击 NPC 管理，点击空地新建</MudText>
+<MudText Typo="Typo.body2" Class="mb-2">原始 1:1 比例 · 每格 48 × 32 像素 · 滚动或点击小地图定位 · 点击 NPC管理，点击空地新建</MudText>
 <div class="native-map-layout">
     <div @ref="scroll" class="native-map-scroll" tabindex="0" aria-label="NPC 原始比例大地图">
         <div class="native-map-world" style="@($"width:{Map.Width * 48}px;height:{Map.Height * 32}px")">

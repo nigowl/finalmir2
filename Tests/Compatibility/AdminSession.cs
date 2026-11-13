@@ -33,6 +33,7 @@ internal static class AdminSession
         {
             while (connection.Received.TryDequeue(out var packet)) state.Apply(packet);
             Write(new { ready = connection.Connected, entered = state.User != null, mapId = state.Map?.MapIndex, x = state.User?.Location.X, y = state.User?.Location.Y, level = state.User?.Level,
+                baseStatsReady = state.BaseStats != null, attackSpeed = state.User == null ? 0 : state.CalculateStats()[Stat.AttackSpeed],
                 actors = state.Actors.Values.Select(a => new { id = a.Id, kind = a.Kind.ToString(), name = a.Name, x = a.Location.X, y = a.Location.Y, image = a.Image }).ToArray() });
             if (!connection.Connected) return;
             await Task.Delay(100);

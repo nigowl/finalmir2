@@ -2,7 +2,7 @@
     <DialogContent>
         <MudStack Row="true" Class="mb-3" AlignItems="AlignItems.Center">
             <MudTextField T="string" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" Label="搜索名称 / 编号" @bind-Value="search" OnKeyDown="SearchKey" />
-            <MudButton Disabled="loading" OnClick="Search">搜索 / 刷新</MudButton>
+            <MudButton Disabled="loading" OnClick="Search" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">搜索 / 刷新</MudButton>
             <MudText Typo="Typo.body2">共 @total 条 · 每页 50 条</MudText>
         </MudStack>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
@@ -15,8 +15,8 @@
                         <HeaderContent><MudTh>形象</MudTh><MudTh>怪物</MudTh>@if (SelectMode) { <MudTh>操作</MudTh> }</HeaderContent>
                         <RowTemplate>
                             <MudTd><img class="catalog-sprite" src="@Image(context)" alt="@($"怪物形象：{context.Name}")" loading="lazy" /></MudTd>
-                            <MudTd><MudButton Color="@(selected?.Id == context.Id ? Color.Primary : Color.Default)" OnClick="@(() => selected = context)">#@context.Id @context.Name</MudButton></MudTd>
-                            @if (SelectMode) { <MudTd><MudButton Size="Size.Small" Color="Color.Primary" OnClick="@(() => Pick(context))">选择</MudButton></MudTd> }
+                            <MudTd><MudButton Color="@(selected?.Id == context.Id ? Color.Primary : Color.Default)" OnClick="@(() => selected = context)" Size="Size.Small" Variant="Variant.Text">#@context.Id @context.Name</MudButton></MudTd>
+                            @if (SelectMode) { <MudTd><MudButton Size="Size.Small" Color="Color.Primary" OnClick="@(() => Pick(context))" Variant="Variant.Text">选择</MudButton></MudTd> }
                         </RowTemplate>
                         <NoRecordsContent><MudText Class="pa-3">没有符合条件的怪物。</MudText></NoRecordsContent>
                     </MudTable>

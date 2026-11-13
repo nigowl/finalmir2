@@ -10,10 +10,22 @@ using Mir2.Management;
 
 if (args.Contains("--fixture"))
 {
-    Fixture.Create(args[Array.IndexOf(args, "--fixture") + 1], args.Contains("--trade-fixture"), args.Contains("--guild-fixture"), args.Contains("--catalog-fixture"));
+    Fixture.Create(args[Array.IndexOf(args, "--fixture") + 1], args.Contains("--trade-fixture"), args.Contains("--guild-fixture"), args.Contains("--catalog-fixture"), args.Contains("--guided-companions"), args.Contains("--gm-fixture"), args.Contains("--skill-fixture"));
     return;
 }
 if (args.Contains("--admin-session")) { await AdminSession.Run(args); return; }
+if (args.Contains("--skill-assets")) { SkillAssetChecks.Run(); return; }
+if (args.Contains("--gm-checks")) { await GmCommandSession.Run(args); return; }
+if (args.Contains("--companion-supplies")) { CompanionScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-supplies")+1])); return; }
+if (args.Contains("--companion-stocked-sale")) { CompanionScenario.PrepareStockedSale(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-stocked-sale")+1])); return; }
+if (args.Contains("--companion-meat")) { CompanionMeatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-meat")+1])); return; }
+if (args.Contains("--companion-exit")) { CompanionExitScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-exit")+1])); return; }
+if (args.Contains("--companion-healing")) { CompanionScenario.PrepareHealing(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-healing")+1])); return; }
+if (args.Contains("--companion-town")) { CompanionScenario.PrepareTown(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-town")+1]), args.Contains("--deny-town")); return; }
+if (args.Contains("--companion-tree")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-tree")+1]),true); return; }
+if (args.Contains("--companion-ranged")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-ranged")+1]),false,args.Contains("--empty-mana")); return; }
+if (args.Contains("--companion-variant")) { CompanionScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-variant")+1]),true); return; }
+if (args.Contains("--companion-social")) { await CompanionSocialSession.Run(args); return; }
 if (args.Contains("--trade-recovery")) { await TradeRecoverySession.Run(args); return; }
 if (args.Contains("--chinese-checks")) { ChineseTranslationChecks.Run(new ProjectPaths()); return; }
 
@@ -90,6 +102,10 @@ try
     }
 
     AdministrationChecks.Run(Check, temporary);
+    CompanionChecks.Run(Check, temporary);
+    SystemSettingsChecks.Run(Check, temporary);
+    CompanionAllChecks.Run(Check, temporary);
+    await CompanionLlmChecks.Run(Check);
     Check(DisplaySizing.Fit(1920, 1080, 1) == (1280, 960), "Normal DPI window changed unexpectedly");
     Check(DisplaySizing.Fit(3840, 2160, 2) == (2560, 1920), "Retina window did not follow the display scale");
     foreach (var (width, height, scale) in new[] { (1366, 768, 1f), (3024, 1890, 2f), (1920, 1080, 1.5f), (800, 600, 1f) })
@@ -100,7 +116,20 @@ try
     RespawnLocationChecks.Run(Check);
     ClientAnimationChecks.Run(Check);
     ClientAutomationChecks.Run(Check);
+    ClientSkillChecks.Run(Check);
+    ClassSkillChecks.Run(Check);
+    SkillEffectChecks.Run(Check);
+    SkillDamageChecks.Run(Check);
+    GameBalanceChecks.Run(Check, temporary);
+    AttackModeChecks.Run(Check);
+    CompanionPlanningChecks.Run(Check);
+    CompanionPathChecks.Run(Check);
+    CompanionSupplyChecks.Run(Check);
+    CompanionHealingChecks.Run(Check);
+    CompanionInventoryChecks.Run(Check);
+    CompanionLootChecks.Run(Check);
     ClientItemChecks.Run(Check);
+    ItemPresentationChecks.Run(Check);
     CommandChecks.Run(Check);
     NpcSessionChecks.Run(Check);
     await ConnectionChecks.Run(Check);

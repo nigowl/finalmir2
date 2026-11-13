@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Server/Mir2.Server.csproj" />
     <ProjectReference Include="../../src/Client.Core/Mir2.Client.Core.csproj" />
+    <ProjectReference Include="../../src/Companion/Mir2.Companion.csproj" />
     <ProjectReference Include="../../src/Resources/Mir2.Resources.csproj" />
   </ItemGroup>
 </Project>

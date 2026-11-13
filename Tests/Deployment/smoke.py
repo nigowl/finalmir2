@@ -87,13 +87,15 @@ try:
     assert ready(server_a, address_a)['gameVersion'] == 'default'
     key = (original / 'runtime/admin.key').read_text().strip()
     assert call(address_a, '/management/status', key)['databasePath'] == str(original / 'runtime/mir2.sqlite3')
+    companion_headers={'X-Mir2-Version':hashlib.sha256(str(original).encode()).hexdigest().upper()}
+    companion=call(address_a,'/management/companions',key,'POST',{'name':'PublishedBot'},companion_headers)
     call(address_a, '/management/admin/accounts', key, 'POST', {'accountID': 'OriginalOnly', 'password': 'Native123'})
     settings('admin', 'default', address_a)
     admin = start('admin', {'MIR2_ADMIN_PORT': str(admin_port)}, 'admin-original')
     assert ready(admin, admin_address)['gameVersion'] == 'default'
     browser, page = login(admin_address, key)
     assert 'default' in page and version_error not in page
-    for path in ('/app.css', '/_content/MudBlazor/MudBlazor.min.css', '/_content/MudBlazor/MudBlazor.min.js', '/guilds', '/population'):
+    for path in ('/app.css', '/_content/MudBlazor/MudBlazor.min.css', '/_content/MudBlazor/MudBlazor.min.js', '/guilds', '/population','/companions'):
         assert browser.open(admin_address + path).status == 200, path
     stop(admin); stop(server_a)
     assert not (original / 'runtime/mir2.sqlite3-wal').exists() or (original / 'runtime/mir2.sqlite3-wal').stat().st_size == 0
@@ -138,6 +140,23 @@ try:
     settings('server', '复古')
     server_b = start('server', {'MIR2_GAME_PORT': str(game_b), 'MIR2_RESOURCE_PORT': str(resource_b)}, 'server-classic-restarted')
     ready(server_b, address_b); client(address_b, classic, '--verify-save')
+    companion_headers={'X-Mir2-Version':hashlib.sha256(str(classic).encode()).hexdigest().upper()}
+    companion_path='/management/companions/'+companion['id']
+    copied=call(address_b,companion_path,key,headers=companion_headers)['row']
+    assert copied['profile']['traits']==companion['traits']
+    configuration=call(address_b,'/management/companions/overview',key,headers=companion_headers)['settings']
+    assert not configuration['enabled']
+    call(address_b,'/management/companions/settings',key,'PUT',{'settings':configuration|{'enabled':True}},companion_headers)
+    call(address_b,companion_path+'/command',key,'POST',{'action':'start','version':copied['profile']['version']},companion_headers)
+    deadline=time.monotonic()+50
+    while time.monotonic()<deadline:
+        companion_row=call(address_b,companion_path,key,headers=companion_headers)['row']
+        assert not companion_row['lastError'],companion_row
+        if companion_row['characterId']>0:break
+        time.sleep(.3)
+    else:raise AssertionError('Relocated published companion did not enter original TCP game')
+    call(address_b,'/management/companions/stop-all',key,'POST',headers=companion_headers)
+    print('PASS relocated self-contained companion worker, exact Shared protocol, original TCP registration/entry, copied-version personality and protected admin page.')
     stop(admin); stop(server_b); stop(server_a)
     for version in (original, classic):
         with sqlite3.connect(version / 'runtime/mir2.sqlite3') as db: assert db.execute('pragma integrity_check').fetchone()[0] == 'ok'

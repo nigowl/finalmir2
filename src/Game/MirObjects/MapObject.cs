@@ -569,6 +569,7 @@ namespace Server.MirObjects
 
         public virtual Buff AddBuff(BuffType type, MapObject owner, int duration, Stats stats, bool refreshStats = true, bool updateOnly = false, params int[] values)
         {
+            duration = Server.Helpers.GameBalance.BuffDuration(type, duration, stats);
             if (!HasBuff(type, out Buff buff))
             {
                 buff = new Buff(type)

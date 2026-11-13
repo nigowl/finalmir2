@@ -1724,7 +1724,7 @@ namespace Server.MirObjects
 
         protected virtual void SendBaseStats()
         {
-            Enqueue(new S.BaseStatsInfo { Stats = Settings.ClassBaseStats[(byte)Class] });
+            Enqueue(new S.BaseStatsInfo { Stats = Server.Helpers.GameBalance.ClientStats(Settings.ClassBaseStats[(byte)Class]) });
         }
 
         #region Refresh Stats
@@ -1739,6 +1739,7 @@ namespace Server.MirObjects
             Stats.Clear();
 
             RefreshLevelStats();
+            Stats[Stat.AttackSpeed] += Settings.PlayerAttackSpeedBonus;
             RefreshBagWeight();
             RefreshEquipmentStats();
             RefreshItemSetStats();
@@ -7112,7 +7113,8 @@ namespace Server.MirObjects
             if (damageWeapon)
                 attacker.DamageWeapon();
 
-            damage += attacker.Stats[Stat.AttackBonus];
+            damage = (int)Math.Clamp((long)damage + attacker.Stats[Stat.AttackBonus], int.MinValue, int.MaxValue);
+            damage = Server.Helpers.GameBalance.HumanDamage(this, damage, type);
 
             if (Envir.Random.Next(100) < Stats[Stat.Reflect])
             {
@@ -7127,7 +7129,7 @@ namespace Server.MirObjects
             //MagicShield, ElementalBarrier
             if (Stats[Stat.DamageReductionPercent] > 0)
             {
-                damage -= (damage * Stats[Stat.DamageReductionPercent]) / 100;
+                damage = (int)Math.Clamp(damage - ((long)damage * Stats[Stat.DamageReductionPercent]) / 100, int.MinValue, int.MaxValue);
             }
 
             if (armour >= damage)
@@ -7157,19 +7159,19 @@ namespace Server.MirObjects
             if (Envir.Random.Next(100) < (attacker.Stats[Stat.CriticalRate] * Settings.CriticalRateWeight))
             {
                 CurrentMap.Broadcast(new S.ObjectEffect { ObjectID = ObjectID, Effect = SpellEffect.Critical }, CurrentLocation);
-                damage = Math.Min(int.MaxValue, damage + (int)Math.Floor(damage * (((double)attacker.Stats[Stat.CriticalDamage] / (double)Settings.CriticalDamageWeight) * 10)));
+                damage = (int)Math.Clamp(Math.Floor(damage * (1 + (double)attacker.Stats[Stat.CriticalDamage] / Settings.CriticalDamageWeight * 10)), 0, int.MaxValue);
                 BroadcastDamageIndicator(DamageType.Critical);
             }
 
             if (HasBuff(BuffType.MagicShield, out Buff magicShield))
             {
-                var duration = (int)Math.Min(int.MaxValue, magicShield.ExpireTime - ((damage - armour) * 60));
+                var duration = (int)Math.Clamp(magicShield.ExpireTime - ((long)damage - armour) * 60, int.MinValue, int.MaxValue);
                 AddBuff(BuffType.MagicShield, this, duration, null);
             }
 
             if (HasBuff(BuffType.ElementalBarrier, out Buff elementalBarrier))
             {
-                var duration = (int)Math.Min(int.MaxValue, elementalBarrier.ExpireTime - ((damage - armour) * 60));
+                var duration = (int)Math.Clamp(elementalBarrier.ExpireTime - ((long)damage - armour) * 60, int.MinValue, int.MaxValue);
                 AddBuff(BuffType.ElementalBarrier, this, duration, null);
             }
 
@@ -7222,6 +7224,7 @@ namespace Server.MirObjects
         }
         public override int Attacked(MonsterObject attacker, int damage, DefenceType type = DefenceType.ACAgility)
         {
+            damage = Server.Helpers.GameBalance.MonsterDamage(attacker, damage);
             var armour = GetArmour(type, attacker, out bool hit);
 
             if (!hit)
@@ -7245,7 +7248,7 @@ namespace Server.MirObjects
             //MagicShield, ElementalBarrier
             if (Stats[Stat.DamageReductionPercent] != 0)
             {
-                damage -= (damage * Stats[Stat.DamageReductionPercent]) / 100;
+                damage = (int)Math.Clamp(damage - ((long)damage * Stats[Stat.DamageReductionPercent]) / 100, int.MinValue, int.MaxValue);
             }
 
             if (armour >= damage)
@@ -7273,13 +7276,13 @@ namespace Server.MirObjects
 
             if (HasBuff(BuffType.MagicShield, out Buff magicShield))
             {
-                var duration = (int)Math.Min(int.MaxValue, magicShield.ExpireTime - ((damage - armour) * 60));
+                var duration = (int)Math.Clamp(magicShield.ExpireTime - ((long)damage - armour) * 60, int.MinValue, int.MaxValue);
                 AddBuff(BuffType.MagicShield, this, duration, null);
             }
 
             if (HasBuff(BuffType.ElementalBarrier, out Buff elementalBarrier))
             {
-                var duration = (int)Math.Min(int.MaxValue, elementalBarrier.ExpireTime - ((damage - armour) * 60));
+                var duration = (int)Math.Clamp(elementalBarrier.ExpireTime - ((long)damage - armour) * 60, int.MinValue, int.MaxValue);
                 AddBuff(BuffType.ElementalBarrier, this, duration, null);
             }
 
@@ -7348,20 +7351,20 @@ namespace Server.MirObjects
             //MagicShield, ElementalBarrier
             if (Stats[Stat.DamageReductionPercent] != 0)
             {
-                damage -= (damage * Stats[Stat.DamageReductionPercent]) / 100;
+                damage = (int)Math.Clamp(damage - ((long)damage * Stats[Stat.DamageReductionPercent]) / 100, int.MinValue, int.MaxValue);
             }
 
             if (armour >= damage) return 0;
 
             if (HasBuff(BuffType.MagicShield, out Buff magicShield))
             {
-                var duration = (int)Math.Min(int.MaxValue, magicShield.ExpireTime - ((damage - armour) * 60));
+                var duration = (int)Math.Clamp(magicShield.ExpireTime - ((long)damage - armour) * 60, int.MinValue, int.MaxValue);
                 AddBuff(BuffType.MagicShield, this, duration, null);
             }
 
             if (HasBuff(BuffType.ElementalBarrier, out Buff elementalBarrier))
             {
-                var duration = (int)Math.Min(int.MaxValue, elementalBarrier.ExpireTime - ((damage - armour) * 60));
+                var duration = (int)Math.Clamp(elementalBarrier.ExpireTime - ((long)damage - armour) * 60, int.MinValue, int.MaxValue);
                 AddBuff(BuffType.ElementalBarrier, this, duration, null);
             }
 
@@ -7411,6 +7414,7 @@ namespace Server.MirObjects
             if ((p.PType == PoisonType.Green) || (p.PType == PoisonType.Red)) p.Duration = Math.Max(0, p.Duration - Stats[Stat.PoisonRecovery]);
             if (p.Duration == 0) return;
             if (p.PType == PoisonType.None) return;
+            p = Server.Helpers.GameBalance.Poison(p);
 
             for (int i = 0; i < PoisonList.Count; i++)
             {

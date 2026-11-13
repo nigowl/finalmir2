@@ -55,6 +55,28 @@ def check_admin(address=admin, jar=None):
     print('PASS authenticated Blazor pages, static assets, antiforgery and key isolation.')
     return jar
 
+def check_debug(address=admin):
+    page=urllib.request.urlopen(address+'/').read().decode()
+    assert '运行监控' in page and '管理密钥' not in page,'Debug Development 未直接进入管理页'
+    assert urllib.request.urlopen(address+'/login').url.rstrip('/')==address,'Debug登录页未跳转首页'
+    for headers in ({'Host':'evil.example'},{'Origin':'https://evil.example'},{'Sec-Fetch-Site':'cross-site'}):
+        try:urllib.request.urlopen(urllib.request.Request(address+'/settings',headers=headers));raise AssertionError('开发免密允许跨站请求')
+        except urllib.error.HTTPError as error:assert error.code==403
+    try:urllib.request.urlopen(urllib.request.Request(address+'/auth/logout',data=b''));raise AssertionError('Debug绕过防伪')
+    except urllib.error.HTTPError as error:assert error.code==400
+    try:urllib.request.urlopen(server+'/management/status');raise AssertionError('Debug绕过服务端管理密钥')
+    except urllib.error.HTTPError as error:assert error.code==401
+    print('PASS 本机 Debug Development免密、登录跳转、Host/跨站拒绝、防伪及原管理API鉴权。')
+
+def direct_admin(address, port, target_runtime, configuration='Release', environment='Development'):
+    log=open(runtime/f'restart-direct-{len(children)}.log','w');outputs.append(log)
+    settings=env|{'MIR2_RUNTIME_ROOT':str(target_runtime),'MIR2_ADMIN_PORT':str(port),
+        'ASPNETCORE_ENVIRONMENT':environment,'DOTNET_ENVIRONMENT':environment,
+        'MIR2_ADMIN_KEY':(runtime/'admin.key').read_text().strip()}
+    child=subprocess.Popen(['dotnet',str(repo/f'src/Admin/bin/{configuration}/net8.0/Mir2.Admin.dll'),
+        f'--mir2-instance={repo}:{target_runtime}:admin'],cwd='/tmp',env=settings,stdout=log,stderr=subprocess.STDOUT)
+    children.append(child);until(lambda:read_json(address+'/health')['ready']);return child
+
 try:
     foreign=subprocess.Popen(['sleep','300']);children.append(foreign)
     stale=runtime/'processes/server.starting';stale.mkdir(parents=True,exist_ok=True)
@@ -68,17 +90,24 @@ try:
     second=launch('server',old);first.wait(timeout=60)
     assert first.returncode==0 and foreign.poll() is None,'Server restart failed to save or killed an unrelated PID'
     foreign.terminate();foreign.wait(timeout=5)
-    first_admin=launch('admin');jar=check_admin()
-    second_admin=launch('admin',first_admin.pid);first_admin.wait(timeout=30)
+    first_admin=launch('admin');check_debug()
+    command=subprocess.check_output(['ps','-ww','-p',str(first_admin.pid),'-o','command='],text=True)
+    assert '/bin/Debug/' in command,'start-admin不是Debug'
+    second_admin=launch('admin',first_admin.pid);first_admin.wait(timeout=30);check_debug()
+    second_admin.terminate();second_admin.wait(timeout=30)
+    production=direct_admin(admin,os.environ['MIR2_ADMIN_PORT'],runtime,'Debug','Production')
+    assert '管理密钥' in urllib.request.urlopen(admin+'/').read().decode(),'Debug Production错误免密'
+    production.terminate();production.wait(timeout=30)
+    release=direct_admin(admin,os.environ['MIR2_ADMIN_PORT'],runtime)
+    jar=check_admin();release.terminate();release.wait(timeout=30)
+    direct_admin(admin,os.environ['MIR2_ADMIN_PORT'],runtime)
     browser=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-    assert '运行监控' in browser.open(admin+'/').read().decode(),'Admin restart lost the existing login cookie'
+    assert '运行监控' in browser.open(admin+'/').read().decode(),'Release重启丢失独立Cookie'
     with socket.socket() as port_probe:
         port_probe.bind(('127.0.0.1',0));other_port=port_probe.getsockname()[1]
     other_address=f'http://127.0.0.1:{other_port}'
     other_env=env|{'MIR2_RUNTIME_ROOT':str(runtime/'other-admin'),'MIR2_ADMIN_PORT':str(other_port),'MIR2_ADMIN_KEY':(runtime/'admin.key').read_text().strip()}
-    other_log=open(runtime/'restart-admin-isolated.log','w');outputs.append(other_log)
-    other_admin=subprocess.Popen([str(repo/'start-admin.sh')],cwd='/tmp',env=other_env,stdout=other_log,stderr=subprocess.STDOUT);children.append(other_admin)
-    until(lambda:read_json(other_address+'/health')['ready'])
+    other_admin=direct_admin(other_address,other_port,runtime/'other-admin')
     check_admin(other_address,jar)
     for address in (admin,other_address):
         page=browser.open(address+'/').read().decode()

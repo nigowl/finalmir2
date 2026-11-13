@@ -1,0 +1,19 @@
+<MudTooltip Text="发送一次真实请求，检查接口、密钥、模型和返回格式（计入本版本每日额度）">
+    <MudIconButton Icon="@Icons.Material.Filled.NetworkCheck" Color="@(result?.Success==true?Color.Success:Color.Primary)" Disabled="@(Model==null||testing)" OnClick="Test" aria-label="测试模型连接" Size="Size.Small" />
+</MudTooltip>
+@if(testing){<MudProgressCircular Indeterminate="true" Size="Size.Small" />}
+@if(result!=null){<MudAlert Severity="@(result.Success?Severity.Success:Severity.Error)" Dense="true" Class="my-2">@result.Message（@result.ElapsedMilliseconds 毫秒）</MudAlert>}
+@code{
+    [Parameter]public CompanionLlmModel? Model{get;set;}
+    [Parameter]public string? Key{get;set;}
+    [Parameter]public bool ClearKey{get;set;}
+    private bool testing;private CompanionLlmTestResult? result;private string context="";
+    protected override void OnParametersSet()
+    {var next=System.Text.Json.JsonSerializer.Serialize(new{Model,Key,ClearKey});if(next!=context){context=next;result=null;}}
+    private async Task Test()
+    {
+        if(Model==null)return;testing=true;result=null;var generation=context;
+        try{var response=await Api.Post<CompanionLlmTestResult>("management/companions/models/test",new CompanionLlmTest(Model,string.IsNullOrEmpty(Key)?null:Key,ClearKey));if(generation==context)result=response;}
+        catch(Exception e){if(generation==context)result=new(false,e.Message,0);}finally{testing=false;}
+    }
+}

@@ -37,13 +37,14 @@ public partial class Main
         Button(questTabs, "进行中", 12, 35, 85, () => { questNpc = 0; completedQuestPage = false; selectedQuest = 0; RenderQuests(); });
         Button(questTabs, "已完成", 108, 35, 85, () => { questNpc = 0; completedQuestPage = true; selectedQuest = 0; RenderQuests(); });
         Button(questTabs, "NPC", 204, 35, 85, () => OpenQuestJournal(npcDialogueId));
-        questScroll = new ScrollContainer { Position = new Vector2(10, 73), Size = new Vector2(292, 352) }; questList.AddChild(questScroll);
-        questRows = new VBoxContainer { CustomMinimumSize = new Vector2(273, 0), SizeFlagsHorizontal = SizeFlags.ExpandFill }; questScroll.AddChild(questRows);
+        questScroll = new ScrollContainer { Position = new Vector2(10, 73), Size = new Vector2(280, 352), HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled }; questList.AddChild(questScroll);
+        questRows = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill }; questScroll.AddChild(questRows);
         ArtButton(questList, "Title", 276, 205, 436, "关闭", CloseQuests);
         questDetail = Panel(game, 334, 70, 314, 466); questDetail.Hide();
         Picture(questDetail, "Prguse", 960, 0, 0); Picture(questDetail, "Title", 16, 18, 9);
         ArtButton(questDetail, "Prguse2", 360, 289, 3, "关闭详情", () => questDetail.Hide());
         questHeading = Text(questDetail, "", 12, 32, 280);
+        questHeading.ClipText = true; questHeading.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
         questDescription = new RichTextLabel { Position = new Vector2(12, 62), Size = new Vector2(279, 231), ScrollActive = true }; questDetail.AddChild(questDescription);
         var rewardScroll = questRewardScroll = new ScrollContainer { Position = new Vector2(12, 307), Size = new Vector2(285, 118) }; questDetail.AddChild(rewardScroll);
         questRewards = new VBoxContainer { CustomMinimumSize = new Vector2(266, 0), SizeFlagsHorizontal = SizeFlags.ExpandFill }; rewardScroll.AddChild(questRewards);
@@ -94,7 +95,7 @@ public partial class Main
         questCount.Text = $"{State.Quests.Count}/{Globals.MaxConcurrentQuests}";
         questTabs.Visible = questNpc == 0;
         questScroll.Position = questNpc == 0 ? new Vector2(10, 73) : new Vector2(9, 36);
-        questScroll.Size = questNpc == 0 ? new Vector2(292, 352) : new Vector2(280, 90);
+        questScroll.Size = questNpc == 0 ? new Vector2(280, 352) : new Vector2(280, 90);
         var target = questNpc == 0 ? questDetail : questList;
         foreach (var control in new Control[] { questDescription, questRewardScroll, questAccept, questFinish })
             if (control.GetParent() != target) control.Reparent(target, false);
@@ -113,7 +114,9 @@ public partial class Main
         {
             var progress = State.Quests.GetValueOrDefault(quest.Index);
             var state = State.CompletedQuests.Contains(quest.Index) ? "已完成" : progress?.Completed == true ? "可交付" : progress != null ? "进行中" : "可接受";
-            var row = new Button { Text = $"{quest.Group} · {quest.Name}\n{state}", Alignment = HorizontalAlignment.Left, CustomMinimumSize = new Vector2(267, questNpc == 0 ? 48 : 38), ToggleMode = true, ButtonPressed = quest.Index == selectedQuest, FocusMode = FocusModeEnum.None };
+            var row = new Button { Text = $"{quest.Group} · {quest.Name}\n{state}", TooltipText = $"{quest.Group} · {quest.Name}\n{state}",
+                Alignment = HorizontalAlignment.Left, CustomMinimumSize = new Vector2(0, questNpc == 0 ? 48 : 38), SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, ToggleMode = true, ButtonPressed = quest.Index == selectedQuest, FocusMode = FocusModeEnum.None };
             CellStyle(row);
             row.Pressed += () => { selectedQuest = quest.Index; selectedReward = -1; RenderQuests(); }; questRows.AddChild(row);
         }
@@ -126,7 +129,7 @@ public partial class Main
         if (!State.QuestDefinitions.TryGetValue(selectedQuest, out var quest)) { questDetail.Hide(); questDescription.Text = ""; questAccept.Hide(); questFinish.Hide(); return; }
         var progress = State.Quests.GetValueOrDefault(selectedQuest); var completed = State.CompletedQuests.Contains(selectedQuest);
         questDetail.Visible = questList.Visible && questNpc == 0;
-        questHeading.Text = quest.Name;
+        questHeading.Text = questHeading.TooltipText = quest.Name;
         questDescription.Text = QuestText(completed ? quest.CompletionDescription : progress?.Completed == true ? quest.ReturnDescription : progress != null ? quest.TaskDescription : quest.Description) +
             $"\n\n等级 {quest.MinLevelNeeded}–{quest.MaxLevelNeeded} · {quest.Type.ToLocalizedString()}" +
             (progress == null ? "" : "\n\n" + QuestText(progress.TaskList)) +

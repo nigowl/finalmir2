@@ -994,7 +994,9 @@ public enum AttackMode : byte
     Guild = 2,
     EnemyGuild = 3,
     RedBrown = 4,
-    All = 5
+    All = 5,
+    Couple = 6,
+    Mentor = 7
 }
 
 public enum PetMode : byte

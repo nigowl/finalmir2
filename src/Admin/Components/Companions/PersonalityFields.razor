@@ -1,0 +1,24 @@
+<MudSelect T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="人格预制" Value="Selected" ValueChanged="Select">
+    @foreach(var p in Presets.Where(p=>!p.Archived)) { <MudSelectItem T="string" Value="@(p.Key+"/"+p.Revision)">@p.Name · v@p.Revision</MudSelectItem> }
+</MudSelect>
+<MudGrid Spacing="2" Class="mt-2">
+@for(var i=0;i<10;i++)
+{
+    var index=i;
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" Label="@PersonalityPresets.TraitNames[index]" Min="0" Max="100" Value="values[index]" ValueChanged="@(v=>Set(index,v))" /></MudItem>
+}
+</MudGrid>
+<MudText Typo="Typo.caption" Class="mt-2">参数只影响合法目标的偏好，不能提高游戏权限、突破在线限额或关闭保命。修改预制不会自动覆盖其他角色。</MudText>
+@code{
+    [Parameter,EditorRequired] public CompanionProfile Profile{get;set;}=null!;
+    [Parameter] public PersonalityPreset[] Presets{get;set;}=[];
+    private int[] values=[];
+    private string Selected=>Profile.PresetKey+"/"+Profile.PresetRevision;
+    protected override void OnParametersSet()=>values=PersonalityPresets.Values(Profile.Traits);
+    private void Select(string key)
+    {
+        var p=Presets.Single(p=>p.Key+"/"+p.Revision==key);Profile.PresetKey=p.Key;Profile.PresetRevision=p.Revision;
+        Profile.Traits=p.Traits;values=PersonalityPresets.Values(p.Traits);
+    }
+    private void Set(int i,int v){values[i]=v;Profile.Traits=PersonalityPresets.From(values);}
+}

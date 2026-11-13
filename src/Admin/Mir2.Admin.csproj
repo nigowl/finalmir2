@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <!-- watch 用系统路径读取静态资源清单，避免 Unix 上保留 SDK 默认反斜杠。 -->
+  <PropertyGroup><IntermediateOutputPath>obj/$(Configuration)/</IntermediateOutputPath></PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MudBlazor" Version="8.15.0" />
     <PackageReference Include="TinyPinyin" Version="1.1.0" />

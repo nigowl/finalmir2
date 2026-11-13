@@ -51,7 +51,7 @@
             <MudText Typo="Typo.body2" Class="path">SHA-256：@map.Sha256</MudText>
         }
     </DialogContent>
-    <DialogActions>@if (map != null) { <MudButton OnClick="Regenerate" Disabled="regenerating" Variant="Variant.Outlined" Color="Color.Primary">重新生成缩略图</MudButton> }</DialogActions>
+    <DialogActions>@if (map != null) { <MudButton OnClick="Regenerate" Disabled="regenerating" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small">重新生成缩略图</MudButton> }</DialogActions>
 </AdminDialog>
 @code {
     [Parameter, EditorRequired] public AssetEntry Entry { get; set; } = null!;

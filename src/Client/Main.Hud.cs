@@ -8,7 +8,6 @@ public partial class Main
     private string lastResourceError = "";
     private PopupMenu gameMenu = null!;
     private OriginalButton gameMenuButton = null!;
-    private Label movementHelp = null!;
     private int equipmentPage;
     private readonly List<OriginalButton> equipmentTabs = new();
     private Label bagWeight = null!, bagFree = null!;
@@ -42,23 +41,19 @@ public partial class Main
         chat.GuiInput += input => { if (input is InputEventKey { Pressed: true, Keycode: Key.Escape }) { chat.ReleaseFocus(); chat.AcceptEvent(); } };
         chat.TextSubmitted += text => { if (text.Trim().Length > 0) Send(new C.Chat { Message = text.Trim() }); chat.Text = ""; chat.ReleaseFocus(); };
         BuildChatResize();
+        quickBars = new Control { Name = "QuickBars", Size = new Vector2(1024, 768), MouseFilter = MouseFilterEnum.Ignore }; game.AddChild(quickBars);
+        BuildSkillBar();
         ArtButton(game, "Prguse", 1903, 928, 692, "背包 I", () => inventory.Visible = !inventory.Visible);
         ArtButton(game, "Prguse", 1900, 905, 692, "角色 C", () => ToggleEquipmentPage(0));
         ArtButton(game, "Prguse", 1906, 951, 692, "技能 K", () => ToggleEquipmentPage(3));
-        gameMenu = new PopupMenu { Name = "GameMenu" }; game.AddChild(gameMenu);
-        gameMenu.AddChild(new Label { Text = "游戏菜单", Position = new Vector2(28, 5), Size = new Vector2(150, 24), MouseFilter = MouseFilterEnum.Ignore });
-        foreach (var label in new[] { "拾取 G", "回城复活", "返回角色选择", "退出游戏", "组队 P", "交易 T", "行会 H", "开始挂机" }) gameMenu.AddItem(label);
-        gameMenu.IdPressed += id => { if (id == 7) { ToggleAutoBattle(); return; } StopAutoBattle(); switch (id) { case 0: Send(new C.PickUp()); break; case 1: Send(new C.TownRevive()); break; case 2: Send(new C.LogOut()); break; case 3: _ = Quit(); break; case 4: OpenGroup(); break; case 5: OpenTrade(); break; case 6: OpenGuild(); break; } };
-        gameMenuButton = ArtButton(game, "Prguse", 1960, 969, 651, "游戏菜单", () => { gameMenu.SetItemText(7, autoBattleEnabled ? "停止挂机" : "开始挂机"); gameMenu.PopupCentered(); }, false);
-        var help = movementHelp = Text(game, "", 230, 590, 780);
-        help.AddThemeFontSizeOverride("font_size", 10);
-        help.AddThemeColorOverride("font_shadow_color", Colors.Black); help.AddThemeConstantOverride("shadow_offset_x", 1); help.AddThemeConstantOverride("shadow_offset_y", 1);
+        BuildGameMenu();
         MiniMap = new GameMiniMap { Assets = Assets, State = State };
         game.AddChild(MiniMap);
         MiniMap.SetExpanded(false);
         MiniMap.DestinationSelected += point =>
         {
             if (World.Loading || !World.Walkable(point) || World.NextStep(point) == null) { Log("目标不可通行或无法到达，请选择其他坐标。"); return; }
+            if (ConfirmGroundMove(point, true)) { MiniMap.SetExpanded(false); return; }
             SetDestination(point, true); MiniMap.SetExpanded(false);
             Log($"自动寻路至 {point.X},{point.Y}，Esc 取消。");
         };
@@ -76,14 +71,14 @@ public partial class Main
         for (var i = 0; i < positions.Length; i++)
         {
             var slot = i;
-            var button = new Button { Position = positions[i] + new Vector2(8, 90), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
+            var button = new ItemTipButton { Position = positions[i] + new Vector2(8, 90), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
             CellStyle(button); button.Pressed += () => RemoveEquipment(slot); equipmentSlots.AddChild(button); equipmentButtons.Add(button);
         }
         attributes = Text(equipment, "", 20, 102, 108); attributes.Name = "PlayerAttributes";
         attributesRight = Text(equipment, "", 138, 102, 108); attributesRight.Name = "PlayerAttributesRight";
-        attributeExperience = Text(equipment, "", 20, 270, 226); attributeExperience.Name = "PlayerExperience";
+        attributeExperience = Text(equipment, "", 20, 300, 226); attributeExperience.Name = "PlayerExperience";
         foreach (var label in new[] { attributes, attributesRight, attributeExperience })
-        { label.Size = new Vector2(label.Size.X, label == attributeExperience ? 42 : 160); label.AddThemeFontSizeOverride("font_size", 11); label.Hide(); }
+        { label.Size = new Vector2(label.Size.X, label == attributeExperience ? 42 : 190); label.AddThemeFontSizeOverride("font_size", 11); label.Hide(); }
         for (var i = 0; i < 4; i++)
         {
             var page = i; var tab = ArtButton(equipment, "Title", i == 0 ? 500 : -1, 8 + i * 62, 70, new[] { "人物", "属性", "状态", "技能" }[i], () => ShowEquipmentPage(page));
@@ -98,13 +93,13 @@ public partial class Main
         game.GetNode<Label>("PlayerLevel").Text = $"{user.Level}级";
         game.GetNode<Label>("PlayerName").Text = user.Name;
         gold.Text = user.Gold.ToString("N0");
+        RefreshEquipmentStats(stats);
         hudWeight.Text = (stats[Stat.BagWeight] - State.InventoryWeight).ToString(); hudWeight.TooltipText = "剩余背包负重";
         hudFree.Text = user.Inventory.Count(item => item == null).ToString(); hudFree.TooltipText = "剩余背包格位（含快捷栏）";
         bagGold.Text = user.Gold.ToString(); equipmentName.Text = $"{user.Name}  {user.Level}级";
         bagWeight.Text = $"{State.InventoryWeight}/{stats[Stat.BagWeight]}"; bagWeight.TooltipText = "背包负重 / 上限";
         bagFree.Text = user.Inventory.Count(item => item == null).ToString(); bagFree.TooltipText = "剩余背包格位（含快捷栏）";
         var loading = World.Loading ? " · 地图加载中" : World.LoadError.Length > 0 ? " · 地图加载失败" : "";
-        movementHelp.Text = $"左键{(preferences.DefaultRun ? "奔跑" : "行走")}/攻击/NPC · 右键{(preferences.DefaultRun ? "行走" : "奔跑")} · Shift+左键强制攻击 · F1–F8 技能 · 1–6/单击 快捷道具 · M 大地图";
         location.Text = $"{State.Map?.Title} [{State.Map?.FileName} #{State.Map?.MapIndex}] · 坐标 {user.Location.X},{user.Location.Y} · 缓存 {Assets.CachedFiles} / 下载 {Assets.Downloads} ({Assets.DownloadBytes / 1048576f:F1}MB) / 等待 {Assets.PendingDownloads} · {State.Ping}ms{loading}{(autoBattleEnabled ? " · 挂机中" : "")}{(lastResourceError.Length > 0 ? " · 资源异常" : "")}";
         location.TooltipText = World.LoadError.Length > 0 ? World.LoadError : lastResourceError;
     }

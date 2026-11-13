@@ -111,7 +111,11 @@ namespace Server.MirObjects
         public float PriceRate(PlayerObject player, bool baseRate = false)
         {
             var callingNPC = Envir.NPCs.SingleOrDefault(x => x.ObjectID == player.NPCObjectID);
+            return PriceRate(player, callingNPC, baseRate);
+        }
 
+        public static float PriceRate(PlayerObject player, NPCObject callingNPC, bool baseRate = false)
+        {
             if (callingNPC == null)
             {
                 return 1F;

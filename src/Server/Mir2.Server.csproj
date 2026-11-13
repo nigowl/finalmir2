@@ -9,6 +9,11 @@
     <EmbeddedResource Include="Localization/*.zh-CN.json" WithCulture="false" />
     <ProjectReference Include="../Game/Mir2.Game.csproj" />
     <ProjectReference Include="../Resources/Mir2.Resources.csproj" />
+    <ProjectReference Include="../Companion/Mir2.Companion.csproj" ReferenceOutputAssembly="false" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.33" />
   </ItemGroup>
+  <Target Name="CopyCompanionWorker" AfterTargets="Build">
+    <ItemGroup><CompanionOutput Include="../Companion/bin/$(Configuration)/net8.0/*" Exclude="../Companion/bin/$(Configuration)/net8.0/*.pdb" /></ItemGroup>
+    <Copy SourceFiles="@(CompanionOutput)" DestinationFolder="$(OutDir)companion" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

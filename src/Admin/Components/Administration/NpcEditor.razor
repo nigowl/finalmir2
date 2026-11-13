@@ -1,6 +1,6 @@
 @inject IDialogService Dialogs
 <NavigationLock ConfirmExternalNavigation="@Dirty" OnBeforeInternalNavigation="BeforeNavigation" />
-<AdminDialog OnClose="Close" OnSave="SaveCurrentTab" CanSave="CanSaveCurrentTab" Busy="busy" SaveText="@(activeTab == 0 ? "备份并保存 NPC" : "保存脚本")" SaveConfirmation="@(activeTab == 0 ? $"确认保存 NPC「{name}」的属性及对应脚本？更换脚本路径会重启引擎。" : $"确认保存脚本「{document?.Path}」？已有文件将保留备份。")">
+<AdminDialog OnClose="Close" OnSave="SaveCurrentTab" CanSave="CanSaveCurrentTab" Busy="busy" SaveText="保存" SaveConfirmation="@(activeTab == 0 ? $"确认保存 NPC「{name}」的属性及对应脚本？更换脚本路径会重启引擎。" : $"确认保存脚本「{document?.Path}」？已有文件将保留备份。")">
 <DialogContent>
 @if (error != null) { <MudAlert Severity="Severity.Error" Class="my-3">@error</MudAlert> }
 @if (notice != null) { <MudAlert Severity="Severity.Success" Class="my-3">@notice</MudAlert> }
@@ -16,7 +16,7 @@
         <MudItem xs="12" sm="4"><MudText Class="mt-4">@Map.Title</MudText></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="X" @bind-Value="x" Min="0" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="Y" @bind-Value="y" Min="0" /></MudItem>
         <MudItem xs="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="外观编号" @bind-Value="image" @bind-Value:after="Preview" Min="0" Max="65535" /></MudItem><MudItem xs="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="交易倍率（100 为原价）" @bind-Value="rate" Min="1" Max="65535" /></MudItem>
         <MudItem xs="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="最低等级（0 不限）" @bind-Value="minLevel" Min="0" Max="32767" /></MudItem><MudItem xs="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="最高等级（0 不限）" @bind-Value="maxLevel" Min="0" Max="32767" /></MudItem>
-        <MudItem xs="12" sm="6"><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="string" Label="职业限制" @bind-Value="requiredClass"><MudSelectItem Value="@(string.Empty)">不限制</MudSelectItem>@foreach (var cls in Enum.GetNames<MirClass>()) { <MudSelectItem Value="cls">@ChineseText.Name(cls)</MudSelectItem> }</MudSelect></MudItem>
+        <MudItem xs="12" sm="6"><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="string" Label="职业限制" @bind-Value="requiredClass"><MudSelectItem Value="@(string.Empty)">不限制</MudSelectItem>@foreach (var cls in Enum.GetValues<MirClass>().Where(Globals.IsClassicClass).Select(value=>value.ToString())) { <MudSelectItem Value="cls">@ChineseText.Name(cls)</MudSelectItem> }</MudSelect></MudItem>
         <MudItem xs="12" sm="6"><MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="string" Label="星期限制" @bind-Value="weekday"><MudSelectItem Value="@(string.Empty)">不限制</MudSelectItem>@foreach (var day in Enum.GetNames<DayOfWeek>()) { <MudSelectItem Value="day">@(Enum.Parse<DayOfWeek>(day).ToLocalizedString())</MudSelectItem> }</MudSelect></MudItem>
         <MudItem xs="12"><MudCheckBox Dense="true" T="bool" Label="按每日时段显示（服务端本机时间）" @bind-Value="timeVisible" /></MudItem><MudItem xs="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="开始时间（HH:mm）" @bind-Value="startTime" /></MudItem><MudItem xs="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="结束时间（HH:mm，同一天）" @bind-Value="endTime" /></MudItem>
         <MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="需要玩家 Flag（0 不限）" @bind-Value="flag" Min="0" Max="1998" /></MudItem><MudItem xs="12" sm="6"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="大地图图标编号" @bind-Value="icon" Min="0" Max="65535" /></MudItem>
@@ -37,8 +37,8 @@
 </fieldset>
 </DialogContent>
 <DialogActions>
-    @if (activeTab == 0 && Current != null) { <MudButton Disabled="@(!CanSubmit || busy)" OnClick="Delete" Color="Color.Error">删除 NPC</MudButton> }
-    @if (activeTab == 1 && document != null) { <MudButton OnClick="ReloadScripts" Disabled="@(busy || ScriptDirty || document.Version.Length == 0)">重载 NPC / 掉落脚本</MudButton> }
+    @if (activeTab == 0 && Current != null) { <MudButton Disabled="@(!CanSubmit || busy)" OnClick="Delete" Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined">删除 NPC</MudButton> }
+    @if (activeTab == 1 && document != null) { <MudButton OnClick="ReloadScripts" Disabled="@(busy || ScriptDirty || document.Version.Length == 0)" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">重载 NPC / 掉落脚本</MudButton> }
 </DialogActions>
 </AdminDialog>
 @code {

@@ -21,6 +21,15 @@ public sealed class ClientPreferences
     public bool AutoRoam { get; set; } = true;
     public Spell SingleSkill { get; set; }
     public Spell AreaSkill { get; set; }
+    public bool AutoSwapAmulet { get; set; }
+    public bool SmartHalfMoon { get; set; }
+    public bool SmartThrusting { get; set; }
+    public bool AutoPoison { get; set; }
+    public bool AutoSummon { get; set; }
+    public Spell SummonSkill { get; set; }
+    public bool AutoHeal { get; set; }
+    public int HealPercent { get; set; } = 70;
+    public HashSet<Spell> AutoSkills { get; set; } = new();
 
     public void Normalize()
     {
@@ -30,6 +39,9 @@ public sealed class ClientPreferences
         MpPercent = Math.Clamp(MpPercent, 1, 95);
         RandomPercent = Math.Clamp(RandomPercent, 1, 95);
         TownPercent = Math.Clamp(TownPercent, 1, 95);
+        HealPercent = Math.Clamp(HealPercent, 1, 95);
+        AutoSkills ??= new(); AutoSkills.RemoveWhere(spell => !ClassSkillRules.CanMaintain(spell));
+        if (SummonSkill != Spell.None && !ClassSkillRules.Summons(MirClass.Taoist).Contains(SummonSkill)) SummonSkill = Spell.None;
         if (!ClientAutomation.IsSingleSkill(SingleSkill)) SingleSkill = Spell.None;
         if (!ClientAutomation.IsAreaSkill(AreaSkill)) AreaSkill = Spell.None;
     }

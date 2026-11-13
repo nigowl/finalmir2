@@ -2,18 +2,18 @@
 @if (error != null && !dialogOpen) { <MudAlert Severity="Severity.Error" Class="my-3">@error</MudAlert> }
 @if (notice != null && !dialogOpen) { <MudAlert Severity="Severity.Success" Class="my-3">@notice</MudAlert> }
 @if (busy) { <MudProgressLinear Indeterminate="true" /> }
-<MudButton Color="Color.Primary" OnClick="New" Disabled="@(busy || editing)" Class="mb-3">新增刷怪点</MudButton>
+<MudButton Color="Color.Primary" OnClick="New" Disabled="@(busy || editing)" Class="mb-3" Size="Size.Small" Variant="Variant.Outlined">新增刷怪点</MudButton>
 <MudTable T="SpawnDefinition" Items="Map.Spawns" Dense="true" Hover="true" RowsPerPage="5">
     <HeaderContent><MudTh>刷怪点</MudTh><MudTh>数量 / 存活</MudTh><MudTh>操作</MudTh></HeaderContent>
-    <RowTemplate><MudTd>#@context.Id @context.MonsterName (@context.X,@context.Y)</MudTd><MudTd>@context.Count / @context.Alive</MudTd><MudTd><MudButton Size="Size.Small" Disabled="@(busy || editing)" OnClick="@(() => Edit(context))">管理</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
+    <RowTemplate><MudTd>#@context.Id @context.MonsterName (@context.X,@context.Y)</MudTd><MudTd>@context.Count / @context.Alive</MudTd><MudTd><MudButton Size="Size.Small" Disabled="@(busy || editing)" OnClick="@(() => Edit(context))" Variant="Variant.Text" Color="Color.Primary">管理</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
 </MudTable>
 @if (editing && !dialogOpen)
 {
     <MudAlert Severity="Severity.Info" Class="my-3">继续点击地图添加点（含阻挡格）。已有 @drafts.Count 个待保存点，参数在弹窗中编辑。</MudAlert>
-    <MudButton Disabled="@(busy || drafts.Count == 0)" OnClick="@(() => dialogOpen = true)">编辑并保存批次</MudButton>
-    <MudButton Disabled="busy" OnClick="RequestClose">取消本批次</MudButton>
+    <MudButton Disabled="@(busy || drafts.Count == 0)" OnClick="@(() => dialogOpen = true)" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">编辑并保存批次</MudButton>
+    <MudButton Disabled="busy" OnClick="RequestClose" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">取消本批次</MudButton>
 }
-<AdminDialog @bind-Visible="dialogOpen" Title="@(current == null ? "新增刷怪点" : $"刷怪点 #{current.Id}")" OnClose="RequestClose" OnSave="Save" CanSave="CanSubmit" Busy="busy" SaveText="@(current == null ? "创建刷怪点" : "保存刷怪点")" SaveConfirmation="@($"确认保存「{Map.Title}」的刷怪配置？保存后立即更新游戏世界，已有怪物不会被强制清除。")">
+<AdminDialog @bind-Visible="dialogOpen" Title="@(current == null ? "新增刷怪点" : $"刷怪点 #{current.Id}")" OnClose="RequestClose" OnSave="Save" CanSave="CanSubmit" Busy="busy" SaveText="保存" SaveConfirmation="@($"确认保存「{Map.Title}」的刷怪配置？保存后立即更新游戏世界，已有怪物不会被强制清除。")">
 <DialogContent>
 @if (error != null) { <MudAlert Severity="Severity.Error" Class="mb-3">@error</MudAlert> }
 @if (busy) { <MudProgressLinear Indeterminate="true" Class="mb-3" /> }
@@ -25,10 +25,10 @@
         @if (current == null && drafts.Count > 1)
         {
             <MudAlert Severity="Severity.Info" Dense="true" Class="my-2">下方参数作用于选中的点；点击“继续地图布点”返回地图添加下一个点。新点沿用当前参数，黄色标记为未保存。</MudAlert>
-            <MudTable T="SpawnDefinition" Items="drafts" Dense="true" Hover="true" RowsPerPage="5"><HeaderContent><MudTh>待保存坐标</MudTh><MudTh>怪物 / 数量 / 范围</MudTh><MudTh>操作</MudTh></HeaderContent><RowTemplate><MudTd>(@context.X,@context.Y)</MudTd><MudTd>#@context.MonsterId · @context.Count 只 / @context.Spread 格</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Choose(context))">选中</MudButton><MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => Remove(context))">移除</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent></MudTable>
+            <MudTable T="SpawnDefinition" Items="drafts" Dense="true" Hover="true" RowsPerPage="5"><HeaderContent><MudTh>待保存坐标</MudTh><MudTh>怪物 / 数量 / 范围</MudTh><MudTh>操作</MudTh></HeaderContent><RowTemplate><MudTd>(@context.X,@context.Y)</MudTd><MudTd>#@context.MonsterId · @context.Count 只 / @context.Spread 格</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Choose(context))" Variant="Variant.Text" Color="Color.Primary">选中</MudButton><MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => Remove(context))" Variant="Variant.Text">移除</MudButton></MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent></MudTable>
             <MudText Typo="Typo.body2" Class="mt-2">已选 @drafts.Count 个点，合计 @drafts.Sum(d => d.Count) 只。@(selected < 0 ? "点击地图放置第一个点。" : $"正在编辑第 {selected + 1} 个点。")</MudText>
         }
-        <MudGrid Spacing="2" Class="my-3"><MudItem xs="12"><MudStack Row="true" AlignItems="AlignItems.Center"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="怪物定义编号" @bind-Value="monsterId" @bind-Value:after="Preview" Min="1" /><MudButton OnClick="FindMonsters" Disabled="busy" Variant="Variant.Outlined">查找怪物</MudButton></MudStack></MudItem>
+        <MudGrid Spacing="2" Class="my-3"><MudItem xs="12"><MudStack Row="true" AlignItems="AlignItems.Center"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="怪物定义编号" @bind-Value="monsterId" @bind-Value:after="Preview" Min="1" /><MudButton OnClick="FindMonsters" Disabled="busy" Variant="Variant.Outlined" Size="Size.Small" Color="Color.Default">查找怪物</MudButton></MudStack></MudItem>
         <MudItem xs="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="X" @bind-Value="x" @bind-Value:after="Preview" Min="0" /></MudItem><MudItem xs="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="Y" @bind-Value="y" @bind-Value:after="Preview" Min="0" /></MudItem><MudItem xs="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="范围（格）" @bind-Value="spread" @bind-Value:after="Preview" Min="0" Max="500" /></MudItem>
         <MudItem xs="12" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="基础数量（0 停刷）" @bind-Value="count" @bind-Value:after="Preview" Min="0" Max="1000" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="间隔（分钟）" @bind-Value="delay" @bind-Value:after="Preview" Min="1" Max="65535" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="随机浮动（±分钟）" @bind-Value="randomDelay" @bind-Value:after="Preview" Min="0" Max="65535" /></MudItem>
         <MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="朝向（0–7，8 随机）" @bind-Value="direction" @bind-Value:after="Preview" Min="0" Max="8" /></MudItem><MudItem xs="6" sm="4"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" T="int" Immediate="true" Label="刷新周期（0 使用分钟）" @bind-Value="ticks" @bind-Value:after="Preview" Min="0" Max="65535" /></MudItem><MudItem xs="12" sm="4"><MudCheckBox Dense="true" T="bool" Label="保存周期刷怪时间" @bind-Value="saveTime" @bind-Value:after="Preview" /></MudItem>
@@ -39,8 +39,8 @@
 </fieldset>
 </DialogContent>
 <DialogActions>
-        <MudStack Row="true" Wrap="Wrap.Wrap">@if (current != null) { <MudButton Disabled="@(busy || !CanSubmit)" OnClick="Refill">立即补怪</MudButton><MudButton Disabled="@(busy || !CanSubmit)" Color="Color.Error" OnClick="Delete">删除刷怪点</MudButton> }</MudStack>
-    @if (current == null) { <MudButton Disabled="busy" OnClick="@(() => dialogOpen = false)">继续地图布点</MudButton> }
+        <MudStack Row="true" Wrap="Wrap.Wrap">@if (current != null) { <MudButton Disabled="@(busy || !CanSubmit)" OnClick="Refill" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">立即补怪</MudButton><MudButton Disabled="@(busy || !CanSubmit)" Color="Color.Error" OnClick="Delete" Size="Size.Small" Variant="Variant.Outlined">删除刷怪点</MudButton> }</MudStack>
+    @if (current == null) { <MudButton Disabled="busy" OnClick="@(() => dialogOpen = false)" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">继续地图布点</MudButton> }
 </DialogActions>
 </AdminDialog>
 @code {

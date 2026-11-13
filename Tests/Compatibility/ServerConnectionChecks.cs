@@ -7,6 +7,12 @@ internal static class ServerConnectionChecks
 {
     public static async Task Run(Action<bool, string> check)
     {
+        var registrations=new MirConnectionLog{AccountsMade=[0,1,3600000]};registrations.PruneAccounts(3600000);
+        check(registrations.AccountsMade.SequenceEqual(new long[]{1,3600000}),"注册限频未在一小时边界清理，或错误移除未过期请求");
+        registrations.PruneAccounts(7200000);check(registrations.AccountsMade.Count==0,"注册达到上限后永久滞留");
+        registrations.CharactersMade=[0,1,3600000];registrations.PruneCharacters(3600000);
+        check(registrations.CharactersMade.SequenceEqual(new long[]{1,3600000}),"建角限频没有在检查前清理一小时边界");
+        registrations.PruneCharacters(7200000);check(registrations.CharactersMade.Count==0,"建角达到上限后永久滞留");
         using var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         using var peer = new TcpClient(); var accepted = listener.AcceptTcpClientAsync();

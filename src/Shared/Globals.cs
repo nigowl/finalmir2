@@ -1,6 +1,7 @@
 ﻿public static class Globals
 {
     public const string ProductCodename = "Crystal";
+    public static bool IsClassicClass(MirClass value) => value is MirClass.Warrior or MirClass.Wizard or MirClass.Taoist;
 
     public const int
 

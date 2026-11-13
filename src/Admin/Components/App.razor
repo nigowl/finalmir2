@@ -1,3 +1,4 @@
+@inject Microsoft.Extensions.Hosting.IHostEnvironment HostEnvironment
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -11,7 +12,15 @@
 <body>
     <Routes @rendermode="InteractiveServer" />
     <div id="blazor-error-ui">连接中断，请刷新页面重新连接。<a href="">重新连接</a></div>
-    <script src="_framework/blazor.web.js"></script>
+    @if (HostEnvironment.IsDevelopment() && Environment.GetEnvironmentVariable("DOTNET_WATCH") == "1")
+    {
+        <script src="_framework/blazor.web.js" autostart="false"></script>
+        <script src="admin-watch.js"></script>
+    }
+    else
+    {
+        <script src="_framework/blazor.web.js"></script>
+    }
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
 </body>
 </html>

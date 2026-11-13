@@ -9,10 +9,11 @@ using Timer = Server.MirEnvir.Timer;
 
 namespace Server.MirObjects
 {
-    public class PlayerObject : HumanObject
+    public partial class PlayerObject : HumanObject
     {
         private long NextTradeTime;
         private long NextGroupInviteTime;
+        private long chatMessagesSent;
 
         public string GMPassword = Settings.GMPassword;
         public bool GMLogin, EnableGroupRecall, EnableGuildInvite, AllowMarriage, AllowLoverRecall, AllowMentor, HasMapShout, HasServerShout; //TODO - Remove        
@@ -1176,6 +1177,7 @@ namespace Server.MirObjects
 
             SetLevelEffects();
 
+            Helpers.InventoryStacks.Compact(Info.Inventory);
             GetItemInfo(Connection);
             GetMapInfo(Connection);
             GetUserInfo(Connection);
@@ -2139,7 +2141,8 @@ namespace Server.MirObjects
             }
             else if (message.StartsWith("@!"))
             {
-                if (!IsGM) return;
+                if (!IsGM) { ReceiveChat("命令失败：无权限，此命令需要 GM 权限。", ChatType.Hint); return; }
+                if (string.IsNullOrWhiteSpace(message.Remove(0, 2))) { ReceiveChat("参数不足。用法：@公告 内容；例子：@公告 服务器维护通知。", ChatType.Hint); return; }
 
                 message = String.Format("(*){0}:{1}", Name, message.Remove(0, 2));
 
@@ -2154,7 +2157,7 @@ namespace Server.MirObjects
 
                 //Command
                 message = message.Remove(0, 1);
-                parts = message.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                parts = Helpers.CommandInput.Split(message);
 
                 if (parts.Length == 0) return;
 
@@ -2174,17 +2177,20 @@ namespace Server.MirObjects
 
                 var commandInfo = Mir2.Commands.GameCommands.Find(parts[0]);
                 if (commandInfo == null && !Envir.CustomCommands.Any(command => command.Equals(parts[0], StringComparison.OrdinalIgnoreCase)))
-                { ReceiveChat($"未知命令：@{parts[0]}。请在管理工具的 GM命令清单中查看用法。" + (IsGM ? "例子：@传送 0 / @mm 0。" : ""), ChatType.System); return; }
+                { ReceiveChat($"未知命令：@{parts[0]}。请在管理工具的 GM命令清单中查看用法。" + (IsGM ? "例子：@传送 0 / @mm 0。" : ""), ChatType.Hint); return; }
                 var commandExample = commandInfo != null && (IsGM || Settings.TestServer) ? $" 用法：@{commandInfo.Name} {commandInfo.Arguments}；例子：{commandInfo.Example}。" : "";
                 var commandError = commandInfo == null ? null : Helpers.CommandInput.Validate(commandInfo, parts, Info.Flags.Length);
-                if (commandError != null) { ReceiveChat($"命令错误：{commandError}{commandExample}", ChatType.System); return; }
+                if (commandError != null) { ReceiveChat($"命令错误：{commandError}{commandExample}", ChatType.Hint); return; }
                 var commandCompleted = false;
+                var feedbackBefore = chatMessagesSent;
+                void CommandError(string reason) => ReceiveChat($"命令失败：@{parts[0]} · {reason}{commandExample}", ChatType.Hint);
                 try
                 {
                 switch (Mir2.Commands.GameCommands.Resolve(parts[0]))
                 {
                     case "!":
-                        if (!IsGM || parts.Length < 2) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
                         var announcement = ProcessChatItems($"(*){Name}:{string.Join(" ", parts.Skip(1))}", Envir.Players, linkedItems);
                         Envir.Broadcast(new S.Chat { Message = announcement, Type = ChatType.Announcement });
                         break;
@@ -2195,7 +2201,7 @@ namespace Server.MirObjects
                         return;
 
                     case "KILL":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                         if (parts.Length >= 2)
                         {
@@ -2251,7 +2257,7 @@ namespace Server.MirObjects
                         return;
 
                     case "CHANGEGENDER":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                         data = parts.Length < 2 ? Info : Envir.GetCharacterInfo(parts[1]);
 
@@ -2278,13 +2284,14 @@ namespace Server.MirObjects
                         break;
 
                     case "LEVEL":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         ushort level;
                         ushort old;
                         if (parts.Length >= 3)
                         {
-                            if (!IsGM) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                             if (ushort.TryParse(parts[2], out level))
                             {
@@ -2327,11 +2334,12 @@ namespace Server.MirObjects
                         break;
 
                     case "LEVELHERO":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         if (parts.Length >= 3)
                         {
-                            if (!IsGM) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                             if (ushort.TryParse(parts[2], out level))
                             {
@@ -2380,7 +2388,8 @@ namespace Server.MirObjects
 
                     case "MAKE":
                         {
-                            if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                            if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                             ItemInfo iInfo;
                             int itemIndex = 0;
@@ -2394,11 +2403,11 @@ namespace Server.MirObjects
                                 iInfo = Envir.GetItemInfo(parts[1]);
                             }
 
-                            if (iInfo == null) return;
+                            if (iInfo == null) { CommandError($"物品不存在：{parts[1]}。"); return; }
 
                             ushort itemCount = 1;
-                            if (parts.Length >= 3 && !ushort.TryParse(parts[2], out itemCount))
-                                itemCount = 1;
+                            if (parts.Length >= 3 && (!ushort.TryParse(parts[2], out itemCount) || itemCount == 0))
+                            { CommandError("参数错误：数量必须为 1–65535。"); return; }
 
                             var tempCount = itemCount;
 
@@ -2411,6 +2420,7 @@ namespace Server.MirObjects
                                     item.Count = itemCount;
 
                                     if (CanGainItem(item)) { GainItem(item); commandCompleted = true; }
+                                    else CommandError("背包空间不足，物品未发放。");
 
                                     return;
                                 }
@@ -2419,7 +2429,7 @@ namespace Server.MirObjects
                                 item.Count = iInfo.StackSize;
                                 itemCount -= iInfo.StackSize;
 
-                                if (!CanGainItem(item)) return;
+                                if (!CanGainItem(item)) { CommandError("背包空间不足，剩余物品未发放。"); return; }
                                 GainItem(item);
                             }
 
@@ -2436,7 +2446,7 @@ namespace Server.MirObjects
                         break;
 
                     case "CLEARBAG":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
                         player = this;
 
                         if (parts.Length >= 2)
@@ -2455,7 +2465,7 @@ namespace Server.MirObjects
                         break;
 
                     case "SUPERMAN":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                         GMNeverDie = !GMNeverDie;
 
@@ -2465,7 +2475,7 @@ namespace Server.MirObjects
                         break;
 
                     case "GAMEMASTER":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                         GMGameMaster = !GMGameMaster;
 
@@ -2475,7 +2485,7 @@ namespace Server.MirObjects
                         break;
 
                     case "OBSERVER":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
                         Observer = !Observer;
 
                         hintstring = Observer ? GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.ObserverMode) : GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.NormalMode);
@@ -2489,12 +2499,12 @@ namespace Server.MirObjects
                         ReceiveChat(hintstring, ChatType.Hint);
                         break;
                     case "RECALL":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                         if (parts.Length < 2) return;
                         player = Envir.GetPlayer(parts[1]);
 
-                        if (player == null) return;
+                        if (player == null) { CommandError($"角色不存在或未在线：{parts[1]}。"); return; }
 
                         player.Teleport(CurrentMap, Front);
                         break;
@@ -2709,7 +2719,8 @@ namespace Server.MirObjects
 
                     case "BACKUPPLAYER":
                         {
-                            if (!IsGM || parts.Length < 2) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                             var info = Envir.GetCharacterInfo(parts[1]);
 
@@ -2728,7 +2739,8 @@ namespace Server.MirObjects
 
                     case "ARCHIVEPLAYER":
                         {
-                            if (!IsGM || parts.Length < 2) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                             data = Envir.GetCharacterInfo(parts[1]);
 
@@ -2764,7 +2776,7 @@ namespace Server.MirObjects
 
                     case "LOADPLAYER":
                         {
-                            if (!IsGM) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                             if (parts.Length < 2) return;
 
@@ -2799,7 +2811,8 @@ namespace Server.MirObjects
 
                     case "RESTOREPLAYER":
                         {
-                            if (!IsGM || parts.Length < 2) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                             AccountInfo account = null;
 
@@ -2863,7 +2876,8 @@ namespace Server.MirObjects
                         break;
 
                     case "MOVE":
-                        if (!IsGM && !SpecialMode.HasFlag(SpecialItemMode.Teleport) && !Settings.TestServer) return;
+                        if (!IsGM && !SpecialMode.HasFlag(SpecialItemMode.Teleport) && !Settings.TestServer)
+                        { CommandError("无权限：需要 GM、测试服或传送装备。"); return; }
                         if (!IsGM && CurrentMap.Info.NoPosition)
                         {
                             ReceiveChat((GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.CannotPositionMoveOnMap)), ChatType.System);
@@ -2890,7 +2904,8 @@ namespace Server.MirObjects
                         break;
 
                     case "MAPMOVE":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
                         var instanceID = 1; x = 0; y = 0;
 
                         if (parts.Length == 3 || parts.Length == 5)
@@ -2898,10 +2913,10 @@ namespace Server.MirObjects
 
                         if (instanceID < 1) instanceID = 1;
 
-                        var map = Envir.GetMapByNameAndInstance(parts[1], instanceID);
+                        var map = Helpers.CommandInput.FindMap(Envir.MapList, parts[1], instanceID, out var mapError);
                         if (map == null)
                         {
-                            ReceiveChat((GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.MapCouldNotBeFound), parts[1], instanceID)), ChatType.System);
+                            CommandError(mapError ?? $"地图不存在或实例未开启：{parts[1]}（实例 {instanceID}）。");
                             return;
                         }
 
@@ -2933,18 +2948,18 @@ namespace Server.MirObjects
                         break;
 
                     case "GOTO":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                         if (parts.Length < 2) return;
                         player = Envir.GetPlayer(parts[1]);
 
-                        if (player == null) return;
+                        if (player == null) { CommandError($"角色不存在或未在线：{parts[1]}。"); return; }
 
                         Teleport(player.CurrentMap, player.CurrentLocation);
                         break;
 
                     case "MOB":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
                         if (parts.Length < 2)
                         {
                             ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.NotEnoughParamsSpawnMonster), ChatType.System);
@@ -3010,7 +3025,8 @@ namespace Server.MirObjects
                         break;
 
                     case "RECALLMOB":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         MonsterInfo mInfo2 = null;
                         int monsterIndex2 = 0;
@@ -3067,7 +3083,7 @@ namespace Server.MirObjects
                         break;
 
                     case "RELOADDROPS":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                         Envir.ReloadDrops();
 
@@ -3075,7 +3091,7 @@ namespace Server.MirObjects
                         break;
 
                     case "RELOADNPCS":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                         Envir.ReloadNPCs();
 
@@ -3083,19 +3099,20 @@ namespace Server.MirObjects
                         break;
 
                     case "CLEARIPBLOCKS":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                         Envir.IPBlocks.Clear();
                         break;
 
                     case "GIVEGOLD":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         player = this;
 
                         if (parts.Length > 2)
                         {
-                            if (!IsGM) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                             if (!uint.TryParse(parts[2], out count)) return;
                             player = Envir.GetPlayer(parts[1]);
@@ -3121,13 +3138,14 @@ namespace Server.MirObjects
                         break;
 
                     case "GIVEPEARLS":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         player = this;
 
                         if (parts.Length > 2)
                         {
-                            if (!IsGM) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                             if (!uint.TryParse(parts[2], out count)) return;
                             player = Envir.GetPlayer(parts[1]);
@@ -3153,13 +3171,14 @@ namespace Server.MirObjects
 
                         break;
                     case "GIVECREDIT":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         player = this;
 
                         if (parts.Length > 2)
                         {
-                            if (!IsGM) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                             if (!uint.TryParse(parts[2], out count)) return;
                             player = Envir.GetPlayer(parts[1]);
@@ -3184,23 +3203,30 @@ namespace Server.MirObjects
                         Helpers.ChatSystem.SystemMessage(chatMessage: creditMsg);
 
                         break;
+                    case "GIVEBOOKS":
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
+                        if (!Helpers.CommandInput.TryClass(parts[1], out var skillClass)) return;
+                        GiveClassBooks(skillClass);
+                        break;
                     case "GIVESKILL":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 3) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 3) { CommandError("参数不足。"); return; }
 
                         byte spellLevel = 0;
 
                         player = this;
                         Spell skill;
 
-                        if (!Enum.TryParse(parts.Length > 3 ? parts[2] : parts[1], true, out skill) || !Enum.IsDefined(skill)) return;
+                        if (!Enum.TryParse(parts.Length > 3 ? parts[2] : parts[1], true, out skill) || !Enum.IsDefined(skill))
+                        { CommandError("参数错误：技能枚举不存在。"); return; }
 
-                        if (skill == Spell.None) return;
+                        if (skill == Spell.None) { CommandError("参数错误：不能使用空技能。"); return; }
 
                         spellLevel = byte.TryParse(parts.Length > 3 ? parts[3] : parts[2], out spellLevel) ? Math.Min((byte)3, spellLevel) : (byte)0;
 
                         if (parts.Length > 3)
                         {
-                            if (!IsGM) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                             player = Envir.GetPlayer(parts[1]);
 
@@ -3212,6 +3238,7 @@ namespace Server.MirObjects
                         }
 
                         var magic = new UserMagic(skill) { Level = spellLevel };
+                        if (magic.Info == null) { CommandError("技能不存在于当前版本。"); return; }
 
                         if (player.Info.Magics.Any(e => e.Spell == skill))
                         {
@@ -3246,7 +3273,8 @@ namespace Server.MirObjects
                         break;
 
                     case "FIND":
-                        if (!IsGM && !SpecialMode.HasFlag(SpecialItemMode.Probe)) return;
+                        if (!IsGM && !SpecialMode.HasFlag(SpecialItemMode.Probe))
+                        { CommandError("无权限：需要 GM 或探测装备。"); return; }
 
                         if (Envir.Time < LastProbeTime)
                         {
@@ -3283,7 +3311,8 @@ namespace Server.MirObjects
 
                     case "CREATEGUILD":
 
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         player = parts.Length < 3 ? this : Envir.GetPlayer(parts[1]);
 
@@ -3336,7 +3365,7 @@ namespace Server.MirObjects
                         break;
 
                     case "TRIGGER":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
                         if (parts.Length < 2) return;
 
                         if (parts.Length >= 3)
@@ -3370,7 +3399,7 @@ namespace Server.MirObjects
                         ChatTime = 0;
                         break;
                     case "SETFLAG":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                         if (parts.Length < 2) return;
 
@@ -3391,7 +3420,7 @@ namespace Server.MirObjects
                         break;
 
                     case "LISTFLAGS":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                         for (int i = 0; i < Info.Flags.Length; i++)
                         {
@@ -3402,7 +3431,7 @@ namespace Server.MirObjects
                         break;
 
                     case "CLEARFLAGS":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                         player = parts.Length > 1 && IsGM ? Envir.GetPlayer(parts[1]) : this;
 
@@ -3418,7 +3447,7 @@ namespace Server.MirObjects
                         }
                         break;
                     case "CLEARMOB":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                         if (parts.Length > 1)
                         {
@@ -3451,7 +3480,7 @@ namespace Server.MirObjects
                         break;
 
                     case "CHANGECLASS": //@changeclass [Player] [Class]
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                         data = parts.Length <= 2 || !IsGM ? Info : Envir.GetCharacterInfo(parts[1]);
 
@@ -3477,7 +3506,7 @@ namespace Server.MirObjects
                         Die();
                         break;
                     case "HAIR":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                         if (parts.Length < 2)
                         {
@@ -3494,7 +3523,8 @@ namespace Server.MirObjects
                         break;
 
                     case "DECO":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         int.TryParse(parts[1], out tempInt);
 
@@ -3513,11 +3543,12 @@ namespace Server.MirObjects
                         break;
 
                     case "ADJUSTPKPOINT":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         if (parts.Length > 2)
                         {
-                            if (!IsGM) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                             player = Envir.GetPlayer(parts[1]);
 
@@ -3538,7 +3569,8 @@ namespace Server.MirObjects
 
                     case "AWAKENING":
                         {
-                            if ((!IsGM && !Settings.TestServer) || parts.Length < 3) return;
+                            if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 3) { CommandError("参数不足。"); return; }
 
                             ItemType type;
 
@@ -3581,7 +3613,8 @@ namespace Server.MirObjects
                         break;
                     case "REMOVEAWAKENING":
                         {
-                            if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                            if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                             ItemType type;
 
@@ -3616,7 +3649,7 @@ namespace Server.MirObjects
                         break;
 
                     case "STARTWAR":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
                         if (parts.Length < 2) return;
 
                         GuildObject enemyGuild = Envir.GetGuild(parts[1]);
@@ -3744,7 +3777,7 @@ namespace Server.MirObjects
 
                     case "INFO":
                         {
-                            if (!IsGM && !Settings.TestServer) return;
+                            if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                             MapObject ob = null;
 
@@ -3791,7 +3824,7 @@ namespace Server.MirObjects
                         break;
 
                     case "CLEARQUESTS":
-                        if (!IsGM && !Settings.TestServer) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
 
                         player = parts.Length > 1 && IsGM ? Envir.GetPlayer(parts[1]) : this;
 
@@ -3812,7 +3845,8 @@ namespace Server.MirObjects
                         break;
 
                     case "SETQUEST":
-                        if ((!IsGM && !Settings.TestServer) || parts.Length < 3) return;
+                        if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 3) { CommandError("参数不足。"); return; }
 
                         player = parts.Length > 3 && IsGM ? Envir.GetPlayer(parts[3]) : this;
 
@@ -3874,7 +3908,8 @@ namespace Server.MirObjects
 
                     case "STARTCONQUEST":
                         {
-                            if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                            if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
                             int conquestID;
 
                             if (parts.Length < 1)
@@ -3920,7 +3955,8 @@ namespace Server.MirObjects
                         break;
                     case "RESETCONQUEST":
                         {
-                            if ((!IsGM && !Settings.TestServer) || parts.Length < 2) return;
+                            if (!IsGM && !Settings.TestServer) { CommandError("无权限：此命令需要 GM 权限或测试服。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
                             int conquestID;
 
                             if (parts.Length < 1)
@@ -4074,7 +4110,7 @@ namespace Server.MirObjects
                         }
                         break;
                     case "REVIVE":
-                        if (!IsGM) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
 
                         if (parts.Length < 2)
                         {
@@ -4094,7 +4130,8 @@ namespace Server.MirObjects
                         }
                         break;
                     case "DELETESKILL":
-                        if ((!IsGM) || parts.Length < 2) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
                         Spell skill1;
 
                         if (!Enum.TryParse(parts.Length > 2 ? parts[2] : parts[1], true, out skill1)) return;
@@ -4103,7 +4140,7 @@ namespace Server.MirObjects
 
                         if (parts.Length > 2)
                         {
-                            if (!IsGM) return;
+                            if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
                             player = Envir.GetPlayer(parts[1]);
 
                             if (player == null)
@@ -4156,7 +4193,8 @@ namespace Server.MirObjects
 
                         break;
                     case "SETLIGHT":
-                        if ((!IsGM) || parts.Length < 2) return;
+                        if (!IsGM) { CommandError("无权限：此命令需要 GM 权限。"); return; }
+                        if (parts.Length < 2) { CommandError("参数不足。"); return; }
 
                         if (!byte.TryParse(parts[1], out byte light)) return;
 
@@ -4179,7 +4217,8 @@ namespace Server.MirObjects
                 }
                 finally
                 {
-                    ReceiveChat(commandCompleted ? $"命令已处理：@{parts[0]}。" : $"命令未完成：@{parts[0]}。请检查 GM权限、参数、目标是否在线及当前状态。{commandExample}", ChatType.System);
+                    if (chatMessagesSent == feedbackBefore)
+                        ReceiveChat(commandCompleted ? $"命令已处理：@{parts[0]}。" : $"命令未执行：@{parts[0]} · 当前状态不满足命令条件。{commandExample}", commandCompleted ? ChatType.System2 : ChatType.Hint);
                 }
             }
             else
@@ -4683,6 +4722,9 @@ namespace Server.MirObjects
 
             switch (attacker.AMode)
             {
+                case AttackMode.Couple:
+                case AttackMode.Mentor:
+                    return !Helpers.AttackModeProtection.Protects(attacker, this);
                 case AttackMode.All:
                     return true;
                 case AttackMode.Group:
@@ -4725,6 +4767,9 @@ namespace Server.MirObjects
 
             switch (attacker.Master.AMode)
             {
+                case AttackMode.Couple:
+                case AttackMode.Mentor:
+                    return !Helpers.AttackModeProtection.Protects(attacker.Master, this);
                 case AttackMode.All:
                     return true;
                 case AttackMode.Group:
@@ -4748,6 +4793,9 @@ namespace Server.MirObjects
 
             switch (ally.AMode)
             {
+                case AttackMode.Couple:
+                case AttackMode.Mentor:
+                    return Helpers.AttackModeProtection.Protects(ally, this);
                 case AttackMode.Group:
                     return GroupMembers != null && GroupMembers.Contains(ally);
                 case AttackMode.RedBrown:
@@ -7913,6 +7961,7 @@ namespace Server.MirObjects
 
         public override void ReceiveChat(string text, ChatType type)
         {
+            chatMessagesSent++;
             Enqueue(new S.Chat { Message = text, Type = type });
         }
         public void ReceiveOutputMessage(string text, OutputMessageType type)

@@ -1,0 +1,48 @@
+@using System.Text.Json
+<AdminDialog Visible="true" Title="本版本陪玩设置" OnClose="OnClose" OnSave="Save" Busy="busy" Dirty="@(original!=Draft)">
+<DialogContent>
+    @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
+    <MudCheckBox T="bool" Label="启用本版本陪玩系统" @bind-Value="Settings.Enabled" />
+    <MudCheckBox T="bool" Label="允许短时自卫与明确约战（仍受角色配置和原地图规则限制）" @bind-Value="Settings.AllowPk" />
+    <MudGrid Spacing="2">
+        <MudItem xs="6"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="最多同时在线陪玩" Min="1" Max="100" @bind-Value="Settings.MaxOnline" /></MudItem>
+        <MudItem xs="6"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="真人预留连接名额" Min="1" Max="1000" @bind-Value="Settings.ReservePlayers" /></MudItem>
+    </MudGrid>
+    <MudAlert Severity="Severity.Info" Class="my-3">陪玩人数另受系统设置的总连接数和同 IP 上限约束，本机额外预留 1 个连接。调整人数保存后自动生效；新账户仍按原服注册频率排队。</MudAlert>
+    <MudDivider Class="my-3" />
+    <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Typo="Typo.h6">可选 LLM</MudText><LlmTestButton Model="DefaultModel" Key="@(DefaultSecret?.Key)" ClearKey="@(DefaultSecret?.Clear??false)" /></MudStack>
+    <MudButton OnClick="AddModel" Disabled="@(Settings.Models.Length>=20)" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">增加模型</MudButton>
+    <MudTable T="CompanionLlmModel" Items="Settings.Models" Dense="true">
+        <HeaderContent><MudTh>配置名称 / 模型标识</MudTh><MudTh>状态</MudTh><MudTh>操作</MudTh></HeaderContent>
+        <RowTemplate><MudTd>@context.Name<br />@context.Model</MudTd><MudTd>@(context.Enabled?"启用":"停用") · @(context.HasKey||secrets.GetValueOrDefault(context.Id)?.Key?.Length>0?"已配置密钥":"无密钥")</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(()=>editing=context)" Variant="Variant.Text" Color="Color.Primary">编辑模型</MudButton><MudButton Size="Size.Small" Color="Color.Error" OnClick="@(()=>RemoveModel(context))" Variant="Variant.Text">移除模型</MudButton></MudTd></RowTemplate>
+        <NoRecordsContent><MudText>尚未配置模型，陪玩继续使用规则。</MudText></NoRecordsContent>
+    </MudTable>
+    <MudSelect T="Guid" Margin="Margin.Dense" Variant="Variant.Outlined" Label="默认模型" @bind-Value="Settings.DefaultModelId"><MudSelectItem Value="Guid.Empty">不设默认模型</MudSelectItem>@foreach(var m in Settings.Models.Where(m=>m.Enabled)){<MudSelectItem Value="m.Id">@m.Name · @m.Model</MudSelectItem>}</MudSelect>
+    <MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="本版本每日最多模型请求次数" Min="0" Max="100000" @bind-Value="Settings.DailyLlmCalls" />
+    <MudText Typo="Typo.caption" Class="mt-2">配置和密钥保存在本版本 SQLite；密钥不回显、不进入列表或普通导出。LLM 不参与资产提交，关闭后规则继续运行。</MudText>
+</DialogContent>
+</AdminDialog>
+@if(editing!=null){<CompanionModelDialog @key="editing.Id" Model="editing" Secret="secrets.GetValueOrDefault(editing.Id)" OnClose="@(()=>editing=null)" OnApply="ApplyModel" />}
+@code{
+    [Parameter,EditorRequired]public CompanionSettings Settings{get;set;}=null!;
+    [Parameter]public EventCallback OnClose{get;set;}
+    [Parameter]public EventCallback OnSaved{get;set;}
+    [Inject]private IDialogService Dialogs{get;set;}=null!;
+    private string original="";private bool busy;private string? error;private CompanionLlmModel? editing;
+    private readonly Dictionary<Guid,CompanionModelKeyEdit> secrets=[];
+    private CompanionLlmModel? DefaultModel=>Settings.Models.FirstOrDefault(m=>m.Id==Settings.DefaultModelId);
+    private CompanionModelKeyEdit? DefaultSecret=>secrets.GetValueOrDefault(Settings.DefaultModelId);
+    private string Draft=>JsonSerializer.Serialize(new{Settings,secrets});
+    protected override void OnInitialized()=>original=Draft;
+    private async Task Save()
+    {
+        busy=true;
+        try{await Api.Put<ActionResult>("management/companions/settings",new CompanionSettingsEdit(Settings,ModelKeys:secrets.Values.ToArray()));secrets.Clear();await OnSaved.InvokeAsync();}
+        catch(Exception e){error=e.Message;}finally{busy=false;}
+    }
+    private void AddModel()=>editing=new(){Id=Guid.NewGuid()};
+    private void ApplyModel((CompanionLlmModel Model,CompanionModelKeyEdit Secret) value)
+    {var model=value.Model with{HasKey=!value.Secret.Clear&&(value.Secret.Key?.Length>0||value.Model.HasKey)};Settings.Models=[..Settings.Models.Where(m=>m.Id!=model.Id),model];secrets[model.Id]=value.Secret;if(Settings.DefaultModelId==Guid.Empty&&model.Enabled)Settings.DefaultModelId=model.Id;editing=null;}
+    private async Task RemoveModel(CompanionLlmModel model)
+    {if(await AdminDialog.Confirm(Dialogs,"移除模型",$"从设置草稿移除「{model.Name}」？保存外层设置后生效；被角色引用的模型不能删除。","确认移除")){Settings.Models=Settings.Models.Where(m=>m.Id!=model.Id).ToArray();secrets.Remove(model.Id);if(Settings.DefaultModelId==model.Id)Settings.DefaultModelId=Guid.Empty;}}
+}

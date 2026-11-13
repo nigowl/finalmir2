@@ -17,7 +17,14 @@ public class ItemInfo
     public ushort Image, Durability;
 
     public uint Price;
-    public ushort StackSize = 1;
+    private ushort stackSize = 1;
+    public ushort StackSize
+    {
+        get => IsEquipment ? (ushort)1 : stackSize <= 1 && Type is ItemType.Meat or ItemType.Food or ItemType.CraftingMaterial or ItemType.Book ? (ushort)999 : stackSize;
+        set => stackSize = value;
+    }
+    public bool IsEquipment => Type is ItemType.Weapon or ItemType.Armour or ItemType.Helmet or ItemType.Necklace or ItemType.Bracelet or ItemType.Ring
+        or ItemType.Belt or ItemType.Boots or ItemType.Stone or ItemType.Torch or ItemType.Mount or ItemType.Reins or ItemType.Bells or ItemType.Saddle or ItemType.Ribbon or ItemType.Mask;
 
     public bool StartItem;
     public byte Effect;

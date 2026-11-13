@@ -22,7 +22,7 @@ cleanup() {
 }
 trap cleanup EXIT
 dotnet build "$ROOT/Mir2.sln" --configuration Debug --nologo --verbosity quiet -m:1 --disable-build-servers
-dotnet "$ROOT/tests/Compatibility/bin/Debug/net8.0/Compatibility.dll" --fixture "$TEST_RUNTIME/ref" --guild-fixture
+dotnet "$ROOT/tests/Compatibility/bin/Debug/net8.0/Compatibility.dll" --fixture "$TEST_RUNTIME/ref" --guild-fixture --gm-fixture
 export MIR2_DATA_ROOT="$TEST_RUNTIME/ref"
 start_backend() {
   "$ROOT/start-server.sh" > "$TEST_RUNTIME/backend.log" 2>&1 &
@@ -48,6 +48,7 @@ run_client() {
 start_backend
 MIR2_SERVER="http://127.0.0.1:$MIR2_RESOURCE_PORT" python3 "$ROOT/tests/Management/verify.py" "$MIR2_DATA_ROOT"
 run_client --smoke
+dotnet "$ROOT/tests/Compatibility/bin/Debug/net8.0/Compatibility.dll" --gm-checks "$MIR2_GAME_PORT" "$TEST_RUNTIME/gm-save.json"
 kill -TERM "$BACKEND_PID"
 wait "$BACKEND_PID"
 BACKEND_PID=""
@@ -61,4 +62,5 @@ for file in files: file.write_bytes(b'corrupt cached map')
 PYCODE
 start_backend
 run_client --verify-save
+dotnet "$ROOT/tests/Compatibility/bin/Debug/net8.0/Compatibility.dll" --gm-checks "$MIR2_GAME_PORT" "$TEST_RUNTIME/gm-save.json" --verify-gm
 echo "Passed actual Godot gameplay and SQLite restart checks using disposable data."

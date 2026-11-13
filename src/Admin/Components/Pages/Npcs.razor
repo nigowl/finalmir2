@@ -2,15 +2,15 @@
 @attribute [Authorize]
 @using Mir2.Admin.Components.Administration
 @inject IDialogService Dialogs
-<PageTitle>NPC 管理 · Mir2</PageTitle>
-<MudText Typo="Typo.h4" HtmlTag="h1">NPC 管理</MudText>
-<MudText Class="my-3" Color="Color.Secondary">小地图快速定位，大地图点击 NPC 管理；点击可行走位置新增 NPC。属性与 TXT 脚本在弹窗中编辑。</MudText>
+<PageTitle>NPC管理 · Mir2</PageTitle>
+<MudText Typo="Typo.h4" HtmlTag="h1">NPC管理</MudText>
+<MudText Class="my-3" Color="Color.Secondary">小地图快速定位，大地图点击 NPC管理；点击可行走位置新增 NPC。属性与 TXT 脚本在弹窗中编辑。</MudText>
 @if (error != null) { <MudAlert Severity="Severity.Error" Class="my-3">@error</MudAlert> }
 @if (notice != null) { <MudAlert Severity="Severity.Success" Class="my-3">@notice</MudAlert> }
 <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-4">
     <MapPicker Maps="maps" Value="mapId" ValueChanged="SelectMap" Disabled="@(busy || editorOpen)" Npcs="true" />
-    <MudButton OnClick="Load" Disabled="busy">刷新地图</MudButton>
-    <MudButton OnClick="ShowNpcs" Disabled="@(busy || editorOpen)">NPC列表</MudButton>
+    <MudButton OnClick="Load" Disabled="busy" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">刷新地图</MudButton>
+    <MudButton OnClick="ShowNpcs" Disabled="@(busy || editorOpen)" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">NPC列表</MudButton>
 </MudStack>
 @if (busy) { <MudProgressLinear Indeterminate="true" /> }
 @if (map != null)
@@ -21,7 +21,7 @@
     <MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Label="搜索当前地图 NPC" Immediate="true" @bind-Value="search" Class="mb-3" />
     <MudTable T="NpcDefinition" Items="map.Npcs.Where(n => n.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || n.Id.ToString() == search)" Dense="true" Hover="true" RowsPerPage="10">
         <HeaderContent><MudTh>NPC</MudTh><MudTh>坐标</MudTh><MudTh>脚本</MudTh><MudTh>操作</MudTh></HeaderContent>
-        <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>(@context.X, @context.Y)</MudTd><MudTd Class="path">@context.FileName</MudTd><MudTd><MudButton Disabled="@(busy || editorOpen)" OnClick="@(() => Open(context))">管理</MudButton></MudTd></RowTemplate>
+        <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>(@context.X, @context.Y)</MudTd><MudTd Class="path">@context.FileName</MudTd><MudTd><MudButton Disabled="@(busy || editorOpen)" OnClick="@(() => Open(context))" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">管理</MudButton></MudTd></RowTemplate>
         <NoRecordsContent><MudText>当前地图没有符合条件的 NPC，可点击地图新增。</MudText></NoRecordsContent>
         <PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
     </MudTable>

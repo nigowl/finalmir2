@@ -11,3 +11,55 @@
 .population-viewport{fill:#ffd36933;stroke:#ffd369;stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none}.npc-appearance{display:grid;place-items:center;min-height:140px;padding:16px;background:repeating-conic-gradient(#26333c 0% 25%,#1c252b 0% 50%) 50%/16px 16px;border-radius:4px}.npc-appearance img{max-width:100%;max-height:200px;image-rendering:pixelated}
 .native-map-layout{position:relative;isolation:isolate}.native-map-scroll{height:70vh;min-height:360px;max-height:900px;overflow:auto;border:1px solid #43545c;background:#1e2622;overscroll-behavior:contain}.native-map-world{position:relative;overflow:hidden;image-rendering:pixelated}.native-map-tiles img{position:absolute;pointer-events:none}.native-npc{position:absolute;display:block;padding:0;border:0;background:none;color:#f4edca;cursor:pointer;font:13px sans-serif}.native-npc img{display:block;max-width:none}.native-npc span{position:absolute;top:-22px;left:50%;transform:translateX(-50%);white-space:nowrap;text-shadow:1px 1px #000,-1px -1px #000}.native-npc:hover,.native-npc:focus-visible{filter:drop-shadow(0 0 3px #ffd369);outline:1px solid #ffd369}.native-minimap{position:absolute;z-index:1;top:12px;right:24px;width:180px;max-width:35%;padding:6px;background:#111b21ec;border:1px solid #64747f;border-radius:5px}.native-minimap svg{display:block;width:100%;cursor:crosshair;outline-offset:3px}.native-map-coordinate{position:absolute;bottom:20px;left:14px;padding:5px 9px;background:#111b21e8;pointer-events:none;font-variant-numeric:tabular-nums}.native-map-error{padding:10px;color:#ffd369}.native-map-error button{margin-left:12px;padding:4px 8px}
 .monster-catalog{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);height:62vh}.monster-catalog-list,.monster-catalog-detail{overflow:auto;min-width:0}.monster-catalog-list{padding-right:12px;border-right:2px solid var(--mud-palette-lines-inputs)}.monster-catalog-detail{padding-left:16px}.monster-properties table{table-layout:fixed;min-width:360px}.monster-properties th,.monster-properties td{padding:6px 8px;font-size:.8125rem;overflow-wrap:anywhere}.monster-properties th:nth-child(3),.monster-properties td:nth-child(3){border-left:1px solid var(--mud-palette-divider)}.catalog-sprite{display:block;max-width:100%;max-height:120px;width:auto;height:auto;object-fit:contain;image-rendering:pixelated}.monster-catalog-list .catalog-sprite{max-width:100px;max-height:96px}.monster-catalog-list .mud-button{text-transform:none;letter-spacing:0}.npc-catalog-gallery{columns:4 180px;column-gap:12px}.npc-catalog-card{display:block;break-inside:avoid;margin-bottom:12px;padding:12px;border:1px solid var(--mud-palette-divider);border-radius:4px}.npc-catalog-card-heading{display:flex;align-items:flex-start;gap:8px}.npc-catalog-card-heading .mud-typography{flex:1;min-width:0;overflow-wrap:anywhere}.npc-catalog-card-heading .mud-button{flex-shrink:0;min-width:48px;padding:2px 8px}.npc-catalog-card .catalog-sprite{margin:10px auto}.npc-catalog-card .mud-typography-caption{display:block}.npc-catalog-card .path{overflow-wrap:anywhere}@media(max-width:600px){.monster-catalog-list{padding-right:6px}.monster-catalog-detail{padding-left:8px}.monster-catalog-list .catalog-sprite{max-width:60px}}
+
+/* 管理端统一密度；地图和素材预览继续使用各自的原始比例。 */
+.admin-page{padding:18px 22px!important;max-width:none!important}
+.admin-compact{font-size:.875rem}.admin-compact h1{font-size:1.5rem;font-weight:600;line-height:1.4;letter-spacing:0}
+.admin-compact .mud-typography-h6{font-size:1rem;font-weight:600}.admin-compact .mud-typography-body1,.admin-dialog .mud-typography-body1{font-size:.875rem;line-height:1.55}
+.admin-compact>.mud-container>.mb-5{margin-bottom:16px!important}.admin-compact .mud-table,.admin-compact>.mud-container>.mud-paper{border:1px solid var(--mud-palette-divider);box-shadow:none;border-radius:6px}
+:where(.admin-compact,.admin-dialog) .mud-button{font-size:.8125rem;line-height:1.6;min-height:30px;min-width:48px;padding:4px 12px;border-radius:4px;text-transform:none;letter-spacing:0;box-shadow:none}
+:where(.admin-compact,.admin-dialog) .mud-button-size-small{padding:3px 8px;min-height:28px}
+:where(.admin-compact,.admin-dialog) .mud-icon-button-size-small{padding:5px}
+:where(.admin-compact,.admin-dialog) .mud-table-cell{padding:7px 10px;font-size:.8125rem;line-height:1.5;border-bottom-color:#ffffff0d}
+:where(.admin-compact,.admin-dialog) .mud-table-head .mud-table-cell{font-weight:600;color:var(--mud-palette-text-secondary);background:#17232c;white-space:nowrap;border-bottom:1px solid var(--mud-palette-divider)}
+:where(.admin-compact,.admin-dialog) .mud-table-hover .mud-table-body .mud-table-row:hover{background-color:#67c8b40a}
+:where(.admin-compact,.admin-dialog) .mud-table-toolbar{height:auto;min-height:42px;padding:6px 12px}
+:where(.admin-compact,.admin-dialog) .mud-table-pagination{min-height:42px;font-size:.8125rem}
+:where(.admin-compact,.admin-dialog) .mud-tab{font-size:.8125rem;text-transform:none;letter-spacing:0}
+:where(.admin-compact,.admin-dialog) .mud-alert{font-size:.8125rem;border-radius:4px}
+:where(.admin-compact,.admin-dialog) .mud-chip{font-size:.75rem;height:26px}
+.admin-dialog{border:1px solid var(--mud-palette-divider);border-radius:7px!important}.admin-dialog-title{background:#17232c}
+.admin-dialog-content{max-height:78vh;overflow:auto}
+.admin-dialog-footer{background:#17232c}.coordinate,.event-time{white-space:nowrap;font-variant-numeric:tabular-nums}.coordinate{color:var(--mud-palette-text-secondary);font-size:.75rem}
+.event-description{overflow-wrap:anywhere}.settings-summary td:first-child{width:24%;min-width:140px}.settings-summary td:nth-child(2){width:18%;min-width:95px;font-weight:600}.settings-summary td:last-child{color:var(--mud-palette-text-secondary)}
+.mud-drawer .mud-nav-link{padding:10px 14px;font-size:.875rem}.mud-drawer .mud-nav-link.active{background:#67c8b414;border-right:2px solid var(--mud-palette-primary)}
+.logout{font:inherit;font-size:.8125rem;padding:6px 12px;border:1px solid var(--mud-palette-divider);border-radius:4px;margin-left:12px}.logout:hover{background:#ffffff0a}
+@media(max-width:700px){.admin-page{padding:12px!important}.admin-compact h1{font-size:1.25rem}:where(.admin-compact,.admin-dialog) .mud-table-cell{padding:6px 8px}.admin-dialog-content{padding:10px 12px!important}.admin-dialog-content{max-height:75vh}}
+
+.admin-dialog-save{margin-left:0!important}.admin-dialog-cancel{margin-left:auto!important}
+
+.admin-brand{display:flex;align-items:center;gap:10px;min-height:64px;padding:10px 16px;color:var(--mud-palette-text-primary);text-decoration:none;border-bottom:1px solid var(--mud-palette-divider)}
+.admin-brand .mud-icon-root{color:var(--mud-palette-primary);font-size:27px}.admin-brand strong{display:block;font-size:1rem;font-weight:650;letter-spacing:.02em;line-height:1.4}.admin-brand small{display:block;font-size:.6875rem;color:var(--mud-palette-text-secondary);line-height:1.5}
+.admin-brand:hover{background:#67c8b40a}.admin-brand:focus-visible{outline:2px solid var(--mud-palette-primary);outline-offset:-3px}
+:where(.admin-compact,.admin-dialog) .mud-tabs>.mud-tabs-panels{padding-top:14px}
+:where(.admin-compact,.admin-dialog) .mud-tabs-tabbar{border-bottom:1px solid var(--mud-palette-divider)}
+:where(.admin-compact,.admin-dialog) .mud-table-empty-row .mud-table-cell{padding:18px 12px;color:var(--mud-palette-text-secondary)}
+.admin-compact .mud-button:focus-visible,.admin-dialog .mud-button:focus-visible{outline:2px solid var(--mud-palette-primary);outline-offset:2px}
+@media(max-width:700px){:where(.admin-compact,.admin-dialog) .mud-tabs>.mud-tabs-panels{padding-top:12px}}
+
+/* 页签只保留导航分隔，内容随页面流排版，不叠加卡片外框。 */
+:where(.admin-compact,.admin-dialog) .mud-tabs,:where(.admin-compact,.admin-dialog) .mud-tabs-panels,:where(.admin-compact,.admin-dialog) .mud-tab-panel{border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent}
+:where(.admin-compact,.admin-dialog) .mud-tabs-tabbar-inner{min-height:0!important;height:auto}
+:where(.admin-compact,.admin-dialog) .mud-tabs-tabbar-wrapper{width:100%!important;align-items:stretch}
+:where(.admin-compact,.admin-dialog) .mud-tabs-tabbar-wrapper>.mud-tooltip-root{flex:1 1 0;min-width:0}
+:where(.admin-compact,.admin-dialog) .mud-tab{flex:1 1 0;height:auto;padding:6px 12px;line-height:1.5}
+
+/* 按钮尺寸按位置固定，语义颜色/变体在组件中明确声明。 */
+:root{--admin-action-height:32px;--admin-row-action-height:28px;--admin-icon-size:28px}
+:where(.admin-compact,.admin-dialog) .mud-button{min-height:var(--admin-action-height);padding:4px 12px;font-size:.8125rem;line-height:1.5}
+:where(.admin-compact,.admin-dialog) .mud-table tbody .mud-button{min-height:var(--admin-row-action-height);padding:3px 8px}
+.admin-dialog-actions .mud-button{min-height:var(--admin-action-height)}
+:where(.admin-compact,.admin-dialog) .mud-icon-button{width:var(--admin-icon-size);height:var(--admin-icon-size);padding:4px}.mud-appbar .mud-icon-button{width:32px;height:32px;padding:5px}
+:where(.admin-compact,.admin-dialog) .mud-table,:where(.admin-compact,.admin-dialog) .mud-simple-table{border:0!important;border-radius:0!important;box-shadow:none!important}
+.logout{height:32px;min-width:48px;padding:4px 12px}.login .mud-button{min-height:40px;font-size:.875rem;text-transform:none;letter-spacing:0;box-shadow:none}
+.native-map-error button{min-height:32px;padding:4px 12px;border:1px solid var(--mud-palette-lines-default);border-radius:4px;background:transparent;color:var(--mud-palette-text-primary);font:inherit;font-size:.8125rem;cursor:pointer}

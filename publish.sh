@@ -47,6 +47,10 @@ HERE="\$(cd -- "\$(dirname -- "\${BASH_SOURCE[0]}")" && pwd)"
 exec "\$HERE/Mir2.$role" "\$@"
 EOF
 done
+dotnet publish "$ROOT/src/Companion/Mir2.Companion.csproj" -c Release -r "$RID" --self-contained true \
+  -p:DebugType=None -p:DebugSymbols=false -o "$STAGE/server/companion" --nologo -v quiet -m:1 --disable-build-servers
+cp "$ROOT/LICENSE" "$ROOT/LICENSE-GPL-3.0.txt" "$ROOT/THIRD-PARTY-NOTICES.md" "$STAGE/server/companion/"
+cp "$STAGE/server/Mir2.Shared.dll" "$STAGE/server/companion/Mir2.Shared.dll"
 mkdir -p "$STAGE/client/.godot/mono/temp/bin/Debug"
 # shortcut: 当前随包携带已安装的 .NET 宿主，具备标准导出模板后改为精简导出。
 ditto "$GODOT_APP" "$STAGE/client/Godot.app"

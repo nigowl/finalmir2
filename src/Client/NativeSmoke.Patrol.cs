@@ -9,6 +9,8 @@ public partial class NativeSmoke
     {
         stage = "original guard patrol, remote step cadence and continuous animation";
         await Until(() => State.Actors.Values.Any(actor => actor.Name == "NativePatrol"));
+        // PNG截图会阻塞主线程；先排空期间积压的包，再开始测量完整收包间隔。
+        await Until(() => Client.Connection.Received.IsEmpty);
         var guard = State.Actors.Values.Single(actor => actor.Name == "NativePatrol");
         var intervals = new List<long>(); long previousPacket = 0;
         void Observe(Packet packet)

@@ -60,7 +60,7 @@ public partial class Main
         Theme.SetIcon("close", "Window", close); Theme.SetIcon("close_pressed", "Window", closePressed);
         // 嵌入窗口已绘制完整边框，内容面板只保留内边距，避免重复套框。
         Theme.SetStylebox("panel", "AcceptDialog", new StyleBoxEmpty
-        { ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 8, ContentMarginBottom = 8 });
+        { ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 8, ContentMarginBottom = 0 });
         foreach (var confirmation in FindChildren("*", "AcceptDialog", true, false).OfType<AcceptDialog>()) confirmation.TransparentBg = true;
     }
 

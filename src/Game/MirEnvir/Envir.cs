@@ -3763,6 +3763,8 @@ namespace Server.MirEnvir
 
             if (ConnectionLogs.TryGetValue(c.IPAddress, out MirConnectionLog currentlog))
             {
+                // 先清理过期记录，否则达到上限后不会再进入原有清理分支。
+                currentlog.PruneAccounts(Time);
                 if (currentlog.AccountsMade.Count > 2)
                 {
                     IPBlocks[c.IPAddress] = Now.AddHours(24);
@@ -3770,14 +3772,6 @@ namespace Server.MirEnvir
                     return;
                 }
                 currentlog.AccountsMade.Add(Time);
-                for (int i = 0; i < currentlog.AccountsMade.Count; i++)
-                {
-                    if ((currentlog.AccountsMade[i] + 60 * 60 * 1000) < Time)
-                    {
-                        currentlog.AccountsMade.RemoveAt(i);
-                        break;
-                    }
-                }
             }
             else
             {
@@ -4090,6 +4084,7 @@ namespace Server.MirEnvir
 
             if (ConnectionLogs.TryGetValue(c.IPAddress, out MirConnectionLog currentlog))
             {
+                currentlog.PruneCharacters(Time);
                 if (currentlog.CharactersMade.Count > 4)
                 {
                     IPBlocks[c.IPAddress] = Now.AddHours(24);
@@ -4097,14 +4092,6 @@ namespace Server.MirEnvir
                     return;
                 }
                 currentlog.CharactersMade.Add(Time);
-                for (int i = 0; i < currentlog.CharactersMade.Count; i++)
-                {
-                    if ((currentlog.CharactersMade[i] + 60 * 60 * 1000) < Time)
-                    {
-                        currentlog.CharactersMade.RemoveAt(i);
-                        break;
-                    }
-                }
             }
             else
             {
@@ -4130,15 +4117,7 @@ namespace Server.MirEnvir
                 return;
             }
 
-            if (p.Class != MirClass.Warrior && p.Class != MirClass.Wizard && p.Class != MirClass.Taoist &&
-                p.Class != MirClass.Assassin && p.Class != MirClass.Archer)
-            {
-                c.Enqueue(new ServerPackets.NewCharacter { Result = 3 });
-                return;
-            }
-
-            if (p.Class == MirClass.Assassin && !Settings.AllowCreateAssassin ||
-                p.Class == MirClass.Archer && !Settings.AllowCreateArcher)
+            if (!Globals.IsClassicClass(p.Class))
             {
                 c.Enqueue(new ServerPackets.NewCharacter { Result = 3 });
                 return;
@@ -4200,13 +4179,13 @@ namespace Server.MirEnvir
                 return false;
             }
 
-            if (p.Class != MirClass.Warrior && p.Class != MirClass.Wizard && p.Class != MirClass.Taoist && p.Class != MirClass.Assassin && p.Class != MirClass.Archer)
+            if (!Globals.IsClassicClass(p.Class))
             {
                 c.Enqueue(new S.NewHero { Result = 3 });
                 return false;
             }
 
-            if (p.Class == MirClass.Warrior && !Settings.Hero_CanCreateClass[0] || p.Class == MirClass.Wizard && !Settings.Hero_CanCreateClass[1] || p.Class == MirClass.Taoist && !Settings.Hero_CanCreateClass[2] || p.Class == MirClass.Assassin && !Settings.Hero_CanCreateClass[3] || p.Class == MirClass.Archer && !Settings.Hero_CanCreateClass[4])
+            if (!Settings.Hero_CanCreateClass[(byte)p.Class])
             {
                 c.Enqueue(new S.NewHero { Result = 3 });
                 return false;
@@ -5525,6 +5504,8 @@ namespace Server.MirEnvir
                 {
                     path = Path.Combine(Settings.DropPath, MonsterInfoList[i].DropPath + ".txt");
                 }
+                // 原世界使用 Windows 子目录分隔符；与任务脚本一致，读取实际目录而非创建同名空掉落文件。
+                path = path.Replace('\\', Path.DirectorySeparatorChar);
 
                 MonsterInfoList[i].Drops.Clear();
 

@@ -1,0 +1,29 @@
+@using System.Text.Json
+<AdminDialog Visible="true" Title="配置陪玩模型" OnClose="OnClose" OnSave="Save" Dirty="@(original!=Current)">
+<DialogContent>
+    @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
+    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="配置名称" Immediate="true" @bind-Value="draft.Name" />
+    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="Chat Completions HTTP 接口完整地址" Immediate="true" @bind-Value="draft.Endpoint" />
+    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="模型标识" Immediate="true" @bind-Value="draft.Model" />
+    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="@(draft.HasKey?"替换密钥（已配置，留空保留）":"API 密钥（可选）")" InputType="InputType.Password" Immediate="true" @bind-Value="key" />
+    <MudCheckBox T="bool" Label="清除该模型已保存的密钥" @bind-Value="clear" />
+    <MudCheckBox T="bool" Label="启用此模型" @bind-Value="draft.Enabled" />
+    <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Typo="Typo.subtitle1">可选 LLM · 测试当前配置</MudText><LlmTestButton Model="draft" Key="@key" ClearKey="clear" /></MudStack>
+    <MudText Typo="Typo.caption">测试使用当前输入，不保存配置；应用后还需保存外层系统设置。密钥留空保留，取消不改模型。</MudText>
+</DialogContent>
+</AdminDialog>
+@code{
+    [Parameter,EditorRequired]public CompanionLlmModel Model{get;set;}=null!;
+    [Parameter]public CompanionModelKeyEdit? Secret{get;set;}
+    [Parameter]public EventCallback OnClose{get;set;}
+    [Parameter]public EventCallback<(CompanionLlmModel Model,CompanionModelKeyEdit Secret)> OnApply{get;set;}
+    private CompanionLlmModel draft=new();private string key="",original="";private bool clear;private string? error;
+    private string Current=>JsonSerializer.Serialize(new{draft,key,clear});
+    protected override void OnInitialized(){draft=Model with{};key=Secret?.Key??"";clear=Secret?.Clear??false;original=Current;}
+    private async Task Save()
+    {
+        if(string.IsNullOrWhiteSpace(draft.Name)||string.IsNullOrWhiteSpace(draft.Model)||!Uri.TryCreate(draft.Endpoint,UriKind.Absolute,out var uri)||uri.Scheme is not("https"or"http"))
+        {error="请填写名称、模型标识和完整 HTTP 接口地址。";return;}
+        await OnApply.InvokeAsync((draft,new(draft.Id,string.IsNullOrEmpty(key)?null:key,clear)));
+    }
+}

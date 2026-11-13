@@ -21,6 +21,7 @@ public static class ResourceService
         builder.Services.AddSingleton<ServerLogs>(); builder.Services.AddHostedService(sp => sp.GetRequiredService<ServerLogs>());
         builder.Services.AddSingleton<GameRuntime>(); builder.Services.AddHostedService(sp => sp.GetRequiredService<GameRuntime>());
         builder.Services.AddSingleton<DevelopmentFiles>();
+        builder.Services.AddSingleton<SystemSettings>();
         builder.Services.AddSingleton<WorldDefinitions>();
         builder.Services.AddSingleton((SqliteDatabaseStorage)(Server.DatabaseStorage.Current ?? throw new InvalidOperationException("需要 SQLite 存储。")));
         builder.Services.AddSingleton<AdminChanges>();
@@ -28,6 +29,9 @@ public static class ResourceService
         builder.Services.AddSingleton<GuildAdministration>();
         builder.Services.AddSingleton<WorldPopulation>();
         builder.Services.AddSingleton<MapThumbnails>();
+        builder.Services.AddSingleton<CompanionStore>();
+        builder.Services.AddSingleton<CompanionService>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<CompanionService>());
         var app = builder.Build();
         app.Use(async (context, next) =>
         {
@@ -37,6 +41,8 @@ public static class ResourceService
             var management = context.Request.Path.StartsWithSegments("/management");
             if (management && !ProjectPaths.KeyEquals(context.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal), key))
             { context.Response.StatusCode = 401; return; }
+            if ((context.Request.Path.StartsWithSegments("/management/companions") || context.Request.Path.StartsWithSegments("/management/settings")) && context.Request.Headers["X-Mir2-Version"] != paths.VersionId)
+            { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { error = "此操作必须显式绑定当前版本。" }); return; }
             if (management && context.Request.Headers.TryGetValue("X-Mir2-Version", out var version) && version != paths.VersionId)
             { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { error = "管理端与服务端的版本目录不匹配。" }); return; }
             var runtime = context.RequestServices.GetRequiredService<GameRuntime>();
@@ -62,7 +68,7 @@ public static class ResourceService
             finally { lease?.Dispose(); }
         });
         app.MapGet("/health", (GameRuntime runtime) => new { ready = runtime.Ready, gamePort = runtime.GamePort, version = catalog.Version, gameVersion = paths.VersionName });
-        app.MapGet("/assets/manifest", (GameRuntime runtime) => new { version = catalog.Version, gamePort = runtime.GamePort, protocol = "Crystal TCP", frameFormat = 1, checksumAlgorithm = "sha256", characterLocation = true });
+        app.MapGet("/assets/manifest", (GameRuntime runtime) => new { version = catalog.Version, gamePort = runtime.GamePort, protocol = "Crystal TCP", frameFormat = 1, checksumAlgorithm = "sha256", characterLocation = true, functionKeys = 12, attackModes = 8 });
         var assets = app.MapGroup("/assets/{requested}");
         assets.AddEndpointFilter(async (context, next) => context.HttpContext.Request.RouteValues["requested"]?.ToString() == catalog.Version ? await next(context) : Results.StatusCode(410));
         IResult Bytes(HttpContext context, byte[] bytes, string contentType = "application/octet-stream")
@@ -90,7 +96,7 @@ public static class ResourceService
         { catalog.ReadPath("libraries", library + ".Lib"); return Bytes(context, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(catalog.Decoder.Frames(library)), "application/json"); });
         assets.MapGet("/sound/{**name}", (HttpContext context, string name) => Bytes(context, File.ReadAllBytes(catalog.ReadPath("sounds", name))));
         var management = app.MapGroup("/management");
-        management.MapOperations(); management.MapResources(); management.MapDevelopment(); management.MapAdministration();
+        management.MapOperations(); management.MapResources(); management.MapDevelopment(); management.MapAdministration(); management.MapCompanions();
         return app;
     }
 }

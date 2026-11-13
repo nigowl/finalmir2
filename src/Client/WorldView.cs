@@ -12,10 +12,9 @@ public partial class WorldView : Node2D
     internal MapReader? Map;
     private int mapTicket;
     private readonly AStarGrid2D navigation = new();
-    private readonly List<(SpriteImage image, Vector2 position)> glow = new();
+    private readonly List<(SpriteImage image, Vector2 position, float opacity)> glow = new();
     private GlowLayer glowLayer = null!;
     private readonly List<(uint id, int damage, long time)> damage = new();
-    private readonly List<(Spell spell, uint caster, uint target, Point source, Point destination, long time)> spells = new();
     public uint Selected;
     private bool loadingMap;
     public bool Loading => loadingMap || Map != null && !initialTerrainReady;
@@ -33,7 +32,7 @@ public partial class WorldView : Node2D
 
     public async Task Load(string file)
     {
-        var ticket = ++mapTicket; loadingMap = true; LoadError = ""; Map = null; spells.Clear(); ResetTerrainPrefetch();
+        var ticket = ++mapTicket; loadingMap = true; LoadError = ""; Map = null; ClearEffects(); ResetTerrainPrefetch();
         try
         {
             var map = await Assets.LoadMap(file);
@@ -72,7 +71,7 @@ public partial class WorldView : Node2D
     {
         if (Map == null || State.User == null || !Walkable(target)) return [];
         // Players can share a login/revive tile; keep the start open so they can walk apart.
-        var occupied = State.Actors.Values.Where(a => a.Id != State.User.ObjectID && a.Location != State.User.Location && a.Kind != ObjectType.Item && !a.Dead && !a.Hidden && Walkable(a.Location)).Select(a => new Vector2I(a.Location.X, a.Location.Y)).Distinct().ToArray();
+        var occupied = State.Actors.Values.Where(a => a.Id != State.User.ObjectID && a.Location != State.User.Location && a.Kind is not (ObjectType.Item or ObjectType.Spell) && !a.Dead && !a.Hidden && Walkable(a.Location)).Select(a => new Vector2I(a.Location.X, a.Location.Y)).Distinct().ToArray();
         foreach (var point in occupied) navigation.SetPointSolid(point);
         var current = State.User.Location;
         try { return navigation.GetIdPath(new Vector2I(current.X, current.Y), new Vector2I(target.X, target.Y)).Select(p => new Point(p.X, p.Y)).ToArray(); }
@@ -98,7 +97,7 @@ public partial class WorldView : Node2D
 
     public Actor? ActorAt(Vector2 screen)
     {
-        return State.Actors.Values.Where(a => !a.Hidden && a.Id != State.User?.ObjectID)
+        return State.Actors.Values.Where(a => !a.Hidden && a.Kind != ObjectType.Spell && a.Id != State.User?.ObjectID)
             .OrderByDescending(a => a.Kind == ObjectType.Item).ThenByDescending(a => a.Location.Y).FirstOrDefault(a =>
             {
                 var p = Screen(a.Location);
@@ -108,10 +107,6 @@ public partial class WorldView : Node2D
     }
 
     public void ShowDamage(uint id, int amount) => damage.Add((id, amount, Environment.TickCount64));
-    public void ShowSpell(Spell spell, uint caster, uint target, Point destination)
-    {
-        if (State.Actors.TryGetValue(caster, out var actor)) spells.Add((spell, caster, target, actor.Location, destination, Environment.TickCount64));
-    }
     public Vector2 Screen(Point point) => Screen(new Vector2(point.X, point.Y));
     private Vector2 Screen(Vector2 point)
     {
@@ -135,6 +130,7 @@ public partial class WorldView : Node2D
         cameraPixels = State.Me == null ? Vector2.Zero : (Visual(State.Me, frameTime) * new Vector2(48, 32)).Round();
         UpdateHover(GetGlobalMousePosition(), GetViewport().GuiGetHoveredControl() != null);
         PrefetchTerrain();
+        ProcessEffects(frameTime);
         QueueRedraw(); glowLayer.QueueRedraw();
     }
     public override void _Draw()
@@ -183,14 +179,14 @@ public partial class WorldView : Node2D
                 if (animation > 0) index += (int)(now / (100 * (1 + cell.FrontAnimationTick)) % animation);
                 var front = Assets.Sprite(MapLibrary(cell.FrontIndex), index) ?? Assets.Sprite(MapLibrary(cell.FrontIndex), (cell.FrontImage & 0x7FFF) - 1);
                 if (front == null || (IsFloor(front) && animation == 0)) continue;
-                if ((cell.FrontAnimationFrame & 0x80) != 0) glow.Add((front, position - new Vector2(0, front.Size.Y)));
+                if ((cell.FrontAnimationFrame & 0x80) != 0) glow.Add((front, position - new Vector2(0, front.Size.Y), 1));
                 else DrawTexture(front.Texture, position - new Vector2(0, front.Size.Y));
             }
             foreach (var actor in State.Actors.Values.Where(a => a.Location.Y == y && !a.Dead && a.Kind != ObjectType.Item).OrderBy(a => a.Location.X)) DrawActor(actor, now);
         }
         foreach (var actor in State.Actors.Values.Where(NameVisible))
         {
-            if (actor.Hidden) continue;
+            if (actor.Hidden && actor.Id != State.User?.ObjectID) continue;
             var p = NameAnchor(actor, now);
             var namePosition = p - new Vector2(ThemeDB.FallbackFont.GetStringSize(actor.Name, fontSize: 12).X / 2, 0);
             if (actor.Kind is ObjectType.Player or ObjectType.Merchant or ObjectType.Monster)
@@ -213,47 +209,6 @@ public partial class WorldView : Node2D
         DrawSpells(now);
     }
 
-    private void DrawSpells(long now)
-    {
-        // Common original spell indices from PlayerObject; the server decides all hits and damage.
-        spells.RemoveAll(s => now - s.time > 2200);
-        foreach (var spell in spells)
-        {
-            var elapsed = now - spell.time;
-            var source = State.Actors.TryGetValue(spell.caster, out var caster) ? Screen(Visual(caster, now)) : Screen(spell.source);
-            var target = State.Actors.TryGetValue(spell.target, out var actor) ? actor.Location : spell.destination;
-            void Effect(string library, int index, Vector2 position)
-            {
-                var image = Assets.Sprite(library, index);
-                if (image != null) glow.Add((image, position + image.Offset));
-            }
-            if (spell.spell is Spell.FireBall or Spell.GreatFireBall or Spell.SoulFireBall)
-            {
-                var offset = spell.spell == Spell.FireBall ? 0 : 400;
-                var soul = spell.spell == Spell.SoulFireBall;
-                var flight = Math.Max(50, Math.Max(Math.Abs(target.X - spell.source.X), Math.Abs(target.Y - spell.source.Y)) * 50);
-                if (elapsed < 600) { if (!soul) Effect("Magic", offset + (int)(elapsed / 60), source); }
-                else if (elapsed < 600 + flight)
-                {
-                    var angle = Math.Atan2(target.X - spell.source.X, spell.source.Y - target.Y);
-                    var direction = ((int)Math.Round(angle * 8 / Math.PI) + 16) % 16;
-                    Effect("Magic", (soul ? 1160 : offset + 10) + direction * 10 + (int)((elapsed - 600) / 30 % (soul ? 3 : 6)), Screen(spell.source).Lerp(Screen(target), (elapsed - 600) / (float)flight));
-                }
-                else if (elapsed < 1200 + flight) Effect("Magic", (soul ? 1360 : offset + 170) + (int)((elapsed - 600 - flight) / 60), Screen(target));
-            }
-            else if (spell.spell == Spell.Healing)
-            {
-                if (elapsed < 600) Effect("Magic", 200 + (int)(elapsed / 60), source);
-                else if (elapsed < 1400) Effect("Magic", 370 + (int)((elapsed - 600) / 80), Screen(target));
-            }
-            else if (spell.spell == Spell.ThunderBolt)
-            {
-                if (elapsed < 300) Effect("Magic2", 20 + (int)(elapsed / 100), source);
-                else if (elapsed is >= 600 and < 1000) Effect("Magic2", 10 + (int)((elapsed - 600) / 80), Screen(target));
-            }
-        }
-    }
-
     private static bool IsFloor(SpriteImage image) => image.Size == new Vector2(48, 32) || image.Size == new Vector2(96, 64);
     private void DrawTile(int library, int index, Vector2 position, bool offset)
     { var image = Assets.Sprite(MapLibrary(library), index); if (image != null) DrawTexture(image.Texture, position + (offset ? image.Offset : Vector2.Zero)); }
@@ -263,7 +218,7 @@ public partial class WorldView : Node2D
     private partial class GlowLayer : Node2D
     {
         public WorldView OwnerView = null!;
-        public override void _Draw() { foreach (var (image, position) in OwnerView.glow) DrawTexture(image.Texture, position); }
+        public override void _Draw() { foreach (var (image, position, opacity) in OwnerView.glow) DrawTexture(image.Texture, position, new Color(1, 1, 1, opacity)); }
     }
     public override void _ExitTree() { navigation.Dispose(); }
 }

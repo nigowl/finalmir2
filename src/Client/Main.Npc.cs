@@ -29,7 +29,7 @@ public partial class Main
         npcGoods = new VBoxContainer { Name = "NpcGoods", SizeFlagsHorizontal = SizeFlags.ExpandFill }; npcGoods.AddThemeConstantOverride("separation", 2); content.AddChild(npcGoods);
         repairPanel = new Control { Name = "NpcRepair", CustomMinimumSize = new Vector2(395, 76) }; content.AddChild(repairPanel); repairPanel.Hide();
         Text(repairPanel, "拖入背包物品或双击选择；已装备物品请先卸下。", 0, 0, 395).AddThemeFontSizeOverride("font_size", 10);
-        repairCell = new Button { Name = "RepairCell", Position = new Vector2(0, 28), Size = new Vector2(36, 32), ExpandIcon = true, FocusMode = FocusModeEnum.None };
+        repairCell = new ItemTipButton { Name = "RepairCell", Position = new Vector2(0, 28), Size = new Vector2(36, 32), ExpandIcon = true, FocusMode = FocusModeEnum.None };
         CellStyle(repairCell); repairPanel.AddChild(repairCell); repairCell.Pressed += () => { repairItem = 0; RefreshRepair(); };
         repairInfo = Text(repairPanel, "", 45, 26, 234); repairInfo.Size = new Vector2(234, 44); repairInfo.AddThemeFontSizeOverride("font_size", 10);
         repairConfirm = Button(repairPanel, "修理", 303, 30, 80, SubmitRepair);
@@ -85,10 +85,11 @@ public partial class Main
             State.Bind(item);
             var single = item.Clone(); single.Count = 1;
             var price = (uint)Math.Clamp(single.Price() * (double)packet.Rate, 0, uint.MaxValue);
-            var button = new Button { Text = $"{item.Info?.FriendlyName} ×1 · {price} 金币", CustomMinimumSize = new Vector2(0, 26),
+            var button = new ItemTipButton { Text = $"{item.Info?.FriendlyName} · {price} 金币", CustomMinimumSize = new Vector2(0, 26),
                 SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = HorizontalAlignment.Left, FocusMode = FocusModeEnum.None,
                 ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, TooltipText = ItemText(item) };
             CellStyle(button, 7);
+            ItemTooltip(button, item);
             button.AddThemeFontSizeOverride("font_size", 11);
             button.Pressed += () => Send(new C.BuyItem { ItemIndex = item.UniqueID, Count = 1, Type = packet.Type }); npcGoods.AddChild(button);
         }
@@ -116,7 +117,7 @@ public partial class Main
     {
         var item = State.User?.Inventory.FirstOrDefault(item => item?.UniqueID == repairItem);
         icons.RemoveAll(pair => pair.button == repairCell);
-        repairCell.Icon = null; repairCell.TooltipText = item == null ? "将背包物品拖到此格" : ItemText(item);
+        repairCell.Icon = null; ItemTooltip(repairCell, item, "将背包物品拖到此格");
         repairConfirm.Disabled = item == null || pendingRepair != 0 || item.CurrentDura >= item.MaxDura;
         if (item == null) { repairItem = 0; repairInfo.Text = "← 修理物品放置处"; return; }
         icons.Add((repairCell, item));

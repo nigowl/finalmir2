@@ -2,9 +2,9 @@
 @implements IAsyncDisposable
 @inject IJSRuntime Js
 <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-2">
-    <MudButton Size="Size.Small" OnClick="@(() => zoom = Math.Max(1, zoom - .5))" Disabled="@(zoom <= 1)">缩小</MudButton>
-    <MudText Typo="Typo.body2">@zoom.ToString("0.#") ×</MudText><MudButton Size="Size.Small" OnClick="@(() => zoom = Math.Min(8, zoom + .5))" Disabled="@(zoom >= 8)">放大</MudButton>
-    <MudButton Size="Size.Small" OnClick="@(() => zoom = 1)">全图</MudButton><MudCheckBox T="bool" Label="显示阻挡" @bind-Value="blocks" Dense="true" />
+    <MudButton Size="Size.Small" OnClick="@(() => zoom = Math.Max(1, zoom - .5))" Disabled="@(zoom <= 1)" Variant="Variant.Outlined" Color="Color.Default">缩小</MudButton>
+    <MudText Typo="Typo.body2">@zoom.ToString("0.#") ×</MudText><MudButton Size="Size.Small" OnClick="@(() => zoom = Math.Min(8, zoom + .5))" Disabled="@(zoom >= 8)" Variant="Variant.Outlined" Color="Color.Default">放大</MudButton>
+    <MudButton Size="Size.Small" OnClick="@(() => zoom = 1)" Variant="Variant.Outlined" Color="Color.Default">全图</MudButton><MudCheckBox T="bool" Label="显示阻挡" @bind-Value="blocks" Dense="true" />
 </MudStack>
 <div class="population-map-scroll" aria-busy="@Disabled">
     <svg @ref="svg" class="population-map" preserveAspectRatio="none" data-disabled="@(Disabled ? "true" : "false")" viewBox="@($"0 0 {Map.Width} {Map.Height}")" style="@($"width:{F(zoom * 100)}%;aspect-ratio:{Map.Width * 48}/{Map.Height * 32}")" role="group" aria-label="@($"{Map.Title}地图，点击地图布点，也可用坐标表单编辑")">

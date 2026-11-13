@@ -218,7 +218,7 @@ namespace Server.MirDatabase
 
         public long GetDelay()
         {
-            return Info.DelayBase - (Level * Info.DelayReduction);
+            return Server.Helpers.GameBalance.Duration(Info.DelayBase - (long)Level * Info.DelayReduction, Server.Settings.SkillCooldownRate);
         }
     }
 }

@@ -14,7 +14,6 @@ MIR2_DATA_ROOT="${MIR2_DATA_ROOT:-$ROOT/data/versions/default}" dotnet "$ROOT/te
 export MIR2_DATA_ROOT="$TEST_ROOT/data" MIR2_RUNTIME_ROOT="$TEST_ROOT/data/runtime"
 export MIR2_GAME_PORT="${MIR2_GAME_PORT:-17050}" MIR2_RESOURCE_PORT="${MIR2_RESOURCE_PORT:-15130}"
 export MIR2_SERVER="http://127.0.0.1:$MIR2_RESOURCE_PORT"
-export MIR2_CONFIGURATION=Release
 start() {
     "$ROOT/start-server.sh" > "$TEST_ROOT/server.log" 2>&1 & BACKEND_PID=$!
     for ((i=0; i<120; i++)); do

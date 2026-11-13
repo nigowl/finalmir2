@@ -41,6 +41,6 @@ PY
 export MIR2_DATA_ROOT="$TEST_ROOT/data" MIR2_RUNTIME_ROOT="$TEST_ROOT/data/runtime"
 export MIR2_GAME_PORT="${MIR2_GAME_PORT:-17240}" MIR2_RESOURCE_PORT="${MIR2_RESOURCE_PORT:-15320}" MIR2_ADMIN_PORT="${MIR2_ADMIN_PORT:-15321}"
 export MIR2_SERVER="http://127.0.0.1:$MIR2_RESOURCE_PORT"
-dotnet src/Server/bin/Release/net8.0/Mir2.Server.dll > "$TEST_ROOT/server.log" 2>&1 & SERVER_PID=$!
-dotnet src/Admin/bin/Release/net8.0/Mir2.Admin.dll > "$TEST_ROOT/admin.log" 2>&1 & ADMIN_PID=$!
+dotnet src/Server/bin/Release/net8.0/Mir2.Server.dll "--mir2-instance=$ROOT:$MIR2_RUNTIME_ROOT:server" > "$TEST_ROOT/server.log" 2>&1 & SERVER_PID=$!
+dotnet src/Admin/bin/Release/net8.0/Mir2.Admin.dll "--mir2-instance=$ROOT:$MIR2_RUNTIME_ROOT:admin" > "$TEST_ROOT/admin.log" 2>&1 & ADMIN_PID=$!
 node tests/Management/ui.cjs "$TEST_ROOT"

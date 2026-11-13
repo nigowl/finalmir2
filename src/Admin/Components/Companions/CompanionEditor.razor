@@ -1,0 +1,68 @@
+@using System.Text.Json
+<AdminDialog Visible="true" Title="@(Profile.Version.Length==0?"新增陪玩角色":"管理陪玩角色")" OnClose="Close" OnSave="Save" Busy="busy" Dirty="@(Original!=Draft)">
+<DialogContent>
+@if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
+<MudTabs Rounded="true" ApplyEffectsToContainer="true">
+    <MudTabPanel Text="基础资料">
+        <MudGrid Spacing="2" Class="my-2">
+            <MudItem xs="6"><MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="游戏昵称" Disabled="Bound" Immediate="true" @bind-Value="Profile.Name" /></MudItem>
+            <MudItem xs="6"><MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="管理别名（不改变游戏昵称）" Immediate="true" @bind-Value="Profile.Alias" /></MudItem>
+            <MudItem xs="6"><MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="职业" Disabled="Bound" @bind-Value="Profile.Class">@for(var i=0;i<3;i++){var value=i;<MudSelectItem Value="value" Disabled="@(!AvailableClasses.Contains(value))">@ChineseText.Name(((MirClass)value).ToString())@(!AvailableClasses.Contains(value)?"（未开放）":"")</MudSelectItem>}</MudSelect></MudItem>
+            <MudItem xs="6"><MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="性别" Disabled="Bound" @bind-Value="Profile.Gender"><MudSelectItem Value="0">男</MudSelectItem><MudSelectItem Value="1">女</MudSelectItem></MudSelect></MudItem>
+            <MudItem xs="12"><MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="分组 / 标签" Immediate="true" @bind-Value="Profile.Tags" /></MudItem>
+            <MudItem xs="12"><MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="管理备注（不发给 LLM）" Lines="2" Immediate="true" @bind-Value="Profile.Notes" /></MudItem>
+        </MudGrid>
+        <MudCheckBox T="bool" Label="允许此角色运行" @bind-Value="Profile.Enabled" />
+        <MudAlert Severity="Severity.Info">真实等级、金币、装备和任务由原引擎管理。保存档案不直接创建或发放资产；启动后正常注册与建角。</MudAlert>
+    </MudTabPanel>
+    <MudTabPanel Text="人格与发育">
+        <PersonalityFields Profile="Profile" Presets="Presets" />
+        <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="表达风格" Immediate="true" @bind-Value="Profile.SpeechStyle" />
+        <MudSelect T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="发育偏好" @bind-Value="Profile.Goal">@foreach(var g in Goals){<MudSelectItem T="string" Value="g">@g</MudSelectItem>}</MudSelect>
+        <MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="每次会话死亡预算" Min="1" Max="20" @bind-Value="Profile.DeathLimit" />
+    </MudTabPanel>
+    <MudTabPanel Text="在线日程">
+        <MudCheckBox T="bool" Label="按日程自动上线（关闭后仅手动启动）" @bind-Value="Profile.Scheduled" />
+        <ScheduleFields Schedule="Profile.Schedule" Id="Profile.Id" />
+    </MudTabPanel>
+    <MudTabPanel Text="社交与 PK">
+        <MudCheckBox T="bool" Label="允许接收并按人格决定组队邀请" @bind-Value="Profile.AcceptGroup" />
+        <MudCheckBox T="bool" Label="启用有限事件聊天（无需 LLM）" @bind-Value="Profile.Chat" />
+        <MudSelect T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="PK 倾向边界" @bind-Value="Profile.PkMode"><MudSelectItem T="string" Value="@("avoid")">回避</MudSelectItem><MudSelectItem T="string" Value="@("defend")">仅自卫</MudSelectItem><MudSelectItem T="string" Value="@("duel")">仅约战</MudSelectItem></MudSelect>
+        <MudAlert Severity="Severity.Info">人格保留对抗偏好；不支持的战斗或交易能力以兼容报告为准，不会绕过地图与关系规则。</MudAlert>
+    </MudTabPanel>
+    <MudTabPanel Text="LLM 增强">
+        <MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="增强模式" @bind-Value="Profile.LlmMode"><MudSelectItem Value="0">关闭：完全使用规则</MudSelectItem><MudSelectItem Value="1">社交增强</MudSelectItem><MudSelectItem Value="2">社交与候选目标建议</MudSelectItem></MudSelect>
+        @if(Profile.LlmMode>0)
+        {
+            <MudSelect T="Guid" Margin="Margin.Dense" Variant="Variant.Outlined" Label="使用模型" @bind-Value="Profile.LlmModelId"><MudSelectItem Value="Guid.Empty">使用本版本默认模型</MudSelectItem>@foreach(var m in Models.Where(m=>m.Enabled)){<MudSelectItem Value="m.Id">@m.Name · @m.Model</MudSelectItem>}</MudSelect>
+            <MudStack Row="true" AlignItems="AlignItems.Center"><MudText>检查所选模型</MudText><LlmTestButton Model="SelectedModel" /></MudStack>
+            @if(SelectedModel==null){<MudAlert Severity="Severity.Warning">请先在系统设置配置模型，再选择一个已启用模型。</MudAlert>}
+        }
+        <MudText Class="my-3">供应商和密钥在本版本系统设置中配置。网络或额度故障时继续使用规则；不向模型发送账号密码。</MudText>
+    </MudTabPanel>
+</MudTabs>
+</DialogContent>
+</AdminDialog>
+@code{
+    [Parameter,EditorRequired]public CompanionProfile Profile{get;set;}=null!;
+    [Parameter]public PersonalityPreset[] Presets{get;set;}=[];
+    [Parameter]public CompanionLlmModel[] Models{get;set;}=[];
+    [Parameter]public Guid DefaultModelId{get;set;}
+    [Parameter]public bool Bound{get;set;}
+    [Parameter]public int[] AvailableClasses{get;set;}=[0,1,2];
+    [Parameter]public EventCallback OnClose{get;set;}
+    [Parameter]public EventCallback OnSaved{get;set;}
+    private static readonly string[] Goals=["均衡发展","任务优先","练级优先","装备优先","探索优先","协助队友"];
+    private bool busy;private string? error;private string Original="";
+    private string Draft=>JsonSerializer.Serialize(Profile);
+    private CompanionLlmModel? SelectedModel=>Models.FirstOrDefault(m=>m.Enabled&&m.Id==(Profile.LlmModelId==Guid.Empty?DefaultModelId:Profile.LlmModelId));
+    protected override void OnInitialized()=>Original=Draft;
+    private Task Close()=>OnClose.InvokeAsync();
+    private async Task Save()
+    {
+        busy=true;error=null;
+        try{if(Profile.Version.Length==0)await Api.Post<CompanionProfile>("management/companions",Profile);else await Api.Put<CompanionProfile>($"management/companions/{Profile.Id}",Profile);await OnSaved.InvokeAsync();}
+        catch(Exception e){error=e.Message;}finally{busy=false;}
+    }
+}

@@ -9,7 +9,7 @@ under a choice of MIT or GPL for every file.
 
 Scope (paths are relative to the repository root):
 
-* src/Game/**, src/Server/**, src/Admin/** and tests/**: GNU General Public License,
+* src/Game/**, src/Server/**, src/Admin/**, src/Companion/** and tests/**: GNU General Public License,
   version 3 only (SPDX-License-Identifier: GPL-3.0-only).
   The full licence text is in LICENSE-GPL-3.0.txt.
 * src/Client/**, src/Client.Core/**, src/Resources/** and src/Shared/**: MIT (SPDX-License-Identifier: MIT).

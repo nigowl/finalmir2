@@ -2,6 +2,13 @@ using Godot;
 
 public partial class Main
 {
+    internal static Color ChatColour(ChatType type) => new(type switch
+    {
+        ChatType.Normal => "eee4cf", ChatType.System => "dcca94", ChatType.Hint => "ff9878",
+        ChatType.Announcement or ChatType.LevelUp => "ffdc6d", ChatType.Group => "6fd9f0", ChatType.Guild => "88dd9c",
+        ChatType.WhisperIn or ChatType.WhisperOut => "e1a3ed", ChatType.Shout or ChatType.Shout2 or ChatType.Shout3 => "ffbe73",
+        ChatType.System2 => "a0d78c", ChatType.Relationship or ChatType.Mentor => "edb5ca", _ => "ddd8c8"
+    });
     private Panel chatFrame = null!;
     private Control chatResize = null!;
     private bool resizingChat;
@@ -45,5 +52,6 @@ public partial class Main
         chatFrame.Position = new Vector2(230, top); chatFrame.Size = new Vector2(629, height);
         chatResize.Position = new Vector2(230, top);
         messages.Position = new Vector2(234, top + 3); messages.Size = new Vector2(621, height - 26);
+        quickBars.Position = new Vector2(0, 68 - height);
     }
 }

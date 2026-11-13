@@ -41,6 +41,7 @@ public partial class Main
         ArtButton(settingsDialog, "Prguse2", 360, 413, 3, "关闭设置", CloseSettings);
         settingsTabs = new TabContainer { Position = new Vector2(10, 32), Size = new Vector2(420, 260) }; settingsDialog.AddChild(settingsTabs);
         var basic = SettingsPage("基础"); var protection = SettingsPage("保护"); var battle = SettingsPage("挂机");
+        classSettings = SettingsPage("职业");
         Text(basic, "音量", 12, 14, 70);
         volumeSlider = new HSlider { Position = new Vector2(85, 15), Size = new Vector2(235, 24), MinValue = 0, MaxValue = 100, Step = 1 }; basic.AddChild(volumeSlider);
         volumeValue = Text(basic, "", 335, 13, 60);
@@ -65,7 +66,7 @@ public partial class Main
         noMonsterRandom = SettingToggle(battle, "无怪随机（等待 3 秒，消耗随机卷）", 12);
         autoRoam = SettingToggle(battle, "无怪跑图（当前地图；无随机卷时也可跑图）", 48);
         singleSkill = SkillChoice(battle, "单体技能", 98); areaSkill = SkillChoice(battle, "群攻技能", 141);
-        Text(battle, "群怪优先群攻；缺蓝/技能冷却时改用单体或普攻。\n从游戏菜单开始/停止挂机，手动操作或 Esc 停止。", 12, 182, 390).AddThemeFontSizeOverride("font_size", 10);
+        Text(battle, "群怪优先群攻；缺蓝/技能冷却时改用单体或普攻。\nEsc或菜单停止；点击地面需确认，界面操作不停止。", 12, 182, 390).AddThemeFontSizeOverride("font_size", 10);
         settingsHint = Text(settingsDialog, error.Length > 0 ? error : "更改后自动保存。", 26, 317, 388);
         settingsHint.Size = new Vector2(388, 26); settingsHint.AutowrapMode = TextServer.AutowrapMode.WordSmart; settingsHint.AddThemeFontSizeOverride("font_size", 10);
         settingsSaveTimer = new Godot.Timer { OneShot = true, WaitTime = .2 }; settingsDialog.AddChild(settingsSaveTimer);
@@ -82,12 +83,17 @@ public partial class Main
     private CheckBox SettingToggle(Control parent, string text, float y)
     {
         var checkbox = new CheckBox { Text = text, Position = new Vector2(8, y), Size = new Vector2(390, 28), FocusMode = FocusModeEnum.None };
+        StyleCheckBox(checkbox);
+        checkbox.Toggled += _ => SettingsChanged(); parent.AddChild(checkbox); return checkbox;
+    }
+
+    private void StyleCheckBox(CheckBox checkbox)
+    {
         checkbox.AddThemeIconOverride("checked", checkedIcon); checkbox.AddThemeIconOverride("unchecked", uncheckedIcon);
         checkbox.AddThemeIconOverride("checked_disabled", checkedIcon); checkbox.AddThemeIconOverride("unchecked_disabled", uncheckedIcon);
         // 各状态使用相同内边距和图标尺寸，避免勾选时文字横移。
         var style = new StyleBoxFlat { BgColor = Colors.Transparent, ContentMarginLeft = 4, ContentMarginRight = 4, ContentMarginTop = 2, ContentMarginBottom = 2 };
         foreach (var state in new[] { "normal", "hover", "pressed", "hover_pressed", "focus", "disabled" }) checkbox.AddThemeStyleboxOverride(state, style);
-        checkbox.Toggled += _ => SettingsChanged(); parent.AddChild(checkbox); return checkbox;
     }
 
     private static Texture2D CheckIcon(bool selected)
@@ -123,7 +129,7 @@ public partial class Main
 
     private void OpenSettings()
     {
-        StopAutoBattle(); loadingSettings = true;
+        loadingSettings = true;
         volumeSlider.Value = preferences.Volume; volumeValue.Text = preferences.Volume == 0 ? "静音" : $"{preferences.Volume}%";
         movementMode.Select(preferences.DefaultRun ? 1 : 0); npcNames.ButtonPressed = preferences.ShowNpcNames; monsterNames.ButtonPressed = preferences.ShowMonsterNames; itemNames.ButtonPressed = preferences.ShowItemNames;
         crtFilter.ButtonPressed = preferences.CrtFilter;
@@ -132,6 +138,7 @@ public partial class Main
         autoRandom.ButtonPressed = preferences.AutoRandom; randomPercent.Value = preferences.RandomPercent; autoTown.ButtonPressed = preferences.AutoTown; townPercent.Value = preferences.TownPercent;
         noMonsterRandom.ButtonPressed = preferences.NoMonsterRandom; autoRoam.ButtonPressed = preferences.AutoRoam;
         FillSkills(singleSkill, preferences.SingleSkill, false); FillSkills(areaSkill, preferences.AreaSkill, true);
+        FillClassSettings();
         loadingSettings = false; settingsDialog.Show(); settingsDialog.MoveToFront();
     }
 
@@ -156,13 +163,15 @@ public partial class Main
             AutoRandom = autoRandom.ButtonPressed, RandomPercent = (int)randomPercent.Value, AutoTown = autoTown.ButtonPressed, TownPercent = (int)townPercent.Value,
             NoMonsterRandom = noMonsterRandom.ButtonPressed, AutoRoam = autoRoam.ButtonPressed,
             SingleSkill = (Spell)singleSkill.GetSelectedId(), AreaSkill = (Spell)areaSkill.GetSelectedId() };
-        next.Normalize(); var temporary = settingsFile + "." + Guid.NewGuid() + ".tmp";
+        ReadClassSettings(next); next.Normalize(); var temporary = settingsFile + "." + Guid.NewGuid() + ".tmp";
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(settingsFile))!);
             File.WriteAllText(temporary, JsonSerializer.Serialize(next)); File.Move(temporary, settingsFile, true);
             if (next.AutoHp && !preferences.AutoHp || next.AutoMp && !preferences.AutoMp || next.AutoRandom && !preferences.AutoRandom || next.AutoTown && !preferences.AutoTown) automation.Resume();
-            preferences = next; ApplyPreferences(); settingsHint.Text = "已自动保存。"; return true;
+            preferences = next;
+            if (settingsTabs.CurrentTab == 3 && skillEquipmentPending == 0) { skillPreparationPaused = false; classSkillsPaused = false; }
+            ApplyPreferences(); settingsHint.Text = "已自动保存。"; return true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         { ApplyVolume(preferences.Volume); settingsHint.Text = "保存失败，更改尚未生效：" + error.Message; return false; }

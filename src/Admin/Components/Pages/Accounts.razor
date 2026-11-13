@@ -11,19 +11,19 @@
 @if (busy) { <MudProgressLinear Indeterminate="true" /> }
 <fieldset disabled="@busy" style="border:0;padding:0;min-width:0">
 <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="账户 / 编号 / 最近 IP" @bind-Value="search" /><MudCheckBox Dense="true" T="bool" Label="仅在线" @bind-Value="online" @bind-Value:after="Load" /><MudButton OnClick="Load">查询 / 刷新</MudButton>
+    <MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="账户 / 编号 / 最近 IP" @bind-Value="search" /><MudCheckBox Dense="true" T="bool" Label="仅在线" @bind-Value="online" @bind-Value:after="Load" /><MudButton OnClick="Load" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">查询</MudButton>
 </MudStack>
 <MudStack Row="true" Class="mb-3" Spacing="2">
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="New">新增游戏账户</MudButton>
-    <MudButton Variant="Variant.Outlined" OnClick="OpenCommands">GM命令</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="New" Size="Size.Small">新增游戏账户</MudButton>
+    <MudButton Variant="Variant.Outlined" OnClick="OpenCommands" Size="Size.Small" Color="Color.Default">GM命令</MudButton>
 </MudStack>
 <GmCommandsDialog @bind-Visible="commandsOpen" Commands="commands" />
 <MudTable T="AccountRow" Items="rows" Dense="true" RowsPerPage="10" Hover="true">
     <HeaderContent><MudTh>编号 / 账户</MudTh><MudTh>状态</MudTh><MudTh>角色</MudTh><MudTh>金币 / 元宝</MudTh><MudTh>操作</MudTh></HeaderContent>
-    <RowTemplate><MudTd DataLabel="编号 / 账户">#@context.Id @context.AccountID</MudTd><MudTd DataLabel="状态">@(context.Online ? "在线" : "离线") @(context.IsGM ? "GM" : "") @(context.Banned ? "已封禁" : "")</MudTd><MudTd DataLabel="角色">@context.Characters</MudTd><MudTd DataLabel="金币 / 元宝">@context.Gold / @context.Credit</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))">管理</MudButton></MudTd></RowTemplate>
+    <RowTemplate><MudTd DataLabel="编号 / 账户">#@context.Id @context.AccountID</MudTd><MudTd DataLabel="状态">@(context.Online ? "在线" : "离线") @(context.IsGM ? "GM" : "") @(context.Banned ? "已封禁" : "")</MudTd><MudTd DataLabel="角色">@context.Characters</MudTd><MudTd DataLabel="金币 / 元宝">@context.Gold / @context.Credit</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))" Variant="Variant.Text" Color="Color.Primary">管理</MudButton></MudTd></RowTemplate>
     <PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
 </MudTable>
-<AdminDialog @bind-Visible="createOpen" Title="创建游戏账户" OnClose="CloseCreate" OnSave="Create" CanSave="@(!string.IsNullOrWhiteSpace(newName) && !string.IsNullOrEmpty(newPassword))" Busy="busy" Dirty="CreateDirty" SaveText="创建账户">
+<AdminDialog @bind-Visible="createOpen" Title="创建游戏账户" OnClose="CloseCreate" OnSave="Create" CanSave="@(!string.IsNullOrWhiteSpace(newName) && !string.IsNullOrEmpty(newPassword))" Busy="busy" Dirty="CreateDirty">
     <DialogContent>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
     <MudStack Row="true" Wrap="Wrap.Wrap"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="账户（3–15 位字母数字）" @bind-Value="newName" /><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="初始密码（5–15 位字母数字）" InputType="InputType.Password" @bind-Value="newPassword" /></MudStack>
@@ -31,7 +31,7 @@
 </AdminDialog>
 @if (detail != null)
 {
-    <AdminDialog Visible="true" Title="编辑游戏账户" OnClose="CloseEdit" OnSave="Save" CanSave="@(!busy && CanSubmit && !detail.Online)" Busy="busy" Dirty="@(Draft != original)" SaveText="备份并保存账户">
+    <AdminDialog Visible="true" Title="编辑游戏账户" OnClose="CloseEdit" OnSave="Save" CanSave="@(!busy && CanSubmit && !detail.Online)" Busy="busy" Dirty="@(Draft != original)">
     <DialogContent>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
         <MudText Typo="Typo.h6">#@detail.Id @detail.AccountID · @(detail.Online ? "在线" : "离线")</MudText>
@@ -42,15 +42,15 @@
             <MudItem xs="12" sm="4"><MudCheckBox Dense="true" T="bool" Label="GM 权限" @bind-Value="gm" /></MudItem><MudItem xs="12" sm="4"><MudCheckBox Dense="true" T="bool" Label="封禁账户" @bind-Value="banned" /></MudItem><MudItem xs="12" sm="4"><MudCheckBox Dense="true" T="bool" Label="下次登录要求改密" @bind-Value="requireChange" /></MudItem>
             <MudItem xs="12" sm="6"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="封禁原因" @bind-Value="banReason" /></MudItem><MudItem xs="12" sm="6"><MudDatePicker Margin="Margin.Dense" Variant="Variant.Outlined" Label="封禁截止日期（空为永久）" @bind-Date="banUntil" Clearable="true" /></MudItem>
         </MudGrid>
-        <MudStack Row="true" Wrap="Wrap.Wrap" Class="my-3"><MudButton Color="Color.Warning" Disabled="@(!CanSubmit || !detail.Online)" OnClick="Kick">踢下线</MudButton><MudButton OnClick="@(() => Open(detail.Id))">重新读取</MudButton></MudStack>
+        <MudStack Row="true" Wrap="Wrap.Wrap" Class="my-3"><MudButton Color="Color.Warning" Disabled="@(!CanSubmit || !detail.Online)" OnClick="Kick" Size="Size.Small" Variant="Variant.Outlined">踢下线</MudButton><MudButton OnClick="@(() => Open(detail.Id))" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">重新读取</MudButton></MudStack>
         <MudDivider Class="my-4" /><MudText Typo="Typo.subtitle1">重置密码</MudText>
         <MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Immediate="true" Label="新密码（不会回显）" InputType="InputType.Password" @bind-Value="password" />
         <MudCheckBox Dense="true" T="bool" Label="重置登录密码后要求再次改密" @bind-Value="resetRequireChange" />
-        <MudStack Row="true" Class="my-3" Wrap="Wrap.Wrap"><MudButton Disabled="@(!CanSubmit || detail.Online || string.IsNullOrEmpty(password))" OnClick="@(() => Reset(false))">重置登录密码</MudButton><MudButton Disabled="@(!CanSubmit || detail.Online || string.IsNullOrEmpty(password))" OnClick="@(() => Reset(true))">重置仓库密码</MudButton></MudStack>
+        <MudStack Row="true" Class="my-3" Wrap="Wrap.Wrap"><MudButton Disabled="@(!CanSubmit || detail.Online || string.IsNullOrEmpty(password))" OnClick="@(() => Reset(false))" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">重置登录密码</MudButton><MudButton Disabled="@(!CanSubmit || detail.Online || string.IsNullOrEmpty(password))" OnClick="@(() => Reset(true))" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">重置仓库密码</MudButton></MudStack>
         <MudText Typo="Typo.subtitle1" Class="mt-4">角色</MudText>
         <MudTable T="CharacterRow" Items="detail.Characters" Dense="true"><HeaderContent><MudTh>角色</MudTh><MudTh>职业 / 等级</MudTh><MudTh>状态</MudTh></HeaderContent><RowTemplate><MudTd><MudLink Href="@($"/characters?selected={context.Id}")">#@context.Id @context.Name</MudLink></MudTd><MudTd>@ChineseText.Name(context.Class) / @context.Level</MudTd><MudTd>@(context.Deleted ? "已删除" : "正常")</MudTd></RowTemplate></MudTable>
         <MudAlert Severity="Severity.Info" Class="my-3">仅允许删除离线空账户：不能有角色（含软删除）、资金、仓库物品、拍卖或扩展仓库权益。</MudAlert>
-        <MudButton Color="Color.Error" Disabled="@(!CanSubmit || detail.Online)" OnClick="Delete">删除账户</MudButton>
+        <MudButton Color="Color.Error" Disabled="@(!CanSubmit || detail.Online)" OnClick="Delete" Size="Size.Small" Variant="Variant.Outlined">删除账户</MudButton>
         <MudText Typo="Typo.subtitle1" Class="mt-4">账户仓库（只读）</MudText><ItemTable Items="detail.Storage" />
     </DialogContent>
     </AdminDialog>

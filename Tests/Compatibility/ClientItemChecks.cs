@@ -7,6 +7,10 @@ internal static class ClientItemChecks
     {
         var state = new GameState();
         var messages = new List<string>(); state.Message += messages.Add;
+        var typed = new List<(string, ChatType)>(); state.ChatMessage += (text, type) => typed.Add((text, type));
+        state.Apply(new S.Chat { Message = "组队", Type = ChatType.Group });
+        state.Apply(new S.ObjectChat { Text = "普通", Type = ChatType.Normal });
+        check(typed.SequenceEqual(new[] { ("组队", ChatType.Group), ("普通", ChatType.Normal) }), "聊天归约丢失服务器消息类型");
         var item = new UserItem(new ItemInfo { Index = 1, Type = ItemType.Weapon }) { UniqueID = 42, Count = 3, CurrentDura = 1000, MaxDura = 5000 };
         state.Apply(new S.UserInformation { ObjectID = 1, Inventory = [item], Equipment = new UserItem[14], QuestInventory = [] });
         state.Apply(new S.DropItem { UniqueID = 42, Count = 1, Success = false });

@@ -36,10 +36,15 @@ public partial class NativeSmoke
             Client.Theme.GetIcon("close", "Window").GetInstanceId() != Client.Assets.Sprite("Prguse2", 360)?.Texture.GetInstanceId())
             throw new Exception("Confirmation windows retained duplicate/platform borders or stale close art after reconnect.");
         var tabs = panel.FindChildren("*", "TabContainer", true, false).Cast<TabContainer>().Single();
-        if (!panel.Visible || Client.Theme.DefaultFontSize != 12 || tabs.GetTabCount() != 3 || !Enumerable.Range(0, 3).Select(tabs.GetTabTitle).SequenceEqual(new[] { "基础", "保护", "挂机" }))
-            throw new Exception("The hammer did not open three settings tabs with the smaller font.");
+        if (!panel.Visible || Client.Theme.DefaultFontSize != 12 || tabs.GetTabCount() != 4 || !Enumerable.Range(0, 4).Select(tabs.GetTabTitle).SequenceEqual(new[] { "基础", "保护", "挂机", "职业" }))
+            throw new Exception("The hammer did not open four settings tabs with the smaller font.");
         if (panel.FindChildren("*", "Button", true, false).Cast<Button>().Any(button => button.Text is "取消" or "应用") || Setting(panel, "自动喝红").ButtonPressed || Setting(panel, "自动随机").ButtonPressed || Setting(panel, "自动回城").ButtonPressed)
             throw new Exception("Settings retained confirmation buttons or enabled protection without consent.");
+        tabs.CurrentTab = 3;
+        var classTitles = tabs.GetChild<Control>(3).FindChildren("*", "CheckBox", true, false).Cast<CheckBox>().Select(option => option.Text).ToArray();
+        if (classTitles.Length != 4 || !classTitles.Any(title => title.StartsWith("智能半月")) || !classTitles.Any(title => title.StartsWith("智能刺杀")) ||
+            !classTitles.Contains("自动烈火剑法") || !classTitles.Contains("自动双龙斩")) throw new Exception("战士职业页混入其他职业或缺少辅助选项。");
+        await Screenshot("settings-Warrior"); tabs.CurrentTab = 0;
         var slider = panel.FindChildren("*", "HSlider", true, false).Cast<HSlider>().Single();
         var music = Client.FindChildren("*", "AudioStreamPlayer", true, false).Cast<AudioStreamPlayer>().First();
         var movement = (OptionButton)panel.FindChild("MovementMode", true, false);
@@ -93,26 +98,27 @@ public partial class NativeSmoke
         if (chat.GetThemeFontSize("font_size") != 10 || messages.GetThemeFontSize("normal_font_size") != 11 || !Client.FindChildren("*", "Panel", true, false).Cast<Panel>().Any(frame => frame.GetRect().Encloses(chat.GetRect()) && frame.Position == new Vector2(230, 668) && frame.Size == new Vector2(629, 68)))
             throw new Exception("Chat font/frame did not shrink inside the original HUD.");
         ToggleBattleMenu();
-        var menuButton = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "游戏菜单");
+        var menuButton = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "游戏菜单 Ctrl+E");
         using (var input = new InputEventMouseButton { Position = menuButton.GetGlobalRect().GetCenter(), ButtonIndex = MouseButton.Left, Pressed = true }) Client._Input(input);
         menuButton.EmitSignal(BaseButton.SignalName.Pressed);
         var menu = (PopupMenu)Client.FindChild("GameMenu", true, false);
-        if (menu.GetItemText(7) != "停止挂机") throw new Exception("Opening the game menu stopped active automation.");
+        if (menu.GetItemText(menu.GetItemIndex(7)) != "停止挂机") throw new Exception("Opening the game menu stopped active automation.");
         menu.EmitSignal(PopupMenu.SignalName.IdPressed, 7L); menu.Hide();
-        if (menu.GetItemText(7) != "开始挂机") throw new Exception("The menu did not switch back after stopping automation.");
+        if (menu.GetItemText(menu.GetItemIndex(7)) != "开始挂机") throw new Exception("The menu did not switch back after stopping automation.");
         Client.GetWindow().GrabFocus();
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         menu.PopupCentered();
+        menu.GrabFocus();
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await MoveMouse((Vector2)menu.Position + (Vector2)menu.Size / 2);
         if (!menu.Visible) throw new Exception("The game menu closed before its actions could be selected.");
         await Screenshot("original-game-menu"); menu.Hide();
-        GD.Print("PASS native settings: three tabs, autosave/reopen/failure recovery, name switches, mouse walk/run swap, start/stop menu, smaller aligned chat and original close hover.");
+        GD.Print("PASS native settings: four tabs, autosave/reopen/failure recovery, name switches, mouse walk/run swap, start/stop menu, smaller aligned chat and original close hover.");
     }
 
     private void ToggleBattleMenu()
     {
-        var button = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "游戏菜单");
+        var button = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "游戏菜单 Ctrl+E");
         button.EmitSignal(BaseButton.SignalName.Pressed);
         var menu = (PopupMenu)Client.FindChild("GameMenu", true, false);
         menu.EmitSignal(PopupMenu.SignalName.IdPressed, 7L); menu.Hide();
