@@ -6,6 +6,21 @@ namespace Mir2.Companions;
 
 public static class CompanionScheduling
 {
+    public static CompanionSessionPlan Session(CompanionProfile profile, bool smart, int seed)
+    {
+        var schedule=profile.Schedule;
+        if(!smart)return new(schedule.SessionMinutes,schedule.RestMinutes);
+        var engagement=(profile.Traits.Diligence+profile.Traits.Persistence*2)/3;
+        var minimum=20+engagement*55/100;
+        var random=new Random(seed);
+        var minutes=random.Next(Math.Max(1,schedule.SessionMinutes*minimum/100),
+            Math.Max(1,schedule.SessionMinutes*Math.Min(100,minimum+25)/100)+1);
+        var rest=schedule.RestMinutes==0?0:Math.Clamp(schedule.RestMinutes*(135-engagement)*random.Next(80,121)/10000,1,1440);
+        return new(minutes,rest);
+    }
+    public static DateTimeOffset NextArrival(CompanionArrivalSettings settings,DateTimeOffset now) =>
+        now.AddSeconds(System.Security.Cryptography.RandomNumberGenerator.GetInt32(settings.MinMinutes*60,settings.MaxMinutes*60+1));
+
     public static void Validate(CompanionSchedule s)
     {
         _ = Zone(s.TimeZone);

@@ -6,9 +6,12 @@ namespace Crystal.Native;
 public sealed class Actor
 {
     public const int MoveDuration = 600;
+    public const int RunContinuationWindow = 1100;
+    public int MoveDelay => Poison.HasFlag(PoisonType.Slow) ? MoveDuration * 2 : MoveDuration;
     public uint Id;
     public string Name = "";
     public ObjectType Kind;
+    public uint Gold;
     public Point Location, Previous;
     public MirDirection Direction;
     public MirAction Action = MirAction.Standing;
@@ -22,7 +25,7 @@ public sealed class Actor
     public long MotionTime, ActionTime;
     private System.Numerics.Vector2 motionOrigin;
     private int remoteMoveDuration;
-    public bool Dead, Hidden, Harvested;
+    public bool Dead, Hidden, Harvested, RidingMount;
     public int Image, Armour, Weapon = -1, Hair;
     public byte AI;
     public uint MasterObjectId;
@@ -38,9 +41,10 @@ public sealed class Actor
         var moving = action is MirAction.Walking or MirAction.Running or MirAction.Jump or MirAction.DashAttack;
         if (moving && location == Location && Action == action) { Direction = direction; return; }
         var interval = now - MotionTime;
-        var continuous = Kind == ObjectType.Monster && moving && Action is MirAction.Walking or MirAction.Running &&
-            interval is >= 100 and <= 2000 && Math.Max(Math.Abs(location.X - Location.X), Math.Abs(location.Y - Location.Y)) <= 2;
-        // 远端巡逻包的间隔可能不同于素材帧长；从当前画面接续，不能回跳到上一格。
+        var continuous = (Kind == ObjectType.Monster && moving || Kind == ObjectType.Player && action is MirAction.Walking or MirAction.Running) &&
+            Action is MirAction.Walking or MirAction.Running && interval >= 100 && interval <= (Kind == ObjectType.Player ? MoveDelay + 250 : 2000) &&
+            Math.Max(Math.Abs(location.X - Location.X), Math.Abs(location.Y - Location.Y)) <= 2;
+        // 回执间隔包含网络和帧调度；从当前画面接续，不回跳或在每步末尾切站立。
         motionOrigin = continuous ? PositionAt(now, MoveDuration) : new(Location.X, Location.Y);
         remoteMoveDuration = continuous ? (int)interval : 0;
         Previous = Location;
@@ -48,13 +52,14 @@ public sealed class Actor
         Location = location; Direction = direction; Action = action; ActionTime = MotionTime;
     }
 
-    public int MovementDuration(int animationDuration) => remoteMoveDuration > 0 ? remoteMoveDuration : animationDuration;
+    public int MovementDuration(int animationDuration) => remoteMoveDuration > 0 ? remoteMoveDuration :
+        Action is MirAction.Walking or MirAction.Running && Poison.HasFlag(PoisonType.Slow) ? animationDuration * 2 : animationDuration;
 
     public System.Numerics.Vector2 PositionAt(long now, int duration)
     {
         var end = new System.Numerics.Vector2(Location.X, Location.Y);
         if (Action is not (MirAction.Walking or MirAction.Running or MirAction.Jump or MirAction.DashAttack)) return end;
-        return System.Numerics.Vector2.Lerp(Kind == ObjectType.Monster ? motionOrigin : new(Previous.X, Previous.Y), end,
+        return System.Numerics.Vector2.Lerp(motionOrigin, end,
             Math.Clamp((now - MotionTime) / (float)Math.Max(1, MovementDuration(duration)), 0, 1));
     }
 }
@@ -68,6 +73,7 @@ public sealed partial class GameState
     public readonly HashSet<Spell> ActiveSkills = new();
     public UserItem[] Storage = [];
     public bool StorageActive, StorageUnlocked;
+    public int StorageCapacity => Mir2.StorageRules.Capacity(Storage.Length,User?.HasExpandedStorage==true);
     public readonly Dictionary<int, ClientQuestInfo> QuestDefinitions = new();
     public readonly Dictionary<int, ClientQuestProgress> Quests = new();
     public readonly HashSet<int> CompletedQuests = new();
@@ -80,14 +86,17 @@ public sealed partial class GameState
     public int GroupRevision, Ping;
     public AttackMode CurrentAttackMode { get; private set; } = AttackMode.Peace;
     public List<SelectInfo> Characters = new();
-    public int InventoryWeight => User?.Inventory.Where(item => item?.Info != null).Sum(item => item.Weight) ?? 0;
+    public decimal InventoryWeight => User?.Inventory.Where(item => item?.Info != null).Sum(item => item.Weight) ?? 0;
     public uint NpcId;
     public BaseStats? BaseStats;
     public int InventoryRevision;
     public event Action<string>? Message;
     public event Action<string, ChatType>? ChatMessage;
+    public event Action<string, ChatType>? ItemMessage;
     private void NotifyMessage(string text, ChatType type = ChatType.System)
     { Message?.Invoke(text); ChatMessage?.Invoke(text, type); }
+    private void NotifyItemMessage(string text, ChatType type = ChatType.System2)
+    { Message?.Invoke(text); ItemMessage?.Invoke(text, type); }
     public Actor? Me => User != null ? Actors.GetValueOrDefault(User.ObjectID) : null;
     public void Reset()
     {
@@ -131,6 +140,8 @@ public sealed partial class GameState
             case S.SendMemberLocation p: GroupLocations[p.MemberName] = p.MemberLocation; GroupRevision++; break;
             case S.LoginSuccess p: Characters = p.Characters; break;
             case S.NewCharacterSuccess p: Characters.Add(p.CharInfo); break;
+            case S.DeleteCharacterSuccess p:
+                Characters.RemoveAll(character => character.Index == p.CharacterIndex); break;
             case S.NewItemInfo p:
                 Items[p.Info.Index] = p.Info;
                 if (User != null) { Bind(User.Inventory); Bind(User.Equipment); Bind(User.QuestInventory); }
@@ -168,7 +179,10 @@ public sealed partial class GameState
             case S.ObjectPlayer p:
                 Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = p.Name, Kind = ObjectType.Player,
                     Location = p.Location, Previous = p.Location, Direction = p.Direction, Gender = p.Gender, Class = p.Class,
-                    Armour = p.Armour, Weapon = p.Weapon, Hair = p.Hair, Dead = p.Dead, Hidden = p.Hidden, Colour = p.NameColour, Poison = p.Poison }; break;
+                    Armour = p.Armour, Weapon = p.Weapon, Hair = p.Hair, Dead = p.Dead, Hidden = p.Hidden, Colour = p.NameColour, Poison = p.Poison, RidingMount = p.RidingMount }; break;
+            case S.MountUpdate p:
+                if (Actors.TryGetValue(p.ObjectID, out var mounted)) mounted.RidingMount = p.RidingMount;
+                break;
             case S.ObjectMonster p:
                 Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = p.Name, Kind = ObjectType.Monster,
                     Location = p.Location, Previous = p.Location, Direction = p.Direction, Image = (int)p.Image,
@@ -181,7 +195,7 @@ public sealed partial class GameState
             case S.ObjectItem p:
                 Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = p.Name, Kind = ObjectType.Item, Location = p.Location, Image = p.Image, Colour = p.NameColour }; break;
             case S.ObjectGold p:
-                Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = $"{p.Gold} 金币", Kind = ObjectType.Item, Location = p.Location, Image = p.Gold < 100 ? 120 : p.Gold < 1000 ? 121 : 122 }; break;
+                Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = $"{p.Gold} 金币", Kind = ObjectType.Item, Gold = p.Gold, Location = p.Location, Image = ItemPresentation.GroundGoldImage(p.Gold) }; break;
             case S.ObjectRemove p: Actors.Remove(p.ObjectID); break;
             case S.ObjectTeleportOut p: Actors.Remove(p.ObjectID); break;
             case S.ObjectTurn p: Move(p.ObjectID, p.Location, p.Direction, MirAction.Standing); break;
@@ -207,25 +221,28 @@ public sealed partial class GameState
             case S.LevelChanged p:
                 if (User != null) { User.Level = p.Level; User.Experience = p.Experience; User.MaxExperience = p.MaxExperience; }
                 NotifyMessage($"等级提升至 {p.Level}", ChatType.LevelUp); break;
-            case S.GainedGold p: if (User != null) User.Gold += p.Gold; break;
-            case S.LoseGold p: if (User != null) User.Gold -= p.Gold; break;
+            case S.GainedGold p: if (User != null) { User.Gold += p.Gold; NotifyItemMessage($"获得金币 ×{p.Gold:N0}", ChatType.System2); } break;
+            case S.LoseGold p: if (User != null) { User.Gold -= p.Gold; NotifyItemMessage($"消耗金币 ×{p.Gold:N0}", ChatType.System2); } break;
             case S.GainedItem p:
                 Bind(p.Item);
                 var gainedCount = p.Item.Count;
                 AddItem(p.Item);
-                NotifyMessage($"获得 {p.Item.Info?.FriendlyName ?? "物品"} ×{gainedCount}", ChatType.System2); InventoryRevision++; break;
-            case S.DeleteItem p: Remove(p.UniqueID, p.Count); break;
+                NotifyItemMessage($"获得 {p.Item.Info?.FriendlyName ?? "物品"} ×{gainedCount}", ChatType.System2); InventoryRevision++; break;
+            case S.DeleteItem p:
+                if (p.Count > 0 && User?.Inventory.Concat(User.Equipment).Any(item => item?.UniqueID == p.UniqueID) == true)
+                    NotifyItemMessage($"扣除物品：{ItemName(p.UniqueID)} ×{p.Count}。", ChatType.System2);
+                Remove(p.UniqueID, p.Count); break;
             case S.UseItem p:
-                if (p.Success) { NotifyMessage($"使用成功：{ItemName(p.UniqueID)}。", ChatType.System2); Remove(p.UniqueID, 1); }
+                if (p.Success) { NotifyItemMessage($"使用成功：{ItemName(p.UniqueID)}。", ChatType.System2); Remove(p.UniqueID, 1); }
                 else NotifyMessage("使用失败，请检查等级、职业、冷却及物品要求。", ChatType.Hint);
                 break;
             case S.SellItem p:
-                if (p.Success) { NotifyMessage($"出售成功：{ItemName(p.UniqueID)} ×{p.Count}。", ChatType.System2); Remove(p.UniqueID, p.Count); }
+                if (p.Success) { NotifyItemMessage($"出售成功：{ItemName(p.UniqueID)} ×{p.Count}。", ChatType.System2); Remove(p.UniqueID, p.Count); }
                 else NotifyMessage("出售失败，请检查物品限制、数量及 NPC 距离。", ChatType.Hint);
                 break;
             case S.DropItem p:
                 if (p.HeroItem) break;
-                if (p.Success) { NotifyMessage($"丢弃成功：{ItemName(p.UniqueID)} ×{p.Count}。", ChatType.System2); Remove(p.UniqueID, p.Count); }
+                if (p.Success) { NotifyItemMessage($"丢弃成功：{ItemName(p.UniqueID)} ×{p.Count}。", ChatType.System2); Remove(p.UniqueID, p.Count); }
                 else NotifyMessage("丢弃失败，请检查地图、物品绑定及角色状态。", ChatType.Hint);
                 break;
             case S.EquipItem p:
@@ -234,7 +251,7 @@ public sealed partial class GameState
                     var from = Array.FindIndex(User.Inventory, item => item?.UniqueID == p.UniqueID);
                     if (from >= 0 && p.To >= 0 && p.To < User.Equipment.Length)
                         (User.Inventory[from], User.Equipment[p.To]) = (User.Equipment[p.To], User.Inventory[from]);
-                    RefreshLooks(); InventoryRevision++; NotifyMessage($"穿戴成功：{ItemName(p.UniqueID)}。", ChatType.System2);
+                    RefreshLooks(); InventoryRevision++; NotifyItemMessage($"穿戴成功：{ItemName(p.UniqueID)}。", ChatType.System2);
                 }
                 else NotifyMessage("装备失败，请检查等级、职业与负重。", ChatType.Hint);
                 break;
@@ -244,7 +261,7 @@ public sealed partial class GameState
                     var from = Array.FindIndex(User.Equipment, item => item?.UniqueID == p.UniqueID);
                     if (from >= 0 && p.To >= 0 && p.To < User.Inventory.Length)
                     { User.Inventory[p.To] = User.Equipment[from]; User.Equipment[from] = null; }
-                    RefreshLooks(); InventoryRevision++; NotifyMessage($"卸下成功：{ItemName(p.UniqueID)}。", ChatType.System2);
+                    RefreshLooks(); InventoryRevision++; NotifyItemMessage($"卸下成功：{ItemName(p.UniqueID)}。", ChatType.System2);
                 }
                 else NotifyMessage("卸下失败，请检查背包空位、负重及当前状态。", ChatType.Hint);
                 break;
@@ -267,7 +284,7 @@ public sealed partial class GameState
                 InventoryRevision++; break;
             case S.ItemRepaired p:
                 var repaired = User?.Inventory.Concat(User.Equipment).FirstOrDefault(i => i?.UniqueID == p.UniqueID);
-                if (repaired != null) { repaired.CurrentDura = p.CurrentDura; repaired.MaxDura = p.MaxDura; NotifyMessage($"修理成功：{repaired.Info?.FriendlyName}，耐久 {p.CurrentDura / 1000f:0.###}/{p.MaxDura / 1000f:0.###}。", ChatType.System2); }
+                if (repaired != null) { repaired.CurrentDura = p.CurrentDura; repaired.MaxDura = p.MaxDura; NotifyItemMessage($"修理成功：{repaired.Info?.FriendlyName}，耐久 {p.CurrentDura / 1000f:0.###}/{p.MaxDura / 1000f:0.###}。", ChatType.System2); }
                 InventoryRevision++; break;
             case S.MoveItem p:
                 var grid = p.Grid == MirGridType.Storage ? Storage : p.Grid == MirGridType.Inventory ? User?.Inventory : null;
@@ -275,6 +292,19 @@ public sealed partial class GameState
                     (grid![p.From], grid[p.To]) = (grid[p.To], grid[p.From]);
                 InventoryRevision++; break;
             case S.MergeItem p: ApplyMerge(p); break;
+            case S.SplitItem1 p when p.Grid==MirGridType.Storage:
+                var split=Storage.FirstOrDefault(item=>item?.UniqueID==p.UniqueID);
+                if(p.Success && split!=null && p.Count>0 && p.Count<split.Count)split.Count-=p.Count;
+                InventoryRevision++;break;
+            case S.SplitItem p when p.Grid==MirGridType.Storage:
+                Bind(p.Item);
+                if(p.Item!=null && !Storage.Any(item=>item?.UniqueID==p.Item.UniqueID))
+                {
+                    // 原SplitItem在仓库也先从6号格起找，再回填前六格；不得放入未租用的扩展格。
+                    var slot=Enumerable.Range(0,StorageCapacity).OrderBy(i=>i<6).FirstOrDefault(i=>Storage[i]==null,-1);
+                    if(slot>=0)Storage[slot]=p.Item;
+                }
+                InventoryRevision++;break;
             case S.UserStorage p: Storage = p.Storage ?? []; Bind(Storage); InventoryRevision++; break;
             case S.ResizeStorage p:
                 if (User != null && p.Size is >= 0 and <= 160)
@@ -317,8 +347,10 @@ public sealed partial class GameState
                 CompletedQuests.Clear(); CompletedQuests.UnionWith(p.CompletedQuests); QuestRevision++; break;
             case S.GainedQuestItem p:
                 Bind(p.Item);
+                var questCount = p.Item.Count;
                 if (User != null && p.Item.Info != null && !Stack(p.Item, User.QuestInventory))
                 { var slot = Array.IndexOf(User.QuestInventory, null); if (slot >= 0) User.QuestInventory[slot] = p.Item; }
+                NotifyItemMessage($"任务物品：{p.Item.Info?.FriendlyName ?? "物品"} ×{questCount}，已放入任务物品栏。", ChatType.System2);
                 InventoryRevision++; break;
             case S.DeleteQuestItem p:
                 RemoveFrom(User?.QuestInventory, p.UniqueID, p.Count); InventoryRevision++; break;
@@ -339,7 +371,9 @@ public sealed partial class GameState
                 if (p.ObjectID == User?.ObjectID) { if (p.CanUse) ActiveSkills.Add(p.Spell); else ActiveSkills.Remove(p.Spell); }
                 break;
             case S.NPCUpdate p: NpcId = p.NPCID; break;
-            case S.Chat p: NotifyMessage(p.Message, p.Type); break;
+            case S.Chat p:
+                if (p.Type is ChatType.System or ChatType.System2 && p.Message.StartsWith("购买成功：", StringComparison.Ordinal)) NotifyItemMessage(p.Message);
+                else NotifyMessage(p.Message, p.Type); break;
             case S.ObjectChat p: NotifyMessage(p.Text, p.Type); break;
             case S.LogOutSuccess p: ClearCharacter(); Characters = p.Characters; break;
             case S.ReturnToLogin: ClearCharacter(); Characters.Clear(); break;

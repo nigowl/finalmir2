@@ -26,6 +26,9 @@ public class ItemInfo
     public bool IsEquipment => Type is ItemType.Weapon or ItemType.Armour or ItemType.Helmet or ItemType.Necklace or ItemType.Bracelet or ItemType.Ring
         or ItemType.Belt or ItemType.Boots or ItemType.Stone or ItemType.Torch or ItemType.Mount or ItemType.Reins or ItemType.Bells or ItemType.Saddle or ItemType.Ribbon or ItemType.Mask;
 
+    // 保留Weight字节及原规格差异；非装备缩至百分之一，任务专用品较重，装备不变。
+    public decimal UnitWeight => IsEquipment ? Weight : Type == ItemType.Quest ? 1m : Math.Clamp(Weight / 100m, .01m, 1m);
+
     public bool StartItem;
     public byte Effect;
 
@@ -321,9 +324,9 @@ public class UserItem
         get { return AddedStats.Count > 0 || Slots.Length > Info.Slots; }
     }
 
-    public int Weight
+    public decimal Weight
     {
-        get { return (Info.Type == ItemType.Amulet || Info.Type == ItemType.Bait) ? Info.Weight : Info.Weight * Count; }
+        get { return (Info.Type == ItemType.Amulet || Info.Type == ItemType.Bait) ? Info.UnitWeight : Info.UnitWeight * Count; }
     }
 
     public string FriendlyName

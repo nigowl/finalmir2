@@ -3,7 +3,10 @@ namespace Client.MirObjects;
 // Original map-library indices shared by the Godot renderer and management thumbnails.
 public static class MapTileLibraries
 {
-    public static string Resolve(int index)
+    private static readonly string[] libraries = Enumerable.Range(0, 375).Select(ResolveLibrary).ToArray();
+    public static string Resolve(int index) => index >= 0 && index < libraries.Length ? libraries[index] : "";
+
+    private static string ResolveLibrary(int index)
     {
         if (index == 0) return "Map/WemadeMir2/Tiles";
         if (index == 1) return "Map/WemadeMir2/Smtiles";

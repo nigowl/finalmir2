@@ -318,16 +318,19 @@ namespace Server.MirDatabase
         }
 
         public int Chance;
+        public decimal? Probability;
+        public decimal BaseProbability => Probability ?? (Chance > 0 ? 1m / Chance : 0m);
         public ItemInfo Item;
         public uint Gold;
         public GroupDropInfo GroupedDrop;
 
         public byte Type;
         public bool QuestRequired;
+        public int Count = 1;
 
         public static DropInfo FromLine(string s)
         {
-            string[] parts = s.Split(new[] {' '}, StringSplitOptions.RemoveEmptyEntries);
+            string[] parts = s.Split(new[] {' ', '\t'}, StringSplitOptions.RemoveEmptyEntries);
 
             if (parts.Length < 2)
             {
@@ -336,14 +339,21 @@ namespace Server.MirDatabase
 
             DropInfo info = new DropInfo();
 
-            if (!int.TryParse(parts[0].Substring(2), out info.Chance)) return null;
+            if (parts[0].EndsWith("%"))
+            {
+                if (!decimal.TryParse(parts[0][..^1], System.Globalization.NumberStyles.AllowDecimalPoint,
+                    System.Globalization.CultureInfo.InvariantCulture, out var percent) || percent <= 0 || percent > 100) return null;
+                info.Probability = percent / 100m;
+                if (info.Probability == 0) return null;
+            }
+            else if (!parts[0].StartsWith("1/") || !int.TryParse(parts[0].Substring(2), out info.Chance) || info.Chance < 1) return null;
 
             if (string.Compare(parts[1], "Gold", StringComparison.OrdinalIgnoreCase) == 0)
             {
                 if (parts.Length < 3) return null;
                 if (!uint.TryParse(parts[2], out info.Gold) || info.Gold == 0) return null;
             }
-            else if (parts[1].ToUpper().StartsWith("GROUP"))
+            else if (parts[1].ToUpperInvariant() is "GROUP" or "GROUP*" or "GROUP^")
             {
                 info.GroupedDrop = new GroupDropInfo
                 {
@@ -356,14 +366,16 @@ namespace Server.MirDatabase
                 info.Item = Envir.GetItemInfo(parts[1]);
                 if (info.Item == null) return null;
 
-                if (parts.Length > 2)
+                info.QuestRequired = parts.Length > 2 && parts[2].Equals("Q", StringComparison.OrdinalIgnoreCase);
+                var quantity = false;
+                for (var index = 2; index < parts.Length; index++)
                 {
-                    string dropRequirement = parts[2];
-                    if (dropRequirement.ToUpper() == "Q")
-                    {
-                        info.QuestRequired = true;
-                    }
+                    if (parts[index].Equals("Q", StringComparison.OrdinalIgnoreCase) || parts[index].StartsWith("LV", StringComparison.OrdinalIgnoreCase)) continue;
+                    var value = parts[index].StartsWith("COUNT=", StringComparison.OrdinalIgnoreCase) ? parts[index].Substring(6) : parts[index];
+                    if (quantity || !int.TryParse(value, out var count) || count is < 1 or > 100) return null;
+                    info.Count = count; quantity = true;
                 }
+                if (quantity) info.QuestRequired = parts.Skip(2).Any(part => part.Equals("Q", StringComparison.OrdinalIgnoreCase));
             }
 
             return info;
@@ -395,13 +407,18 @@ namespace Server.MirDatabase
                 return;
             }
 
-            var lines = File.ReadAllLines(path).ToList();
+            list.AddRange(Parse(File.ReadAllText(path), name, type, sort: false));
+            Sort(list);
+        }
 
-            lines = ParseInsert(lines);
+        public static List<DropInfo> Parse(string content, string name, byte type = 0, Func<string, string> read = null, bool sort = true)
+        {
+            var list = new List<DropInfo>();
+            var lines = ParseInsert(content.Replace("\r\n", "\n").Split('\n').ToList(), read);
 
             for (int i = 0; i < lines.Count; i++)
             {
-                if (lines[i].StartsWith(";") || string.IsNullOrWhiteSpace(lines[i])) continue;
+                if (lines[i].TrimStart().StartsWith(";") || string.IsNullOrWhiteSpace(lines[i])) continue;
 
                 DropInfo drop = DropInfo.FromLine(lines[i]);
 
@@ -421,6 +438,13 @@ namespace Server.MirDatabase
                 list.Add(drop);
             }
 
+            if (DropComposition.IsComposed(content)) list = DropComposition.Merge(list);
+            if (sort) Sort(list);
+            return list;
+        }
+
+        private static void Sort(List<DropInfo> list)
+        {
             list.Sort((drop1, drop2) =>
             {
                 if (drop1.Gold > 0 && drop2.Gold == 0)
@@ -481,46 +505,43 @@ namespace Server.MirDatabase
             }
         }
 
-        private static List<string> ParseInsert(List<string> lines)
+        private static List<string> ParseInsert(List<string> lines, Func<string, string> read)
         {
-            Regex regex = new Regex($"#INSERT \\[(.*?)\\]", RegexOptions.IgnoreCase);
-
-            List<string> newLines = new List<string>();
-
-            for (int i = 0; i < lines.Count; i++)
+            var expanded = lines.Select(line => (Line: line, Chain: new HashSet<string>(StringComparer.Ordinal))).ToList();
+            var root = Path.GetFullPath(Settings.DropPath).TrimEnd(Path.DirectorySeparatorChar);
+            for (var i = 0; i < expanded.Count; i++)
             {
-                var match = regex.Match(lines[i]);
-
+                if (expanded.Count > 10000) throw new InvalidDataException("掉落展开超过10000行。");
+                var (line, chain) = expanded[i];
+                var match = Regex.Match(line.Trim(), @"^#INSERT\s+\[(.+)\]$", RegexOptions.IgnoreCase);
                 if (!match.Success) continue;
-
-                var subPath = match.Groups[1].Value;
-
-                string path = Path.Combine(Settings.DropPath, subPath).Replace('\\', Path.DirectorySeparatorChar);
-
-                newLines = File.ReadAllLines(path).ToList();
-
-                lines.AddRange(newLines);
+                var path = Mir2.Hosting.ProjectPaths.SafePath(root, match.Groups[1].Value.Replace('\\', '/'));
+                if (!path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) || chain.Count >= 16 || chain.Contains(path))
+                    throw new InvalidDataException("掉落引用越界、循环或超过16层。");
+                var next = new HashSet<string>(chain, StringComparer.Ordinal) { path };
+                var children = read == null ? File.ReadAllLines(path) : read(Path.GetRelativePath(root, path).Replace('\\', '/')).Replace("\r\n", "\n").Split('\n');
+                expanded.AddRange(children.Select(child => (child, next)));
             }
+            return expanded.Select(entry => entry.Line).Where(line => !line.TrimStart().StartsWith("#INSERT", StringComparison.OrdinalIgnoreCase)).ToList();
+        }
 
-            lines.RemoveAll(str => str.ToUpper().StartsWith("#INSERT"));
-
-            return lines;
+        public decimal AdjustedProbability(float multiplier, int offset = 0)
+        {
+            if (multiplier <= 0 || BaseProbability <= 0) return 0;
+            return offset >= 100 ? 1 : Math.Min(1m, BaseProbability * (decimal)multiplier / (1m - Math.Max(0, offset) / 100m));
         }
 
         public DropRewardInfo AttemptDrop(int itemDropRatePercentOffset = 0, int goldDropRatePercentOffset = 0)
         {
-            int rate = (int)(Chance / (Settings.DropRate));
-
-            if (itemDropRatePercentOffset > 0)
+            if (Probability.HasValue)
             {
-                rate -= (rate * itemDropRatePercentOffset) / 100;
+                if (Envir.Random.NextDouble() >= (double)AdjustedProbability(Settings.DropRate, itemDropRatePercentOffset)) return null;
             }
-
-            if (rate < 1) rate = 1;
-
-            if (Envir.Random.Next(rate) != 0)
+            else
             {
-                return null;
+                int rate = (int)(Chance / Settings.DropRate);
+                if (itemDropRatePercentOffset > 0) rate -= (rate * itemDropRatePercentOffset) / 100;
+                if (Envir.Random.Next(Math.Max(1, rate)) != 0) return null;
             }
 
             uint gold = 0;
@@ -542,7 +563,8 @@ namespace Server.MirDatabase
             }
             else if (Item != null)
             {
-                items.Add(Item);
+                // 数量属于一次掉落判定，不能拆成多次独立概率而改变实际爆率。
+                for (var i = 0; i < Count; i++) items.Add(Item);
             }
             else if (GroupedDrop != null)
             {

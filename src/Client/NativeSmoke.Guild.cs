@@ -10,6 +10,10 @@ public partial class NativeSmoke
 {
     private async Task VerifyGuild(GameConnection bot, GameState other, List<Packet> received, Func<Func<bool>, Task> botUntil)
     {
+        var frame = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "关闭行会 H").GetParent<Control>();
+        var background = frame.GetChildren().OfType<TextureRect>().Single();
+        if (frame.GetThemeStylebox("panel") is not StyleBoxEmpty || frame.Size != new Vector2(590, 432) || background.Size != frame.Size)
+            throw new Exception("行会原图和面板尺寸不一致，底部仍会叠画第二条边框。");
         stage = "native guild leader fixture login";
         using var leader = new GameConnection(); var lead = new GameState(); var leadPackets = new List<Packet>();
         async Task LeadUntil(Func<bool> condition)
@@ -73,7 +77,7 @@ public partial class NativeSmoke
         Client.SetGuildRankPermission(1, 6, true); await botUntil(() => other.HasGuildPermission(GuildRankOptions.CanChangeNotice));
         Client.Send(new C.Chat { Message = "!~Native guild chat" }); await botUntil(() => received.OfType<S.Chat>().Any(p => p.Type == ChatType.Guild && p.Message.Contains("Native guild chat")));
         Client.SelectGuildPage(1); await Screenshot("guild-members"); Client.SelectGuildPage(2); await Screenshot("guild-ranks");
-        var tabs = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Where(button => button.Library == "Title" && button.Position.Y == 38 && button.TooltipText is "公告" or "成员" or "职位与权限" or "行会仓库与资金（仅安全区）").ToArray();
+        var tabs = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Where(button => button.Library == "Title" && button.Position.Y == 34 && button.TooltipText is "公告" or "成员" or "职位与权限" or "行会仓库与资金（仅安全区）").ToArray();
         if (tabs.Length != 4 || tabs.Any(button => button.HoverIndex != button.Index || button.PressedIndex != (button.TooltipText switch { "公告" => 94, "成员" => 100, "职位与权限" => 102, _ => 106 })) || tabs.Single(button => button.TooltipText == "职位与权限").Index != 102)
             throw new Exception("Guild tabs selected adjacent unrelated art instead of the original two-state images.");
         await VerifyGuildStorage(bot, other, received, botUntil);

@@ -21,8 +21,13 @@ public partial class WorldView
         : actor.Image >= 10000 ? $"Pet/{actor.Image - 10000:00}" : actor.Image is >= 950 and < 960 ? $"Gate/{actor.Image - 950:00}"
         : actor.Image is >= 940 and < 950 ? $"Siege/{actor.Image - 940:00}" : $"Monster/{actor.Image:000}";
 
-    internal int ActionDuration(Actor actor) => !actor.Casting && actor.ActionSpell == Spell.DoubleSlash && actor.Action == MirAction.Attack1 ? 552 :
-        Assets.Frames(ActorLibrary(actor))?.Frames.GetValueOrDefault(actor.Action)?.Duration ?? Actor.MoveDuration;
+    internal int ActionDuration(Actor actor)
+    {
+        if (!actor.Casting && actor.ActionSpell == Spell.DoubleSlash && actor.Action == MirAction.Attack1) return 552;
+        var frames = Assets.Frames(ActorLibrary(actor))?.Frames;
+        if (actor.Kind == ObjectType.Player && actor.Action is MirAction.Walking or MirAction.Running) return actor.MoveDelay;
+        return frames?.GetValueOrDefault(OriginalActorFrames.Resolve(frames, actor.Action))?.Duration ?? Actor.MoveDuration;
+    }
 
     internal Vector2 NameAnchor(Actor actor, long now)
     {
@@ -50,7 +55,10 @@ public partial class WorldView
     internal bool MeleeReady(Spell spell, byte level, MirDirection direction)
     {
         var ready = PlayerAnimationReady(direction, MirAction.Attack1);
-        if (OriginalSpellEffects.Melee(spell, level, direction) is { } clip) ready &= PrepareClip(clip);
+        ready &= PlayerAnimationReady(direction, MirAction.Stance);
+        var clip = OriginalSpellEffects.Melee(spell, level, direction) ??
+            (spell == Spell.None && CombatPresentation.HasBasicSword(State, State.Me) ? OriginalSpellEffects.BasicSword(direction) : null);
+        if (clip is { } melee) ready &= PrepareClip(melee);
         if (spell == Spell.DoubleSlash)
         {
             ready &= PlayerAnimationReady(direction, MirAction.Attack4);
@@ -59,13 +67,14 @@ public partial class WorldView
         return ready;
     }
 
-    private Client.MirObjects.Frame? ActorFrame(Actor actor, long now, out int index)
+    internal Client.MirObjects.Frame? ActorFrame(Actor actor, long now, out int index)
     {
         index = 0;
         var frames = Assets.Frames(ActorLibrary(actor, RenderAction(actor, now)));
         if (frames == null) return null;
         var action = actor.Dead ? MirAction.Die : actor.Action;
         if (actor.Kind == ObjectType.Player) action = OriginalPlayerArt.Animation(actor.Class, actor.Weapon, action);
+        else action = OriginalActorFrames.Resolve(frames.Frames, action);
         var elapsed = Math.Max(0, now - actor.ActionTime);
         if (!actor.Casting && actor.ActionSpell == Spell.DoubleSlash && action == MirAction.Attack1)
         {
@@ -75,11 +84,15 @@ public partial class WorldView
         if (frames.Frames.TryGetValue(action, out var active))
         {
             var duration = action is MirAction.Walking or MirAction.Running or MirAction.WalkingBow or MirAction.RunningBow ? actor.MovementDuration(active.Duration) : active.Duration;
-            if (elapsed >= duration) action = actor.Dead ? MirAction.Dead : MirAction.Standing;
+            if (elapsed >= duration) action = actor.Dead ? MirAction.Dead : IdleAction(actor, now);
             else if (action is MirAction.Walking or MirAction.Running or MirAction.WalkingBow or MirAction.RunningBow) elapsed = elapsed * active.Duration / duration;
         }
-        if (!frames.Frames.TryGetValue(action, out var frame) && !frames.Frames.TryGetValue(MirAction.Standing, out frame)) return null;
-        index = frame.Start + (int)actor.Direction * frame.OffSet + frame.IndexAt(action == MirAction.Standing ? now : elapsed, action == MirAction.Standing);
+        if (!frames.Frames.TryGetValue(action, out var frame)) { action = MirAction.Standing; frames.Frames.TryGetValue(action, out frame); }
+        if (action == MirAction.Standing)
+            frame = actor.Kind == ObjectType.Player ? frame : OriginalActorFrames.Idle(frames.Frames, actor.Id, actor.Kind == ObjectType.Merchant, now, out elapsed);
+        else if (action == MirAction.Stance) elapsed = 0;
+        if (frame == null) return null;
+        index = frame.Start + (int)actor.Direction * frame.OffSet + frame.IndexAt(action == MirAction.Standing && actor.Kind == ObjectType.Player ? now : elapsed, action == MirAction.Standing);
         return frame;
     }
 
@@ -88,7 +101,27 @@ public partial class WorldView
         var action = actor.Dead ? MirAction.Die : actor.Action;
         if (actor.Kind != ObjectType.Player) return action;
         var duration = !actor.Casting && actor.ActionSpell == Spell.DoubleSlash && action == MirAction.Attack1 ? 552 : FrameSet.Player.GetValueOrDefault(action)?.Duration ?? 600;
-        return now - actor.ActionTime < duration ? action : actor.Dead ? MirAction.Dead : MirAction.Standing;
+        if (action is MirAction.Walking or MirAction.Running) duration = actor.MovementDuration(duration);
+        return now - actor.ActionTime < duration ? action : actor.Dead ? MirAction.Dead : IdleAction(actor, now);
+    }
+
+    private static MirAction IdleAction(Actor actor, long now) => actor.Kind == ObjectType.Player && !actor.Dead && !OriginalPlayerArt.HasBow(actor.Class, actor.Weapon) &&
+        actor.Action is MirAction.Attack1 or MirAction.Attack4 or MirAction.AttackRange1 && now - actor.ActionTime < 2500 ? MirAction.Stance : MirAction.Standing;
+
+    internal void WarmMovement(IReadOnlyList<Point> route, bool run)
+    {
+        if (State.User == null) return;
+        var index = 0;
+        while (index < route.Count && route[index] != State.User.Location) index++;
+        MirDirection? previous = null;
+        for (var next = index + 1; next < Math.Min(route.Count, index + 6); next++)
+        {
+            var direction = Functions.DirectionFromPoint(route[next - 1], route[next]);
+            if (direction == previous) continue;
+            PlayerAnimationReady(direction, MirAction.Walking);
+            if (run) PlayerAnimationReady(direction, MirAction.Running);
+            previous = direction;
+        }
     }
 
     internal SpriteImage? ActorBody(Actor actor, long now) => ActorFrame(actor, now, out var index) == null ? null :
@@ -114,12 +147,12 @@ public partial class WorldView
         var library = ActorLibrary(actor, RenderAction(actor, now));
         var frame = ActorFrame(actor, now, out var index);
         if (frame == null) return;
-        var art = PlayerArt(actor, RenderAction(actor, now));
         var originalTint = OriginalSpellEffects.PoisonColour(actor.Poison);
         var tint = GColor.Color8(originalTint.R, originalTint.G, originalTint.B);
-        Assets.PrepareAnimation(library, frame, actor.Direction, actor.Kind == ObjectType.Player ? art.BodyOffset : 0);
         if (actor.Kind == ObjectType.Player)
         {
+            var art = PlayerArt(actor, RenderAction(actor, now));
+            Assets.PrepareAnimation(library, frame, actor.Direction, art.BodyOffset);
             var opacity = actor.Hidden ? .5f : 1f;
             var weaponBehind = actor.Direction is MirDirection.Left or MirDirection.Up or MirDirection.UpLeft or MirDirection.DownLeft;
             if (weaponBehind && actor.Weapon >= 0) DrawSprite(art.Weapon, index + art.WeaponOffset, position, opacity, tint);
@@ -130,7 +163,7 @@ public partial class WorldView
             if (weaponBehind && art.SecondWeapon.Length > 0) DrawSprite(art.SecondWeapon, index + art.WeaponOffset, position, opacity, tint);
             DrawPlayerEffects(actor, now, position);
         }
-        else DrawSprite(library, index, position, 1, tint);
+        else { Assets.PrepareAnimation(library, frame, actor.Direction); DrawSprite(library, index, position, 1, tint); }
         if (actor.Kind == ObjectType.Merchant && State.QuestsAt(actor.Id).FirstOrDefault() is { } quest)
         {
             var progress = State.Quests.GetValueOrDefault(quest.Index);
@@ -143,10 +176,11 @@ public partial class WorldView
     private void DrawPlayerEffects(Actor actor, long now, Vector2 position)
     {
         var elapsed = now - actor.ActionTime;
-        if (!actor.Dead && !actor.Casting && actor.Action is MirAction.Attack1 or MirAction.Attack4 &&
-            OriginalSpellEffects.Melee(actor.ActionSpell, actor.SpellLevel, actor.Direction, actor.Action == MirAction.Attack4 || elapsed >= 276 && actor.ActionSpell == Spell.DoubleSlash) is { } melee)
+        if (!actor.Dead && !actor.Casting && actor.Action is MirAction.Attack1 or MirAction.Attack4)
         {
-            if (actor.ActionSpell != Spell.DoubleSlash || elapsed < 552)
+            var attack = OriginalSpellEffects.Melee(actor.ActionSpell, actor.SpellLevel, actor.Direction, actor.Action == MirAction.Attack4 || elapsed >= 276 && actor.ActionSpell == Spell.DoubleSlash) ??
+                (actor.ActionSpell == Spell.None && CombatPresentation.HasBasicSword(State, actor) ? OriginalSpellEffects.BasicSword(actor.Direction) : null);
+            if (attack is { } melee && (actor.ActionSpell != Spell.DoubleSlash || elapsed < 552))
                 DrawClip(melee, melee.FrameAt(actor.ActionSpell == Spell.DoubleSlash ? elapsed % 276 : elapsed), position);
         }
         if (actor.Dead) return;

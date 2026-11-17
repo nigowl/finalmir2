@@ -15,6 +15,7 @@
 <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="my-3">
     <MudChip T="string" Color="@(overview.Settings.Enabled?Color.Success:Color.Default)">总开关：@(overview.Settings.Enabled?"开启":"关闭")</MudChip>
     <MudChip T="string">运行 @overview.Online / @overview.Settings.MaxOnline</MudChip>
+    @if(overview.Dispatch is { } dispatch){<MudChip T="string">排队 @dispatch.Waiting · 休息 @dispatch.Resting · 下线中 @dispatch.Stopping</MudChip>}
     <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="New" Size="Size.Small">新增陪玩</MudButton>
     <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(()=>batch=true)" Size="Size.Small">批量新增陪玩</MudButton>
     <MudButton Variant="Variant.Outlined" OnClick="Settings" Size="Size.Small" Color="Color.Default">陪玩设置</MudButton>
@@ -33,12 +34,12 @@
 <MudTabPanel Text="陪玩角色">
     <MudStack Row="true" Class="my-3"><MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="昵称 / 别名 / 标签 / 人格" @bind-Value="search" /><MudButton OnClick="Search" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">查询</MudButton></MudStack>
     <MudTable T="CompanionRow" Items="rows" Dense="true" Hover="true">
-    <HeaderContent><MudTh>昵称 / 人格</MudTh><MudTh>职业 / 等级 / 地图</MudTh><MudTh>状态与原因</MudTh><MudTh>今日在线</MudTh><MudTh>操作</MudTh></HeaderContent>
+    <HeaderContent><MudTh>昵称 / 人格</MudTh><MudTh>职业 / 等级 / 地图</MudTh><MudTh>状态与原因</MudTh><MudTh>今日在线 / 调度</MudTh><MudTh>操作</MudTh></HeaderContent>
     <RowTemplate>
         <MudTd>@context.Profile.Name<br /><MudText Typo="Typo.caption">@PresetName(context.Profile) · @context.Profile.Alias</MudText></MudTd>
         <MudTd>@ChineseText.Name(((MirClass)context.Profile.Class).ToString()) / @context.Level<br />@context.Map @if(context.X.HasValue){<span class="coordinate">(@context.X, @context.Y)</span>}</MudTd>
         <MudTd>@context.State<br /><MudText Typo="Typo.caption">@context.Reason</MudText>@if(context.LastError.Length>0){<MudText Color="Color.Error" Typo="Typo.caption">@context.LastError</MudText>}</MudTd>
-        <MudTd>@(context.TodaySeconds/60) / @context.Profile.Schedule.DailyMinutes 分钟<br /><MudText Typo="Typo.caption">@(context.Profile.Scheduled?"按日程":"仅手动") · @context.Profile.Schedule.TimeZone</MudText></MudTd>
+        <MudTd>@(context.TodaySeconds/60) / @context.Profile.Schedule.DailyMinutes 分钟<br /><MudText Typo="Typo.caption">@(context.Profile.Scheduled?"按日程":"仅手动") · @context.Profile.Schedule.TimeZone<br />@DispatchText(context)</MudText></MudTd>
         <MudTd><MudStack Row="true" Wrap="Wrap.Wrap" Spacing="0"><MudButton Size="Size.Small" OnClick="@(()=>Edit(context))" Variant="Variant.Text" Color="Color.Primary">管理</MudButton><MudButton Size="Size.Small" Color="Color.Success" OnClick="@(()=>Command(context,"start"))" Variant="Variant.Text">启动</MudButton><MudButton Size="Size.Small" OnClick="@(()=>Command(context,context.State=="已暂停"?"resume":"pause"))" Variant="Variant.Text" Color="Color.Primary">@(context.State=="已暂停"?"继续":"暂停")</MudButton><MudButton Size="Size.Small" Color="Color.Warning" OnClick="@(()=>Command(context,"stop"))" Variant="Variant.Text">下线</MudButton><MudButton Size="Size.Small" OnClick="@(()=>Inspect(context.Profile.Id))" Variant="Variant.Text" Color="Color.Primary">详情</MudButton><MudButton Size="Size.Small" Color="Color.Error" OnClick="@(()=>Release(context))" Variant="Variant.Text">解除托管</MudButton></MudStack></MudTd>
     </RowTemplate>
     <NoRecordsContent><MudText>当前版本没有匹配的陪玩档案。</MudText></NoRecordsContent>
@@ -54,6 +55,8 @@
 </MudTabPanel>
 <MudTabPanel Text="日程与在线概览">
     <MudAlert Severity="Severity.Info" Class="my-3">打开角色详情查看未来七天窗口；每日与过去24小时用量均受限，服务器停机不补练。暂停仍在线并保命，下线才退出。</MudAlert>
+    @if(overview.Arrivals is { } arrivals)
+    {<MudText Class="my-3">随机新增：@arrivals.Status · 档案 @arrivals.Profiles / @overview.Settings.Arrivals.MaxProfiles · 下次 @Local(arrivals.State.NextAt,"Asia/Shanghai")（北京时间）<br />上次结果：@arrivals.State.Result</MudText>}
     @foreach(var r in rows){<MudPaper Outlined="true" Class="pa-3 my-2"><MudStack Row="true" AlignItems="AlignItems.Center"><MudText>@r.Profile.Name · @(r.Profile.Scheduled?"自动日程":"仅手动") · @r.Profile.Schedule.TimeZone · 下次预计 @Local(r.NextOnline,r.Profile.Schedule.TimeZone)</MudText><MudButton OnClick="@(()=>Inspect(r.Profile.Id))" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">查看日程</MudButton></MudStack></MudPaper>}
 </MudTabPanel>
 <MudTabPanel Text="兼容与能力">
@@ -62,7 +65,7 @@
 </MudTabs>
 }
 @if(draft!=null&&overview!=null){<CompanionEditor @key="draft.Id" Profile="draft" Presets="overview.Presets" Models="overview.Settings.Models" DefaultModelId="overview.Settings.DefaultModelId" AvailableClasses="@(overview.AvailableClasses??[0,1,2])" Bound="bound" OnClose="@(()=>draft=null)" OnSaved="Saved" />}
-@if(settingsDraft!=null){<CompanionSettingsDialog Settings="settingsDraft" OnClose="@(()=>settingsDraft=null)" OnSaved="Saved" />}
+@if(settingsDraft!=null){<CompanionSettingsDialog Settings="settingsDraft" ArrivalStatus="overview?.Arrivals" OnClose="@(()=>settingsDraft=null)" OnSaved="Saved" />}
 @if(batch&&overview!=null){<CompanionBatchDialog Overview="overview" OnClose="@(()=>batch=false)" OnSaved="Saved" />}
 @if(preset!=null&&overview!=null){<PresetDialog Source="preset" Presets="overview.Presets" OnClose="@(()=>preset=null)" OnSaved="Saved" />}
 @if(detail!=null)
@@ -71,14 +74,18 @@
         <MudText Typo="Typo.h6">@detail.Row.Profile.Name · @detail.Row.State</MudText><MudText>@detail.Row.Reason</MudText>
         <MudText Class="my-2">地图：@(string.IsNullOrEmpty(detail.Row.Map)?"—":detail.Row.Map) @if(detail.Row.X.HasValue){<span class="coordinate">(@detail.Row.X, @detail.Row.Y)</span>}</MudText>
         <MudText Class="my-2">原账户 #@detail.Row.AccountId · 角色 #@detail.Row.CharacterId · 今天已预留/使用 @(detail.Row.TodaySeconds/60) 分钟</MudText>
+        <MudText>@DispatchText(detail.Row)</MudText>
+        @if(detail.Row.LastSessionReason.Length>0){<MudText Typo="Typo.caption">上次下线：@detail.Row.LastSessionReason</MudText>}
         @if(detail.Row.LastError.Length>0){<MudAlert Severity="Severity.Error">@detail.Row.LastError</MudAlert>}
         @if(detail.Runtime is { } runtime)
         {
             <MudDivider Class="my-3" /><MudText Typo="Typo.subtitle1">当前发育进度</MudText>
             <MudText>生命 @runtime.Hp / @runtime.MaxHp · 魔力 @runtime.Mp / @runtime.MaxMp · 金币 @runtime.Gold · 经验 @runtime.Experience / @runtime.MaxExperience</MudText>
             <MudText>背包负重 @runtime.BagWeight / @runtime.MaxBagWeight · 空格 @runtime.EmptySlots</MudText>
+            <MudText>行会：@(runtime.GuildName.Length>0?runtime.GuildName:"未加入") @if(runtime.GuildGoal.Length>0){<span> · @runtime.GuildGoal</span>}</MudText>
             @if(runtime.Goal is { } goal){<MudText Class="my-2">目标：@goal.Reason · 目标坐标 (@goal.X, @goal.Y)</MudText>}
             @foreach(var task in runtime.Tasks){<MudText Typo="Typo.body2">@task</MudText>}
+            <CompanionCombat Value="runtime.Combat" />
         }
         <MudDivider Class="my-3" /><MudText Typo="Typo.subtitle1">未来在线窗口</MudText>
         @foreach(var p in detail.Schedule){<MudText>@Local(p.Start,detail.Row.Profile.Schedule.TimeZone) — @Local(p.End,detail.Row.Profile.Schedule.TimeZone) · @(p.Attending?"预计出勤":"休息")</MudText>}
@@ -95,9 +102,12 @@
     private Task Search(){page=0;return Load();}private Task Previous(){page--;return Load();}private Task Next(){page++;return Load();}
     private string PresetName(CompanionProfile p)=>overview?.Presets.FirstOrDefault(x=>x.Key==p.PresetKey&&x.Revision==p.PresetRevision)?.Name??p.PresetKey;
     private static string Local(DateTimeOffset? value,string zone)=>value==null?"—":TimeZoneInfo.ConvertTime(value.Value,CompanionScheduling.Zone(zone)).ToString("MM-dd HH:mm");
+    private static string DispatchText(CompanionRow row)=>row.QueuePosition is { } position?$"候位第 {position} 位":
+        row.SessionUntil!=null?$"本次预计至 {Local(row.SessionUntil,row.Profile.Schedule.TimeZone)}":
+        row.RestUntil>DateTimeOffset.UtcNow?$"休息至 {Local(row.RestUntil,row.Profile.Schedule.TimeZone)}":"";
     private void New(){draft=new(){Id=Guid.NewGuid()};bound=false;}
     private void Edit(CompanionRow row){draft=JsonSerializer.Deserialize<CompanionProfile>(JsonSerializer.Serialize(row.Profile));bound=row.CharacterId>0;}
-    private void Settings()=>settingsDraft=overview!.Settings with{};
+    private void Settings()=>settingsDraft=JsonSerializer.Deserialize<CompanionSettings>(JsonSerializer.Serialize(overview!.Settings));
     private async Task Saved(){draft=null;settingsDraft=null;preset=null;batch=false;notice="已保存。";await Load();}
     private async Task Inspect(Guid id){try{detail=await Api.Get<CompanionDetail>($"management/companions/{id}");}catch(Exception e){error=e.Message;}}
     private async Task RefreshDetail()

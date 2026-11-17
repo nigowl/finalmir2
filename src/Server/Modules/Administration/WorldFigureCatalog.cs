@@ -34,16 +34,19 @@ public static class WorldFigureCatalog
         var appearance = Appearance(m);
         var attributes = new Dictionary<string, string>
         {
-            ["编号"] = m.Index.ToString(), ["名称"] = m.Name, ["外观"] = $"外观编号{(int)m.Image}", ["等级"] = m.Level.ToString(),
-            ["经验奖励"] = m.Experience.ToString(), ["行为编号"] = m.AI.ToString(), ["特效"] = m.Effect.ToString(), ["光照"] = m.Light.ToString(),
-            ["视野"] = m.ViewRange.ToString(), ["识破隐身"] = m.CoolEye.ToString(), ["攻击间隔（毫秒）"] = m.AttackSpeed.ToString(), ["移动间隔（毫秒）"] = m.MoveSpeed.ToString(),
-            ["掉落脚本"] = string.IsNullOrWhiteSpace(m.DropPath) ? m.Name : m.DropPath, ["掉落规则数"] = m.Drops.Count.ToString(),
-            ["可诱惑"] = Yes(m.CanTame), ["可推动"] = Yes(m.CanPush), ["可召回"] = Yes(m.CanRecall), ["自动显血"] = Yes(m.AutoRev),
-            ["不死系"] = Yes(m.Undead), ["首领"] = Yes(m.IsBoss), ["出生脚本"] = Yes(m.HasSpawnScript), ["死亡脚本"] = Yes(m.HasDieScript),
+            ["编号"] = m.Index.ToString(), ["名称"] = m.Name, ["等级"] = m.Level.ToString(), ["经验奖励"] = m.Experience.ToString(),
             ["生命"] = m.Stats[Stat.HP].ToString(), ["攻击"] = $"{m.Stats[Stat.MinDC]}–{m.Stats[Stat.MaxDC]}",
-            ["防御"] = $"{m.Stats[Stat.MinAC]}–{m.Stats[Stat.MaxAC]}", ["魔御"] = $"{m.Stats[Stat.MinMAC]}–{m.Stats[Stat.MaxMAC]}"
+            ["魔法"] = $"{m.Stats[Stat.MinMC]}–{m.Stats[Stat.MaxMC]}", ["道术"] = $"{m.Stats[Stat.MinSC]}–{m.Stats[Stat.MaxSC]}",
+            ["防御"] = $"{m.Stats[Stat.MinAC]}–{m.Stats[Stat.MaxAC]}", ["魔御"] = $"{m.Stats[Stat.MinMAC]}–{m.Stats[Stat.MaxMAC]}",
+            ["准确"] = m.Stats[Stat.Accuracy].ToString(), ["敏捷"] = m.Stats[Stat.Agility].ToString(),
+            ["攻击间隔（毫秒）"] = m.AttackSpeed.ToString(), ["移动间隔（毫秒）"] = m.MoveSpeed.ToString(),
+            ["视野"] = m.ViewRange.ToString(), ["识破隐身"] = m.CoolEye.ToString(), ["首领"] = Yes(m.IsBoss), ["不死系"] = Yes(m.Undead),
+            ["可诱惑"] = Yes(m.CanTame), ["可推动"] = Yes(m.CanPush), ["可召回"] = Yes(m.CanRecall), ["自动显血"] = Yes(m.AutoRev),
+            ["外观"] = $"外观编号{(int)m.Image}", ["行为编号"] = m.AI.ToString(), ["特效"] = m.Effect.ToString(), ["光照"] = m.Light.ToString(),
+            ["出生脚本"] = Yes(m.HasSpawnScript), ["死亡脚本"] = Yes(m.HasDieScript)
         };
-        foreach (var stat in m.Stats.Values) attributes[stat.Key.ToLocalizedString()] = stat.Value.ToString();
+        foreach (var stat in m.Stats.Values.Where(stat => stat.Key is not (Stat.HP or Stat.MinDC or Stat.MaxDC or Stat.MinMC or Stat.MaxMC or Stat.MinSC or Stat.MaxSC or Stat.MinAC or Stat.MaxAC or Stat.MinMAC or Stat.MaxMAC or Stat.Accuracy or Stat.Agility)))
+            attributes[stat.Key.ToLocalizedString()] = stat.Value.ToString();
         return new(m.Index, m.Name, appearance.Library, appearance.Frame, attributes);
     }
     private static CatalogFigure Npc(NPCInfo n)

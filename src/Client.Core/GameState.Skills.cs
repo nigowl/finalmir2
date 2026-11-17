@@ -4,20 +4,20 @@ public sealed partial class GameState
 {
     // 本次会话中手动关闭的原技能开关，防止职业辅助立即重新开启。
     public readonly HashSet<Spell> DisabledSkills = new();
-    public int WearWeight => EquipmentWeight(false);
-    public int HandWeight => EquipmentWeight(true);
+    public decimal WearWeight => EquipmentWeight(false);
+    public decimal HandWeight => EquipmentWeight(true);
 
-    private int EquipmentWeight(bool hand)
+    private decimal EquipmentWeight(bool hand)
     {
         if (User == null) return 0;
-        return (int)Math.Min(int.MaxValue, User.Equipment.Where(item => item?.Info != null)
+        return Math.Min(int.MaxValue, User.Equipment.Where(item => item?.Info != null)
             .SelectMany(item => new[] { item }.Concat(item.Slots ?? []))
             .Where(item => item?.Info != null && (item.Info.Type is ItemType.Weapon or ItemType.Torch) == hand)
-            .Sum(item => (long)item.Weight));
+            .Sum(item => item.Weight));
     }
 }
 
-public static class ClientSkillRules
+public static partial class ClientSkillRules
 {
     public static bool IsImplemented(Spell spell) => Enum.IsDefined(spell) && (byte)spell is > 0 and < 200 && spell != Spell.FastMove;
     public static MirAction Animation(Spell spell) => spell switch

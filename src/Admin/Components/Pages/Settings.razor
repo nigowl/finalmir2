@@ -1,6 +1,7 @@
 @page "/settings"
 @attribute [Authorize]
 @using System.Text.Json
+@inject IDialogService Dialogs
 <PageTitle>系统设置 · Mir2</PageTitle>
 <MudText Typo="Typo.h4" HtmlTag="h1">系统设置</MudText>
 <MudText Color="Color.Secondary" Class="my-3">当前版本的运行与平衡参数；每项注明作用范围。安全区和技能冷却变更需保存并重启引擎。</MudText>
@@ -15,6 +16,7 @@
     <MudTabs>
         <MudTabPanel Text="连接与权限"><SettingsSummary Settings="document.Values" Group="access" /></MudTabPanel>
         <MudTabPanel Text="成长与掉落"><SettingsSummary Settings="document.Values" Group="game" /></MudTabPanel>
+        <MudTabPanel Text="自动学习"><AutoLearnSettings Settings="document.Values" Options="document.SkillOptions" ReadOnly="true" /></MudTabPanel>
         <MudTabPanel Text="战斗平衡"><SettingsSummary Settings="document.Values" Group="combat" /></MudTabPanel>
         <MudTabPanel Text="状态效果"><SettingsSummary Settings="document.Values" Group="effects" /></MudTabPanel>
         <MudTabPanel Text="怪物平衡"><SettingsSummary Settings="document.Values" Group="monster" /></MudTabPanel>
@@ -36,6 +38,11 @@
                         <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许登录" @bind-Value="draft.AllowLogin" /></MudItem>
                         <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许修改密码" @bind-Value="draft.AllowChangePassword" /></MudItem>
                         <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许创建角色" @bind-Value="draft.AllowNewCharacter" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="启用战士职业" @bind-Value="draft.AllowCreateWarrior" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="启用法师职业" @bind-Value="draft.AllowCreateWizard" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="启用道士职业" @bind-Value="draft.AllowCreateTaoist" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="启用刺客职业" @bind-Value="draft.AllowCreateAssassin" /></MudItem>
+                        <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="启用弓箭手职业" @bind-Value="draft.AllowCreateArcher" /></MudItem>
                         <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许删除角色" @bind-Value="draft.AllowDeleteCharacter" /></MudItem>
                         <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="要求仓库密码" @bind-Value="draft.RequireStoragePassword" /></MudItem>
                     </MudGrid>
@@ -50,8 +57,9 @@
                         <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="经验受怪物等级差影响" @bind-Value="draft.ExpMobLevelDifference" /></MudItem>
                     </MudGrid>
                     <BalanceSettingsFields Settings="draft" Group="game" Changed="StateHasChanged" />
-                    <MudText Typo="Typo.caption">倍率沿用原引擎规则；掉落倍率也影响原任务金币奖励。物品保留时间应用于后续新掉落，已有物品倒计时不重算。</MudText>
+                    <MudText Typo="Typo.caption">掉落倍率也影响任务金币奖励。物品保留时间应用于后续新掉落，已有物品倒计时不重算。</MudText>
                 </MudTabPanel>
+                <MudTabPanel Text="自动学习"><AutoLearnSettings Settings="draft" Options="document.SkillOptions" Changed="StateHasChanged" /></MudTabPanel>
                 <MudTabPanel Text="战斗平衡"><BalanceSettingsFields Settings="draft" Group="combat" Changed="StateHasChanged" /></MudTabPanel>
                 <MudTabPanel Text="状态效果"><BalanceSettingsFields Settings="draft" Group="effects" Changed="StateHasChanged" /></MudTabPanel>
                 <MudTabPanel Text="怪物平衡"><BalanceSettingsFields Settings="draft" Group="monster" Changed="StateHasChanged" /></MudTabPanel>
@@ -64,10 +72,11 @@
                         <MudItem xs="6"><MudNumericField T="int" Label="怪物召回距离（格）" Min="1" Max="100" @bind-Value="draft.MonsterRecallRange" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
                         <MudItem xs="6"><MudNumericField T="int" Label="怪物召回冷却（毫秒）" Min="100" Max="600000" @bind-Value="draft.MonsterRecallCooldown" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
                     </MudGrid>
-                    <MudText Typo="Typo.caption">修改安全区边界或恢复效果会正常保存并重启引擎。怪物召回仍需怪物定义允许。自动存档沿用原引擎周期，不代表断电时逐笔资产零丢失。</MudText>
+                    <MudText Typo="Typo.caption">修改安全区边界或恢复效果会正常保存并重启引擎。怪物召回仍需怪物定义允许。按周期存档，断电可能丢失最近的未保存进度。</MudText>
                 </MudTabPanel>
             </MudTabs>
         </DialogContent>
+        <DialogActions><MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" Disabled="busy" OnClick="Reset">重置</MudButton></DialogActions>
     </AdminDialog>
 }
 @code {
@@ -76,10 +85,20 @@
     private async Task Load(){try{document=await Api.Get<ServerSettingsDocument>("management/settings");error=null;}catch(Exception e){error=e.Message;}}
     private bool RestartRequired=>draft!=null&&document!=null&&(draft.SafeZoneBorder!=document.Values.SafeZoneBorder||draft.SafeZoneHealing!=document.Values.SafeZoneHealing||draft.SkillCooldownRate!=document.Values.SkillCooldownRate);
     private void Edit(){draft=document!.Values with{};original=JsonSerializer.Serialize(draft);error=null;}
+    private async Task Reset()
+    {
+        if(busy||draft==null)return;
+        busy=true;
+        try
+        {
+            if(await AdminDialog.Confirm(Dialogs,"重置系统设置","将全部参数恢复为默认值？点击保存后生效。","重置")) { draft=new ServerSettings(); error=null; }
+        }
+        finally{busy=false;}
+    }
     private async Task Save()
     {
         if(draft==null||document==null)return;busy=true;
-        try{document=await Api.Put<ServerSettingsDocument>("management/settings",new ServerSettingsEdit(draft,document.Version));draft=null;error=null;notice="已保存并生效。";}
+        try{document=await Api.Put<ServerSettingsDocument>("management/settings",new ServerSettingsEdit(draft,document.Version));draft=null;error=null;notice="设置已保存。";}
         catch(Exception e){error=e.Message;}finally{busy=false;}
     }
 }

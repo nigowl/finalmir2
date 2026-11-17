@@ -2,14 +2,36 @@
 <AdminDialog Visible="true" Title="本版本陪玩设置" OnClose="OnClose" OnSave="Save" Busy="busy" Dirty="@(original!=Draft)">
 <DialogContent>
     @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
+    <MudTabs>
+    <MudTabPanel Text="在线调度">
     <MudCheckBox T="bool" Label="启用本版本陪玩系统" @bind-Value="Settings.Enabled" />
-    <MudCheckBox T="bool" Label="允许短时自卫与明确约战（仍受角色配置和原地图规则限制）" @bind-Value="Settings.AllowPk" />
+    <MudCheckBox T="bool" Label="允许短时自卫与明确约战（受角色配置和地图规则限制）" @bind-Value="Settings.AllowPk" />
     <MudGrid Spacing="2">
         <MudItem xs="6"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="最多同时在线陪玩" Min="1" Max="100" @bind-Value="Settings.MaxOnline" /></MudItem>
         <MudItem xs="6"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="真人预留连接名额" Min="1" Max="1000" @bind-Value="Settings.ReservePlayers" /></MudItem>
     </MudGrid>
-    <MudAlert Severity="Severity.Info" Class="my-3">陪玩人数另受系统设置的总连接数和同 IP 上限约束，本机额外预留 1 个连接。调整人数保存后自动生效；新账户仍按原服注册频率排队。</MudAlert>
-    <MudDivider Class="my-3" />
+    <MudCheckBox T="bool" Dense="true" Label="智能轮换（按勤奋、坚持随机安排游玩与休息）" @bind-Value="Settings.SmartScheduling" />
+    <MudText Typo="Typo.caption">单次时长不超过角色设置的上限，按人格每次随机一次并保存；等待较久者先补位，休息结束重新排队。关闭智能轮换则使用角色的固定在线与休息时长，仍公平排队。</MudText>
+    <MudCheckBox T="bool" Dense="true" Label="智能托管" @bind-Value="Settings.SmartRecovery" />
+    <MudText Typo="Typo.caption">每30秒检查，在线名额不足时优先恢复技术故障，再处理死亡预算；旧连接退出后退避重排。技术恢复保留死亡次数；死亡恢复须核对原安全复活点，等待2至15分钟后记录历史并重开预算，反复失败延长等待。保留作息、用量及人工下线/停用，资产回执未知、身份、协议或存储错误仍需人工处理。</MudText>
+    <MudAlert Severity="Severity.Info" Class="my-3">陪玩人数另受系统设置的总连接数和同 IP 上限约束，本机额外预留 1 个连接。调整人数保存后自动生效；新账户按注册频率限制排队。</MudAlert>
+    </MudTabPanel>
+    <MudTabPanel Text="随机新增">
+        <MudCheckBox T="bool" Dense="true" Label="随机新增陪玩" @bind-Value="Settings.Arrivals.Enabled" />
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6"><CompanionIntervalField Label="最短间隔" @bind-Minutes="Settings.Arrivals.MinMinutes" /></MudItem>
+            <MudItem xs="12" sm="6"><CompanionIntervalField Label="最长间隔" @bind-Minutes="Settings.Arrivals.MaxMinutes" /></MudItem>
+            <MudItem xs="12" sm="6"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="陪玩档案总量上限（含停用）" Min="1" Max="500" @bind-Value="Settings.Arrivals.MaxProfiles" /></MudItem>
+        </MudGrid>
+        <MudText Typo="Typo.caption">范围为1分钟–1个月（固定30天）。每次仅新增1名，触发后才抽取下一次时间并随版本保存；重启不重抽、不追补。达到总量上限时暂停，腾出名额后重新计时。关闭总开关也暂停随机新增。</MudText>
+        @if(ArrivalStatus is { } arrival)
+        {<MudText Typo="Typo.body2" Class="my-2">当前计划：@arrival.Status · 下次 @Local(arrival.State.NextAt) · 已生成 @arrival.State.Created 名<br />上次结果：@arrival.State.Result</MudText>}
+        <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="昵称池（每行一个，与批量新增共用）" Lines="5" Value="@string.Join('\n',Settings.Nicknames)" ValueChanged="@(value=>Settings.Nicknames=value.Split('\n'))" />
+        <MudText Typo="Typo.caption">从未使用的合法昵称随机选择，同时随机职业、性别和人格；昵称不足时显示原因，保留其他陪玩运行。新角色启用自动日程，进入正常上线队列，默认不开启LLM或PK。</MudText>
+        <MudDivider Class="my-3" /><MudText Typo="Typo.subtitle2">新陪玩默认作息</MudText>
+        <ScheduleFields Schedule="Settings.Arrivals.Schedule" />
+    </MudTabPanel>
+    <MudTabPanel Text="可选 LLM">
     <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Typo="Typo.h6">可选 LLM</MudText><LlmTestButton Model="DefaultModel" Key="@(DefaultSecret?.Key)" ClearKey="@(DefaultSecret?.Clear??false)" /></MudStack>
     <MudButton OnClick="AddModel" Disabled="@(Settings.Models.Length>=20)" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">增加模型</MudButton>
     <MudTable T="CompanionLlmModel" Items="Settings.Models" Dense="true">
@@ -20,11 +42,14 @@
     <MudSelect T="Guid" Margin="Margin.Dense" Variant="Variant.Outlined" Label="默认模型" @bind-Value="Settings.DefaultModelId"><MudSelectItem Value="Guid.Empty">不设默认模型</MudSelectItem>@foreach(var m in Settings.Models.Where(m=>m.Enabled)){<MudSelectItem Value="m.Id">@m.Name · @m.Model</MudSelectItem>}</MudSelect>
     <MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="本版本每日最多模型请求次数" Min="0" Max="100000" @bind-Value="Settings.DailyLlmCalls" />
     <MudText Typo="Typo.caption" Class="mt-2">配置和密钥保存在本版本 SQLite；密钥不回显、不进入列表或普通导出。LLM 不参与资产提交，关闭后规则继续运行。</MudText>
+    </MudTabPanel>
+    </MudTabs>
 </DialogContent>
 </AdminDialog>
 @if(editing!=null){<CompanionModelDialog @key="editing.Id" Model="editing" Secret="secrets.GetValueOrDefault(editing.Id)" OnClose="@(()=>editing=null)" OnApply="ApplyModel" />}
 @code{
     [Parameter,EditorRequired]public CompanionSettings Settings{get;set;}=null!;
+    [Parameter]public CompanionArrivalStatus? ArrivalStatus{get;set;}
     [Parameter]public EventCallback OnClose{get;set;}
     [Parameter]public EventCallback OnSaved{get;set;}
     [Inject]private IDialogService Dialogs{get;set;}=null!;
@@ -34,6 +59,7 @@
     private CompanionModelKeyEdit? DefaultSecret=>secrets.GetValueOrDefault(Settings.DefaultModelId);
     private string Draft=>JsonSerializer.Serialize(new{Settings,secrets});
     protected override void OnInitialized()=>original=Draft;
+    private static string Local(DateTimeOffset? time)=>time==null?"—":TimeZoneInfo.ConvertTime(time.Value,CompanionScheduling.Zone("Asia/Shanghai")).ToString("MM-dd HH:mm:ss（北京时间）");
     private async Task Save()
     {
         busy=true;

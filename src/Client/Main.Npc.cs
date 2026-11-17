@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Godot;
+using Crystal.Native;
 using C = ClientPackets;
 using S = ServerPackets;
 
@@ -12,15 +13,14 @@ public partial class Main
     private float repairRate;
     private ulong repairItem, pendingRepair;
     private int repairRevision = -1;
-    private Button npcBack = null!;
     private uint npcDialogueId;
 
     private void BuildNpc()
     {
         npc = Panel(game, 25, 45, 440, 225); npc.Name = "NpcDialog"; npc.Hide(); npc.ClipContents = true;
         Picture(npc, "Prguse", 995, 0, 0);
-        Text(npc, "NPC 对话 / 商店", 15, 5);
-        ArtButton(npc, "Prguse2", 360, 413, 3, "关闭 NPC", () => { npc.Hide(); shopMode = null; });
+        WindowTitle(npc, "NPC对话 / 商店", 370);
+        ArtButton(npc, "Prguse2", 360, 413, 3, "关闭 NPC", () => { npc.Hide(); shopMode = null; InvalidateNpcPurchase(); });
         npcScroll = new ScrollContainer { Name = "NpcScroll", Position = new Vector2(12, 33), Size = new Vector2(415, 156),
             ClipContents = true, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         npc.AddChild(npcScroll);
@@ -32,14 +32,13 @@ public partial class Main
         repairCell = new ItemTipButton { Name = "RepairCell", Position = new Vector2(0, 28), Size = new Vector2(36, 32), ExpandIcon = true, FocusMode = FocusModeEnum.None };
         CellStyle(repairCell); repairPanel.AddChild(repairCell); repairCell.Pressed += () => { repairItem = 0; RefreshRepair(); };
         repairInfo = Text(repairPanel, "", 45, 26, 234); repairInfo.Size = new Vector2(234, 44); repairInfo.AddThemeFontSizeOverride("font_size", 10);
-        repairConfirm = Button(repairPanel, "修理", 303, 30, 80, SubmitRepair);
-        npcBack = Button(npc, "返回", 331, 194, 91, () => Send(new C.CallNPC { ObjectID = npcDialogueId, Key = "[@MAIN]" })); npcBack.Hide();
-        npcBack.Size = new Vector2(91, 24);
+        repairConfirm = Button(repairPanel, "修理", 303, 31, 80, SubmitRepair);
+        BuildNpcTransactions();
     }
 
     private void RenderNpc(List<string> page)
     {
-        Clear(npcText); Clear(npcGoods); shopMode = null; repairPanel.Hide(); npcBack.Hide(); repairItem = pendingRepair = 0;
+        Clear(npcText); ClearNpcGoods(); shopMode = null; repairPanel.Hide(); InvalidateNpcPurchase(); repairItem = pendingRepair = 0;
         npcScroll.ScrollVertical = 0; npc.Visible = page.Count > 0;
         foreach (var raw in page)
         {
@@ -58,14 +57,21 @@ public partial class Main
             {
                 AddNpcWords(row, line[offset..link.Index]);
                 var key = "[@" + link.Groups[2].Value + "]";
-                var button = new LinkButton { Text = link.Groups[1].Value, Underline = LinkButton.UnderlineMode.OnHover, FocusMode = FocusModeEnum.None };
-                button.AddThemeFontSizeOverride("font_size", 11); button.AddThemeColorOverride("font_color", new Color("e9c76f"));
-                button.AddThemeColorOverride("font_hover_color", new Color("fff1ad")); button.AddThemeColorOverride("font_pressed_color", Colors.White);
-                button.Pressed += () => Send(new C.CallNPC { ObjectID = npcDialogueId, Key = key }); row.AddChild(button);
+                row.AddChild(NpcLink(link.Groups[1].Value, () => Send(new C.CallNPC { ObjectID = npcDialogueId, Key = key })));
                 offset = link.Index + link.Length;
             }
             AddNpcWords(row, line[offset..]);
         }
+        npcQuestButton = NpcLink("查看 任务", () => OpenQuestJournal(npcDialogueId));
+        npcQuestButton.Name = "NpcQuestLink"; npcQuestButton.Visible = State.QuestsAt(npcDialogueId).Any(); npcText.AddChild(npcQuestButton);
+    }
+
+    private static LinkButton NpcLink(string text, Action action)
+    {
+        var button = new LinkButton { Text = text, Underline = LinkButton.UnderlineMode.OnHover, FocusMode = FocusModeEnum.None };
+        button.AddThemeFontSizeOverride("font_size", ClientUi.Body); button.AddThemeColorOverride("font_color", new Color("e9c76f"));
+        button.AddThemeColorOverride("font_hover_color", new Color("fff1ad")); button.AddThemeColorOverride("font_pressed_color", Colors.White);
+        button.Pressed += action; return button;
     }
 
     private static void AddNpcWords(Control row, string text)
@@ -77,28 +83,42 @@ public partial class Main
         }
     }
 
-    private void RenderGoods(S.NPCGoods packet)
+    internal void RenderGoods(S.NPCGoods packet)
     {
-        Clear(npcText); Clear(npcGoods); repairPanel.Hide(); npc.Show(); npcBack.Show(); npcScroll.ScrollVertical = 0;
-        foreach (var item in packet.List)
+        Clear(npcText); ClearNpcGoods(); InvalidateNpcPurchase(); repairPanel.Hide(); npc.Show(); npcScroll.ScrollVertical = 0;
+        foreach (var item in packet.List) State.Bind(item);
+        foreach (var group in packet.List.Where(item => item.Info != null).GroupBy(item => (item.Info.Type, item.Info.FriendlyName)))
         {
-            State.Bind(item);
-            var single = item.Clone(); single.Count = 1;
-            var price = (uint)Math.Clamp(single.Price() * (double)packet.Rate, 0, uint.MaxValue);
-            var button = new ItemTipButton { Text = $"{item.Info?.FriendlyName} · {price} 金币", CustomMinimumSize = new Vector2(0, 26),
+            var prices = group.Select(item => ShopPrice(item, packet.Rate)).ToArray();
+            var range = prices.Min() == prices.Max() ? $"{prices[0]:N0}" : $"{prices.Min():N0}-{prices.Max():N0}";
+            var header = new Button { Name = "GoodsGroup", Text = $"＋ {group.Key.FriendlyName} · {range} 金币", ToggleMode = true,
+                CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = HorizontalAlignment.Left, FocusMode = FocusModeEnum.None };
+            CellStyle(header, 7); npcGoods.AddChild(header);
+            header.ExpandIcon = true; header.AddThemeConstantOverride("icon_max_width", 24); icons.Add((header, group.First()));
+            var entries = new VBoxContainer { Name = "GoodsEntries", Visible = false, SizeFlagsHorizontal = SizeFlags.ExpandFill }; npcGoods.AddChild(entries);
+            header.Toggled += expanded => { entries.Visible = expanded; header.Text = $"{(expanded ? "－" : "＋")} {group.Key.FriendlyName} · {range} 金币"; };
+            foreach (var item in group)
+            {
+            var button = new ItemTipButton { Name = "GoodsItem", Text = $"{item.Info.Name} · {ShopPrice(item, packet.Rate):N0} 金币", CustomMinimumSize = new Vector2(0, 28),
                 SizeFlagsHorizontal = SizeFlags.ExpandFill, Alignment = HorizontalAlignment.Left, FocusMode = FocusModeEnum.None,
-                ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, TooltipText = ItemText(item) };
-            CellStyle(button, 7);
+                ExpandIcon = true, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
+            CellStyle(button, 16); button.AddThemeConstantOverride("icon_max_width", 24);
             ItemTooltip(button, item);
-            button.AddThemeFontSizeOverride("font_size", 11);
-            button.Pressed += () => Send(new C.BuyItem { ItemIndex = item.UniqueID, Count = 1, Type = packet.Type }); npcGoods.AddChild(button);
+            button.Pressed += () => ConfirmNpcPurchase(item, packet); entries.AddChild(button); icons.Add((button, item));
+            }
         }
     }
+
+    private static uint ShopPrice(UserItem item, float rate)
+    { var single = item.Clone(); single.Count = 1; return (uint)Math.Clamp(single.Price() * (double)rate, 0, uint.MaxValue); }
+
+    private void ClearNpcGoods()
+    { icons.RemoveAll(pair => npcGoods.IsAncestorOf(pair.button)); Clear(npcGoods); }
 
     private void OpenRepair(float rate, bool special)
     {
         shopMode = special ? PanelType.SpecialRepair : PanelType.Repair; repairRate = rate;
-        repairItem = pendingRepair = 0; Clear(npcGoods); repairPanel.Show(); npc.Show(); inventory.Show();
+        repairItem = pendingRepair = 0; ClearNpcGoods(); InvalidateNpcPurchase(); repairPanel.Show(); npc.Show(); inventory.Show();
         RefreshRepair();
     }
 
@@ -135,6 +155,7 @@ public partial class Main
 
     private void ProcessNpc()
     {
+        ProcessNpcTransaction();
         if (!npc.Visible || shopMode is not (PanelType.Repair or PanelType.SpecialRepair) || repairRevision == State.InventoryRevision) return;
         repairRevision = State.InventoryRevision; RefreshRepair();
     }

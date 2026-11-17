@@ -12,7 +12,9 @@ public static class DataBootstrap
         Directory.CreateDirectory(paths.World);
         var server = Path.Combine(paths.Import, "Crystal Database");
         var client = Path.Combine(paths.Import, "Crystal Client");
-        foreach (var folder in new[] { "Configs", "Envir" })
+        // 已建库版本的脚本由运营维护；不能在重启时复活被删除或已改名的旧掉落/NPC文件。
+        var firstWorldImport = !File.Exists(paths.Database);
+        foreach (var folder in firstWorldImport ? new[] { "Configs", "Envir" } : Array.Empty<string>())
         {
             var source = Path.Combine(server, folder);
             if (Directory.Exists(source)) CopyTree(source, Path.Combine(paths.World, folder));

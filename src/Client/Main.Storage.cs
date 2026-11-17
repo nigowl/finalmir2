@@ -1,4 +1,5 @@
 using Godot;
+using Crystal.Native;
 using C = ClientPackets;
 using S = ServerPackets;
 
@@ -8,7 +9,8 @@ public partial class Main
     private Label storageNotice = null!, storageAuthTitle = null!, storageAuthError = null!;
     private LineEdit storagePassword = null!, storageNewPassword = null!, storageConfirm = null!;
     private Button storageSubmit = null!;
-    private OriginalButton storageFirstPage = null!, storageSecondPage = null!;
+    private readonly List<OriginalButton> storageTabs = new();
+    private Label storageLockedHint = null!;
     private TextureRect storageLockedPage = null!;
     private readonly List<Button> storageButtons = new();
     private int storagePage;
@@ -19,13 +21,16 @@ public partial class Main
     private void BuildStorage()
     {
         storage = Panel(game, 0, 35, 386, 344); storage.Hide();
-        Picture(storage, "Prguse", 586, 0, 0); Picture(storage, "Title", 0, 18, 8);
+        Picture(storage, "Prguse", 586, 0, 0); WindowTitle(storage, "仓库", 310);
         ArtButton(storage, "Prguse2", 360, 363, 3, "关闭仓库", CloseStorage);
-        var firstPage = storageFirstPage = ArtButton(storage, "Title", 743, 8, 36, "仓库一", () => SelectStoragePage(0));
-        firstPage.HoverIndex = 743; firstPage.PressedIndex = 744;
-        var secondPage = storageSecondPage = ArtButton(storage, "Title", 746, 80, 36, "扩展仓库", () => SelectStoragePage(1));
-        secondPage.HoverIndex = secondPage.PressedIndex = 746;
-        var passwordButton = ArtButton(storage, "Title", 113, 328, 33, "修改仓库密码", ChangeStoragePassword);
+        for (var page = 0; page < Mir2.StorageRules.MaxPages; page++)
+        {
+            var selected = page;
+            var tab = ArtButton(storage, "Title", 743, 8 + page * 72, 34, Mir2.StorageRules.PageName(page), () => SelectStoragePage(selected), Mir2.StorageRules.PageName(page));
+            TabStyle(tab, 68); storageTabs.Add(tab);
+        }
+        var passwordButton = ArtButton(storage, "Title", 113, 328, 33, "修改仓库密码", ChangeStoragePassword, "密码");
+        passwordButton.Size = new Vector2(48, ClientUi.ButtonHeight);
         passwordButton.HoverIndex = passwordButton.PressedIndex = 113;
         storageGrid = new Control { MouseFilter = MouseFilterEnum.Ignore }; storage.AddChild(storageGrid);
         for (var index = 0; index < Globals.StorageGridSize; index++)
@@ -36,6 +41,9 @@ public partial class Main
             storageGrid.AddChild(button); storageButtons.Add(button);
         }
         storageLockedPage = Picture(storage, "Prguse", 2443, 8, 59);
+        storageLockedHint = new Label { Position = new Vector2(24, 125), Size = new Vector2(338, 125), AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore };
+        storage.AddChild(storageLockedHint);
         storageNotice = Text(storage, "扩展仓库未租用。", 40, 322, 310); storageNotice.AddThemeFontSizeOverride("font_size", 10);
         storageAuth = Panel(storage, 8, 60, 370, 255);
         storageAuthTitle = Text(storageAuth, "", 12, 12, 345);
@@ -52,7 +60,7 @@ public partial class Main
     public bool CanUseStorage => !storagePreview && State.StorageActive && State.StorageUnlocked && State.User is { } user && State.Me?.Dead == false &&
         (!user.RequireStoragePassword || user.HasStoragePassword) && State.Actors.TryGetValue(storageNpc, out var npcActor) &&
         Distance(user.Location, npcActor.Location) <= Globals.DataRange;
-    private int StorageCapacity => Math.Min(State.Storage.Length, Globals.StorageGridSize * (State.User?.HasExpandedStorage == true ? 2 : 1));
+    private int StorageCapacity => State.StorageCapacity;
     private void OpenStorage()
     {
         CloseQuests();
@@ -81,8 +89,8 @@ public partial class Main
     {
         if (State.User == null) return;
         icons.RemoveAll(pair => storageButtons.Contains(pair.button));
-        storageFirstPage.Index = storageFirstPage.HoverIndex = storagePage == 0 ? 743 : 744;
-        storageSecondPage.Index = storageSecondPage.HoverIndex = storagePage == 0 ? 746 : 745;
+        foreach (var (tab, page) in storageTabs.Select((tab, page) => (tab, page)))
+        { tab.Index = tab.HoverIndex = storagePage == page ? 743 : 744; tab.SetPressedNoSignal(storagePage == page); }
         var setup = State.User.RequireStoragePassword && !State.User.HasStoragePassword;
         var authenticating = !storagePreview && (setup || !State.StorageUnlocked || changingStoragePassword);
         storageAuth.Visible = authenticating; storageGrid.Visible = !authenticating;
@@ -97,15 +105,18 @@ public partial class Main
             var item = index < StorageCapacity ? State.Storage[index] : null;
             button.Disabled = !CanUseStorage || storageBusy || index >= StorageCapacity;
             button.Icon = null; button.Text = item?.Count > 1 ? item.Count.ToString() : "";
-            ItemTooltip(button, item, index >= StorageCapacity ? "扩展仓库未租用" : "空格");
+            ItemTooltip(button, item, index >= StorageCapacity ? "仓库未开通" : "空格");
             if (item != null) icons.Add((button, item));
         }
         storageGrid.TooltipText = storagePreview ? "仓库预览；存取请与仓库 NPC 对话。" : "双击存取；拖动交换或跨窗口移动";
-        storageLockedPage.Visible = storagePage == 1 && !State.User.HasExpandedStorage && !authenticating;
+        storageLockedPage.Visible = storagePage > 0 && storagePage * Globals.StorageGridSize >= StorageCapacity && !authenticating;
+        storageLockedHint.Visible = storageLockedPage.Visible;
+        storageLockedHint.Text = Mir2.StorageRules.PageName(storagePage) + "未开通\n\n" +
+            (Assets.StorageUnlocks.FirstOrDefault(hint => hint.Page == storagePage + 1)?.Description ?? "请向当前版本管理员咨询开通任务。");
         storageNotice.Visible = storagePreview || storageLockedPage.Visible;
-        storageNotice.Text = storagePreview ? State.Storage.Length == 0 ? "仓库尚未读取，请先与仓库 NPC 对话。" : "仓库预览 · 存取请与仓库 NPC 对话。" : "扩展仓库未租用，请按原服规则开通。";
+        storageNotice.Text = storagePreview ? State.Storage.Length == 0 ? "仓库一默认开放，请先与仓库 NPC 对话。" : "仓库预览 · 存取请与仓库 NPC 对话。" : "完成对应任务后永久开通，保留原仓库密码。";
     }
-    public void SelectStoragePage(int page) { if (page is < 0 or > 1) return; storagePage = page; RenderStorage(); }
+    public void SelectStoragePage(int page) { if (page is < 0 or >= Mir2.StorageRules.MaxPages) return; storagePage = page; RenderStorage(); }
     public void ChangeStoragePassword()
     {
         if (storagePreview || !State.StorageUnlocked || storageBusy) return;
@@ -181,7 +192,7 @@ public partial class Main
         else if (draggedStorageItem != 0)
         {
             var from = Array.FindIndex(State.Storage, item => item?.UniqueID == draggedStorageItem);
-            var bag = inventorySlots.FirstOrDefault(pair => pair.button.IsVisibleInTree() && pair.button.GetGlobalRect().HasPoint(GetGlobalMousePosition()));
+            var bag = InventoryDropAt(GetGlobalMousePosition(), State.Storage.ElementAtOrDefault(from));
             if (bag.button != null) TakeStorage(from, bag.slot);
             else if (StorageCellAtMouse() is >= 0 and var destination) MoveStorage(from, storagePage * Globals.StorageGridSize + destination);
             draggedStorageItem = 0;

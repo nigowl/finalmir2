@@ -43,7 +43,10 @@ internal static class CompanionPlanningChecks
             Server.Settings.AllowCreateAssassin=Server.Settings.AllowCreateArcher=false;
             check(CompanionValidation.AvailableClasses.SequenceEqual(new[]{0,1,2}),"随机职业包含未开放的刺客/弓箭手");
             Server.Settings.AllowCreateArcher=true;
-check(!CompanionValidation.CanCreateClass(4)&&!CompanionValidation.CanCreateClass(3),"旧职业开关绕过三职业限制");
+            check(CompanionValidation.CanCreateClass(4)&&!CompanionValidation.CanCreateClass(3),"陪玩没有分别遵守弓箭手/刺客创建开关");
+            Server.Settings.AllowCreateAssassin=true;
+            check(CompanionValidation.AvailableClasses.SequenceEqual(new[]{0,1,2,3,4}),"陪玩创建/批量/随机新增没有共用五职业");
+            check(!CompanionValidation.CanCreateClass(-1)&&!CompanionValidation.CanCreateClass(5),"非法职业绕过创建边界");
         }
         finally{Server.Settings.AllowCreateAssassin=assassin;Server.Settings.AllowCreateArcher=archer;}
         var quest=new QuestInfo{Index=1,RequiredQuest=2,RequiredMaxLevel=100,RequiredClass=RequiredClass.None};

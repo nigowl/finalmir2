@@ -1,0 +1,14 @@
+<MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+    <MudNumericField T="decimal" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" Label="@Label" Value="@((decimal)Minutes/unit)" ValueChanged="SetValue" Min="@((decimal)1/unit)" Max="@((decimal)43200/unit)" Step="@((decimal)1/unit)" />
+    <MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="单位" @bind-Value="unit">
+        <MudSelectItem Value="1">分钟</MudSelectItem><MudSelectItem Value="60">小时</MudSelectItem><MudSelectItem Value="1440">天</MudSelectItem><MudSelectItem Value="43200">月</MudSelectItem>
+    </MudSelect>
+</MudStack>
+@code{
+    [Parameter]public string Label{get;set;}="间隔";
+    [Parameter]public int Minutes{get;set;}
+    [Parameter]public EventCallback<int> MinutesChanged{get;set;}
+    private int unit=1;
+    protected override void OnInitialized()=>unit=new[]{43200,1440,60,1}.First(value=>Minutes>0&&Minutes%value==0);
+    private Task SetValue(decimal value)=>MinutesChanged.InvokeAsync((int)Math.Clamp(decimal.Round(value*unit,0,MidpointRounding.AwayFromZero),1,43200));
+}

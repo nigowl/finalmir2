@@ -7,13 +7,15 @@ public partial class Main
     private Spell classPendingSpell;
     private uint classPendingTarget;
     private short classPendingPoison;
-    private int classPreviousHp;
+    private int classPreviousHp, classPreviousElements;
     private long classPendingSince, nextClassAction;
+    private bool SmartCombatActive => preferences.SmartBattle && (autoBattleEnabled || ClientAutomation.Targets(State).Any(actor => actor.Id == actionTarget));
 
     private void AwaitClassSkill(Spell spell, uint target, short poison, long now)
     {
         classPendingSpell = spell; classPendingTarget = target; classPendingPoison = poison;
         classPreviousHp = State.User?.HP ?? 0; classPendingSince = now;
+        classPreviousElements = State.Me?.Elements.Count ?? 0;
     }
 
     private void ResetClassSkills()
@@ -25,7 +27,7 @@ public partial class Main
     {
         if (classPendingSpell != Spell.None)
         {
-            if (ClassSkillRules.Confirmed(State, classPendingSpell, classPendingTarget, classPendingPoison, classPreviousHp))
+            if (ClassSkillRules.Confirmed(State, classPendingSpell, classPendingTarget, classPendingPoison, classPreviousHp, classPreviousElements))
             { classPendingSpell = Spell.None; nextClassAction = now + 200; }
             else if (classPendingSpell == Spell.Poisoning && (!State.Actors.TryGetValue(classPendingTarget, out var poisonedTarget) || poisonedTarget.Dead))
                 classPendingSpell = Spell.None;
@@ -37,10 +39,11 @@ public partial class Main
             State.Trading || State.StorageActive || npc.Visible || GuildStorageOpen || itemDragIcon.Visible || SkillPreparationBusy) return false;
         if (State.Me == null || now - State.Me.ActionTime < World.ActionDuration(State.Me) && State.Me.Action != MirAction.Standing) return false;
         var target = State.Actors.GetValueOrDefault(actionTarget);
+        if (target == null && autoBattleEnabled) target = ClientAutomation.Targets(State).FirstOrDefault(actor => State.User != null && Functions.MaxDistance(State.User.Location, actor.Location) <= 9);
         var spell = ClassSkillRules.Next(State, preferences, target, autoBattleEnabled, now);
         if (spell == Spell.None) return false;
         var selection = World.Selected;
-        World.Selected = spell == Spell.Poisoning ? target!.Id : State.User.ObjectID;
+        World.Selected = spell == Spell.Poisoning ? target!.Id : spell == Spell.PetEnhancer ? ClassSkillRules.PetToEnhance(State)!.Id : State.User.ObjectID;
         Cast(State.User.Magics.FindIndex(magic => magic.Spell == spell), true, true);
         World.Selected = selection;
         return SkillPreparationBusy || classPendingSpell != Spell.None;
@@ -49,7 +52,7 @@ public partial class Main
     private void PauseClassSkills(string reason)
     {
         classPendingSpell = Spell.None; classSkillsPaused = true;
-        Log($"职业辅助已暂停：{reason}。检查后重新保存职业设置可恢复。", ChatType.Hint);
+        Log($"职业辅助已暂停：{reason}。检查后重新保存职业设置或重新开始挂机可恢复。", ChatType.Hint);
     }
 
     private void ClassSkillPacket(Packet packet)

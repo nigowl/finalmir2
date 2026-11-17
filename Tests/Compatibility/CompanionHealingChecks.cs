@@ -29,5 +29,10 @@ internal static class CompanionHealingChecks
         state.User.Equipment[0]=new UserItem(new ItemInfo { Stats=new Stats { [Stat.ManaPenaltyPercent]=100 } });
         check(CompanionSafety.SelfHealing(state,14000)==null,"未计入原装备耗蓝惩罚");
         state.User.MP=14; check(CompanionSafety.SelfHealing(state,14000)==heal,"耗蓝惩罚后足够MP未自疗");
+        check(!CompanionSafety.DeathBudgetReached(new(),3,3),"尚未进入游戏被死亡预算误停用");
+        check(!CompanionSafety.DeathBudgetReached(state,3,3),"存活角色被死亡预算误停用");
+        state.Me!.Dead=true;
+        check(!CompanionSafety.DeathBudgetReached(state,2,3),"预算尚未达到就停用");
+        check(CompanionSafety.DeathBudgetReached(state,3,3),"达到死亡预算可被正常退场绕过");
     }
 }

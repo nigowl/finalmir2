@@ -58,6 +58,7 @@ namespace Server
 	    public static string AwakeningDropFilename = "00Awakening";
         public static string StrongboxDropFilename = "00Strongbox";
         public static string BlackstoneDropFilename = "00Blackstone";
+        public static string DragonDropFilename = "DragonItem";
 
         public static string Language = "English";
 
@@ -85,6 +86,9 @@ namespace Server
                            AllowNewCharacter = true,
                            AllowDeleteCharacter = true,
                            AllowStartGame = false,
+                           AllowCreateWarrior = true,
+                           AllowCreateWizard = true,
+                           AllowCreateTaoist = true,
                            AllowCreateAssassin = true,
                            AllowCreateArcher = true,
                            RequireStoragePassword = true;
@@ -111,6 +115,7 @@ namespace Server
         public static List<long> OrbsDmgList = new List<long>();
 
         public static float DropRate = 1F, ExpRate = 1F;
+        public static int[] StorageQuestIds = new int[3];
         public static int TeleportToNPCCost = 3000;
 
         public static int ItemTimeOut = 30,
@@ -379,6 +384,12 @@ namespace Server
         {
             Reader = new InIReader(Path.Combine(ConfigPath, "Setup.ini"));
             LoadBalance();
+            LoadAutoLearnSkills(Reader);
+            FishingDropFilename = Reader.ReadString("DropFiles", "Fishing", "00Fishing", false);
+            AwakeningDropFilename = Reader.ReadString("DropFiles", "Awakening", "00Awakening", false);
+            StrongboxDropFilename = Reader.ReadString("DropFiles", "Strongbox", "00Strongbox", false);
+            BlackstoneDropFilename = Reader.ReadString("DropFiles", "Blackstone", "00Blackstone", false);
+            DragonDropFilename = Reader.ReadString("DropFiles", "Dragon", "DragonItem", false);
             //General
             VersionPath = Reader.ReadString("General", "VersionPath", VersionPath);
             CheckVersion = Reader.ReadBoolean("General", "CheckVersion", CheckVersion);
@@ -411,9 +422,14 @@ namespace Server
             AllowNewCharacter = Reader.ReadBoolean("Permission", "AllowNewCharacter", AllowNewCharacter);
             AllowDeleteCharacter = Reader.ReadBoolean("Permission", "AllowDeleteCharacter", AllowDeleteCharacter);
             AllowStartGame = Reader.ReadBoolean("Permission", "AllowStartGame", AllowStartGame);
+            AllowCreateWarrior = Reader.ReadBoolean("Permission", "AllowCreateWarrior", AllowCreateWarrior);
+            AllowCreateWizard = Reader.ReadBoolean("Permission", "AllowCreateWizard", AllowCreateWizard);
+            AllowCreateTaoist = Reader.ReadBoolean("Permission", "AllowCreateTaoist", AllowCreateTaoist);
             AllowCreateAssassin = Reader.ReadBoolean("Permission", "AllowCreateAssassin", AllowCreateAssassin);
             AllowCreateArcher = Reader.ReadBoolean("Permission", "AllowCreateArcher", AllowCreateArcher);
             RequireStoragePassword = Reader.ReadBoolean("Permission", "RequireStoragePassword", RequireStoragePassword);
+            for (var page = 2; page <= Mir2.StorageRules.MaxPages; page++)
+                StorageQuestIds[page - 2] = Math.Max(0, Reader.ReadInt32("Storage", "Quest" + page, 0, false));
             AllowedResolution = Reader.ReadInt32("Permission", "MaxResolution", AllowedResolution);
 
             //Optional
@@ -669,6 +685,7 @@ namespace Server
         public static void Save()
         {
             SaveBalance();
+            SaveAutoLearnSkills();
             //General
             Reader.Write("General", "VersionPath", VersionPath);
             Reader.Write("General", "CheckVersion", CheckVersion);
@@ -699,6 +716,9 @@ namespace Server
             Reader.Write("Permission", "AllowNewCharacter", AllowNewCharacter);
             Reader.Write("Permission", "AllowDeleteCharacter", AllowDeleteCharacter);
             Reader.Write("Permission", "AllowStartGame", AllowStartGame);
+            Reader.Write("Permission", "AllowCreateWarrior", AllowCreateWarrior);
+            Reader.Write("Permission", "AllowCreateWizard", AllowCreateWizard);
+            Reader.Write("Permission", "AllowCreateTaoist", AllowCreateTaoist);
             Reader.Write("Permission", "AllowCreateAssassin", AllowCreateAssassin);
             Reader.Write("Permission", "AllowCreateArcher", AllowCreateArcher);
             Reader.Write("Permission", "RequireStoragePassword", RequireStoragePassword);

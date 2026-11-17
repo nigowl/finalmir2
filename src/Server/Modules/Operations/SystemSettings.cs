@@ -10,7 +10,7 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
     public ServerSettingsDocument Read()
     {
         var current = Current();
-        return new(current, Version(files.Read(Setup), current), Envir.Main.Connections.Count, Envir.Main.Players.Count);
+        return new(current, Version(files.Read(Setup), current), Envir.Main.Connections.Count, Envir.Main.Players.Count) { SkillOptions = SkillOptions() };
     }
     public ServerSettingsDocument Save(ServerSettingsEdit edit)
     {
@@ -23,16 +23,21 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
         Apply(edit.Values);
         return Read() with { RequiresRestart = restart };
     }
-    private static string Version(TextDocument document, ServerSettings current) => AdminChanges.Version(new { document.Version, current });
+    private static string Version(TextDocument document, ServerSettings current) => AdminChanges.Version(new { document.Version, current, Skills = SkillOptions() });
     private static ServerSettings Current() => WithBalance(new()
     {
         MaxUser = Settings.MaxUser, MaxIP = Settings.MaxIP,
         AllowNewAccount = Settings.AllowNewAccount, AllowChangePassword = Settings.AllowChangePassword,
         AllowLogin = Settings.AllowLogin, AllowNewCharacter = Settings.AllowNewCharacter, AllowDeleteCharacter = Settings.AllowDeleteCharacter,
+        AllowCreateWarrior = Settings.AllowCreateWarrior, AllowCreateWizard = Settings.AllowCreateWizard, AllowCreateTaoist = Settings.AllowCreateTaoist,
+        AllowCreateAssassin = Settings.AllowCreateAssassin, AllowCreateArcher = Settings.AllowCreateArcher,
         RequireStoragePassword = Settings.RequireStoragePassword,
         ExpRate = Settings.ExpRate, DropRate = Settings.DropRate, SaveDelay = Settings.SaveDelay,
         ItemTimeOut = Settings.ItemTimeOut, PlayerDiedItemTimeOut = Settings.PlayerDiedItemTimeOut, PKDelay = Settings.PKDelay,
         SafeZoneBorder = Settings.SafeZoneBorder, SafeZoneHealing = Settings.SafeZoneHealing, ExpMobLevelDifference = Settings.ExpMobLevelDifference,
+        AutoLearnSkills = Settings.AutoLearnSkills, AutoLearnWarriorSkills = Settings.AutoLearnWarriorSkills.ToArray(),
+        AutoLearnWizardSkills = Settings.AutoLearnWizardSkills.ToArray(), AutoLearnTaoistSkills = Settings.AutoLearnTaoistSkills.ToArray(),
+        AutoLearnAssassinSkills = Settings.AutoLearnAssassinSkills.ToArray(), AutoLearnArcherSkills = Settings.AutoLearnArcherSkills.ToArray(),
         MonsterRecallEnabled = Settings.MonsterRecallEnabled, MonsterRecallRange = Settings.MonsterRecallRange, MonsterRecallCooldown = Settings.MonsterRecallCooldown
     });
     private static void Apply(ServerSettings s)
@@ -40,10 +45,14 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
         Settings.MaxUser = (ushort)s.MaxUser; Settings.MaxIP = (ushort)s.MaxIP;
         Settings.AllowNewAccount = s.AllowNewAccount; Settings.AllowChangePassword = s.AllowChangePassword;
         Settings.AllowLogin = s.AllowLogin; Settings.AllowNewCharacter = s.AllowNewCharacter; Settings.AllowDeleteCharacter = s.AllowDeleteCharacter;
-        Settings.AllowCreateAssassin = false; Settings.AllowCreateArcher = false; Settings.RequireStoragePassword = s.RequireStoragePassword;
+        Settings.AllowCreateWarrior = s.AllowCreateWarrior; Settings.AllowCreateWizard = s.AllowCreateWizard; Settings.AllowCreateTaoist = s.AllowCreateTaoist;
+        Settings.AllowCreateAssassin = s.AllowCreateAssassin; Settings.AllowCreateArcher = s.AllowCreateArcher; Settings.RequireStoragePassword = s.RequireStoragePassword;
         Settings.ExpRate = s.ExpRate; Settings.DropRate = s.DropRate; Settings.SaveDelay = s.SaveDelay;
         Settings.ItemTimeOut = s.ItemTimeOut; Settings.PlayerDiedItemTimeOut = s.PlayerDiedItemTimeOut; Settings.PKDelay = s.PKDelay;
         Settings.SafeZoneBorder = s.SafeZoneBorder; Settings.SafeZoneHealing = s.SafeZoneHealing; Settings.ExpMobLevelDifference = s.ExpMobLevelDifference;
+        Settings.AutoLearnSkills = s.AutoLearnSkills; Settings.AutoLearnWarriorSkills = s.AutoLearnWarriorSkills.ToArray();
+        Settings.AutoLearnWizardSkills = s.AutoLearnWizardSkills.ToArray(); Settings.AutoLearnTaoistSkills = s.AutoLearnTaoistSkills.ToArray();
+        Settings.AutoLearnAssassinSkills = s.AutoLearnAssassinSkills.ToArray(); Settings.AutoLearnArcherSkills = s.AutoLearnArcherSkills.ToArray();
         Settings.MonsterRecallEnabled = s.MonsterRecallEnabled; Settings.MonsterRecallRange = s.MonsterRecallRange; Settings.MonsterRecallCooldown = s.MonsterRecallCooldown;
         var attackSpeedChanged = Settings.PlayerAttackSpeedBonus != s.PlayerAttackSpeedBonus;
         ApplyBalance(s);
@@ -64,6 +73,7 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
         Range(s.PlayerDiedItemTimeOut, 1, 1440, "死亡掉落保留时间"); Range(s.PKDelay, 1, 3600, "PK 值衰减间隔");
         Range(s.MonsterRecallRange, 1, 100, "怪物召回距离"); Range(s.MonsterRecallCooldown, 100, 600000, "怪物召回冷却");
         ValidateBalance(s);
+        ValidateSkills(s);
     }
     private static void Range(int value, int min, int max, string name)
     { if (value < min || value > max) throw new InvalidDataException($"{name}须为 {min}–{max}。"); }
@@ -74,7 +84,8 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
         {
             ["AllowNewAccount"] = s.AllowNewAccount.ToString(), ["AllowChangePassword"] = s.AllowChangePassword.ToString(), ["AllowLogin"] = s.AllowLogin.ToString(),
             ["AllowNewCharacter"] = s.AllowNewCharacter.ToString(), ["AllowDeleteCharacter"] = s.AllowDeleteCharacter.ToString(),
-            ["AllowCreateAssassin"] = "False", ["AllowCreateArcher"] = "False", ["RequireStoragePassword"] = s.RequireStoragePassword.ToString()
+            ["AllowCreateWarrior"] = s.AllowCreateWarrior.ToString(), ["AllowCreateWizard"] = s.AllowCreateWizard.ToString(), ["AllowCreateTaoist"] = s.AllowCreateTaoist.ToString(),
+            ["AllowCreateAssassin"] = s.AllowCreateAssassin.ToString(), ["AllowCreateArcher"] = s.AllowCreateArcher.ToString(), ["RequireStoragePassword"] = s.RequireStoragePassword.ToString()
         },
         ["Game"] = new()
         {
@@ -83,7 +94,16 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
             ["MonsterRecallEnabled"] = s.MonsterRecallEnabled.ToString(), ["MonsterRecallRange"] = s.MonsterRecallRange.ToString(), ["MonsterRecallCooldown"] = s.MonsterRecallCooldown.ToString()
         },
         ["Optional"] = new() { ["SafeZoneBorder"] = s.SafeZoneBorder.ToString(), ["SafeZoneHealing"] = s.SafeZoneHealing.ToString(), ["ExpMobLevelDifference"] = s.ExpMobLevelDifference.ToString() },
-        ["Database"] = new() { ["SaveDelay"] = s.SaveDelay.ToString() }
+        ["Database"] = new() { ["SaveDelay"] = s.SaveDelay.ToString() },
+        ["AutoLearnSkills"] = new()
+        {
+            ["Enabled"] = s.AutoLearnSkills.ToString(),
+            ["Warrior"] = string.Join(',', s.AutoLearnWarriorSkills.Select(spell => (byte)spell)),
+            ["Wizard"] = string.Join(',', s.AutoLearnWizardSkills.Select(spell => (byte)spell)),
+            ["Taoist"] = string.Join(',', s.AutoLearnTaoistSkills.Select(spell => (byte)spell)),
+            ["Assassin"] = string.Join(',', s.AutoLearnAssassinSkills.Select(spell => (byte)spell)),
+            ["Archer"] = string.Join(',', s.AutoLearnArcherSkills.Select(spell => (byte)spell))
+        }
     }, s);
     private static string UpdateIni(string content, ServerSettings settings)
     {

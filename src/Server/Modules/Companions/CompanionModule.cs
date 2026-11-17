@@ -31,7 +31,7 @@ public static class CompanionModule
         group.MapPost("/start-all",async(GameRuntime runtime,CompanionService service,CompanionCommand value,CancellationToken token)=>
         {
             var count=await runtime.Invoke(()=>service.StartAll(value),token);
-            return new ActionResult($"已为 {count} 个已启用陪玩提交上线，按在线上限、日程和原服限制排队。");
+            return new ActionResult($"已为 {count} 个已启用陪玩提交上线，按在线上限、日程和连接限制排队。");
         });
         group.MapPost("/stop-all",async(GameRuntime runtime,CompanionService service,CompanionStore store,CancellationToken token)=>
         {

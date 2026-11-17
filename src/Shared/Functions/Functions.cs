@@ -1,6 +1,5 @@
 ﻿using System.Drawing;
 using System.IO.Compression;
-using System.Runtime.Serialization.Formatters.Binary;
 
 public static class Functions
 {
@@ -434,26 +433,33 @@ public static class Functions
     }
     public static byte[] SerializeToBytes<T>(T item)
     {
-#pragma warning disable SYSLIB0011
-        var formatter = new BinaryFormatter();
-        using (var stream = new MemoryStream())
-        {
-            formatter.Serialize(stream, item);
-            stream.Seek(0, SeekOrigin.Begin);
-#pragma warning restore SYSLIB0011
-            return stream.ToArray();
-        }
+        // 原Buff内部数据仅有bool和long；保留原NRBF字节格式，不启用任意对象反序列化。
+        if (item is not (bool or long)) throw new InvalidDataException("Buff内部数据仅支持布尔值和64位整数。");
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write((byte)0); writer.Write(1); writer.Write(-1); writer.Write(1); writer.Write(0);
+        writer.Write((byte)4); writer.Write(1); writer.Write(item is bool ? "System.Boolean" : "System.Int64");
+        writer.Write(1); writer.Write("m_value"); writer.Write((byte)0); writer.Write((byte)(item is bool ? 1 : 9));
+        if (item is bool flag) writer.Write(flag); else writer.Write((long)(object)item);
+        writer.Write((byte)11);
+        return stream.ToArray();
     }
     public static object DeserializeFromBytes(byte[] bytes)
     {
-#pragma warning disable SYSLIB0011
-        var formatter = new BinaryFormatter();
-        using (var stream = new MemoryStream(bytes))
-        {
-            var deserialized = formatter.Deserialize(stream);
-#pragma warning restore SYSLIB0011
-            return deserialized;
-        }
+        if (bytes == null || bytes.Length > 64) throw new InvalidDataException("Buff内部数据格式无效。");
+        using var stream = new MemoryStream(bytes, false);
+        using var reader = new BinaryReader(stream);
+        if (reader.ReadByte()!=0 || reader.ReadInt32()!=1 || reader.ReadInt32()!=-1 || reader.ReadInt32()!=1 || reader.ReadInt32()!=0 ||
+            reader.ReadByte()!=4 || reader.ReadInt32()!=1) throw new InvalidDataException("Buff内部数据头无效。");
+        var type=reader.ReadString();
+        if (type is not ("System.Boolean" or "System.Int64") || reader.ReadInt32()!=1 || reader.ReadString()!="m_value" || reader.ReadByte()!=0 ||
+            reader.ReadByte()!=(type=="System.Boolean"?1:9)) throw new InvalidDataException("Buff内部数据类型无效。");
+        object result;
+        if(type=="System.Boolean")
+        { var value=reader.ReadByte(); if(value>1)throw new InvalidDataException("Buff布尔值无效。"); result=value==1; }
+        else result=reader.ReadInt64();
+        if(reader.ReadByte()!=11 || stream.Position!=stream.Length)throw new InvalidDataException("Buff内部数据长度无效。");
+        return result;
     }
 
     /// <summary>

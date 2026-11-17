@@ -31,7 +31,7 @@ public static class CompanionInventory
             }).Where(pair => pair.sales.Length > 0)
             .OrderBy(pair => pair.npc.CurrentMap == player.CurrentMap ? Functions.MaxDistance(player.CurrentLocation, pair.npc.CurrentLocation) : 10000).FirstOrDefault();
         return vendor.npc == null ? null : new("service", vendor.npc.CurrentMap.Info.Index, vendor.npc.CurrentLocation.X, vendor.npc.CurrentLocation.Y,
-            $"背包负重 {player.CurrentBagWeight}/{player.Stats[Stat.BagWeight]}，出售普通余货：{vendor.npc.Name}", NpcId: vendor.npc.ObjectID,
+            $"背包负重 {player.CurrentBagWeight:0.##}/{player.Stats[Stat.BagWeight]}，出售普通余货：{vendor.npc.Name}", NpcId: vendor.npc.ObjectID,
             NextExit: routes[vendor.npc.CurrentMap.Info.Index], Key: $"unload/{vendor.npc.ObjectID}", SellItems: vendor.sales);
     }
 }

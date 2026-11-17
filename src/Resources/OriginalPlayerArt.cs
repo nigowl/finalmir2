@@ -4,6 +4,8 @@ public readonly record struct PlayerArt(string Body, string Hair, string Weapon,
 
 public static class OriginalPlayerArt
 {
+    public static int SelectionStart(MirClass role, MirGender gender) => role == MirClass.Archer ? (gender == MirGender.Male ? 100 : 160) :
+        20 + (int)role * 20 + (gender == MirGender.Female ? 280 : 0);
     public static bool HasBow(MirClass @class, int weapon) => @class == MirClass.Archer && weapon / Globals.ClassWeaponCount == 2;
     public static MirAction Animation(MirClass @class, int weapon, MirAction action) => HasBow(@class, weapon) ? action switch
     { MirAction.Walking => MirAction.WalkingBow, MirAction.Running => MirAction.RunningBow, _ => action } : action;

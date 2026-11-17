@@ -1,3 +1,4 @@
+@inject IDialogService Dialogs
 <AdminDialog>
     <DialogContent>
         <MudStack Row="true" Class="mb-3" AlignItems="AlignItems.Center">
@@ -7,39 +8,30 @@
         </MudStack>
         @if (error != null) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
         @if (loading) { <MudProgressLinear Indeterminate="true" Class="mb-3" /> }
-        @if (Kind == "monsters")
-        {
-            <div class="monster-catalog">
-                <div class="monster-catalog-list">
-                    <MudTable T="CatalogFigure" Items="items" Dense="true" Hover="true" RowsPerPage="50" aria-label="怪物列表">
-                        <HeaderContent><MudTh>形象</MudTh><MudTh>怪物</MudTh>@if (SelectMode) { <MudTh>操作</MudTh> }</HeaderContent>
-                        <RowTemplate>
-                            <MudTd><img class="catalog-sprite" src="@Image(context)" alt="@($"怪物形象：{context.Name}")" loading="lazy" /></MudTd>
-                            <MudTd><MudButton Color="@(selected?.Id == context.Id ? Color.Primary : Color.Default)" OnClick="@(() => selected = context)" Size="Size.Small" Variant="Variant.Text">#@context.Id @context.Name</MudButton></MudTd>
-                            @if (SelectMode) { <MudTd><MudButton Size="Size.Small" Color="Color.Primary" OnClick="@(() => Pick(context))" Variant="Variant.Text">选择</MudButton></MudTd> }
-                        </RowTemplate>
-                        <NoRecordsContent><MudText Class="pa-3">没有符合条件的怪物。</MudText></NoRecordsContent>
-                    </MudTable>
-                </div>
-                <div class="monster-catalog-detail">
-                    @if (selected != null)
-                    {
-                        <MudText Typo="Typo.h6" Class="mb-2">@selected.Name · 属性</MudText>
-                        <MudTable T="KeyValuePair<string,string>[]" Items="selected.Attributes.Chunk(2)" Dense="true" Breakpoint="Breakpoint.None" RowsPerPage="100" Class="monster-properties" aria-label="怪物属性">
-                            <HeaderContent><MudTh>属性</MudTh><MudTh>值</MudTh><MudTh>属性</MudTh><MudTh>值</MudTh></HeaderContent>
-                            <RowTemplate>
-                                <MudTd>@context[0].Key</MudTd><MudTd Class="path">@context[0].Value</MudTd>
-                                <MudTd>@(context.Length > 1 ? context[1].Key : "")</MudTd><MudTd Class="path">@(context.Length > 1 ? context[1].Value : "")</MudTd>
-                            </RowTemplate>
-                        </MudTable>
-                    }
-                </div>
-            </div>
-        }
-        else
-        {
-            <div class="npc-catalog-gallery" aria-label="全部 NPC 瀑布流">
-                @foreach (var entry in items)
+        <div class="@(Kind == "monsters" ? "monster-catalog-gallery" : "npc-catalog-gallery")" aria-label="@(Kind == "monsters" ? "全部怪物瀑布流" : "全部 NPC 瀑布流")">
+            @foreach (var entry in items)
+            {
+                @if (Kind == "monsters")
+                {
+                    <article class="monster-catalog-card" @key="entry.Id">
+                        <button type="button" class="monster-catalog-entry" aria-label="@($"#{entry.Id} {entry.Name}")" @onclick="@(() => ShowMonster(entry))">
+                            <span class="monster-catalog-portrait">
+                                <img class="catalog-sprite" src="@Image(entry)" alt="@($"怪物形象：{entry.Name}")" loading="lazy" />
+                            </span>
+                            <span class="monster-catalog-details">
+                                <span class="monster-catalog-name">#@entry.Id @entry.Name</span>
+                                <span class="monster-catalog-stats">
+                                @foreach (var key in CardStats)
+                                {
+                                    <span class="monster-stat" data-stat="@key"><span>@(key == "经验奖励" ? "经验" : key)</span><span>@entry.Attributes.GetValueOrDefault(key, "—")</span></span>
+                                }
+                                </span>
+                            </span>
+                        </button>
+                        @if (SelectMode) { <MudButton Size="Size.Small" Color="Color.Primary" OnClick="@(() => Pick(entry))" Variant="Variant.Text">选择</MudButton> }
+                    </article>
+                }
+                else
                 {
                     <article class="npc-catalog-card" @key="entry.Id">
                         <div class="npc-catalog-card-heading">
@@ -50,27 +42,31 @@
                         @foreach (var property in entry.Attributes) { <MudText Typo="Typo.caption" Class="path">@property.Key：@property.Value</MudText> }
                     </article>
                 }
-            </div>
-            @if (items.Length == 0 && !loading) { <MudText>没有符合条件的 NPC。</MudText> }
-        }
+            }
+        </div>
+        @if (items.Length == 0 && !loading) { <MudText>没有符合条件的条目。</MudText> }
     </DialogContent>
-    <DialogActions><MudPagination Count="PageCount" Selected="page" SelectedChanged="ChangePage" Disabled="loading" Size="Size.Small" ShowFirstButton="true" ShowLastButton="true" /></DialogActions>
+    <DialogActions><div class="catalog-pagination"><MudPagination Count="PageCount" Selected="page" SelectedChanged="ChangePage" Disabled="loading" Size="Size.Small" ShowFirstButton="true" ShowLastButton="true" /></div></DialogActions>
 </AdminDialog>
 @code {
     [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
     [Parameter] public string Kind { get; set; } = "monsters";
     [Parameter] public bool SelectMode { get; set; }
+    private static readonly string[] CardStats = ["等级", "生命", "攻击", "防御", "魔御", "经验奖励"];
     private CatalogFigure[] items = [];
-    private CatalogFigure? selected;
-    private int page = 1, total;
+    private int page = 1, total, generation;
     private string search = "";
     private string? error;
     private bool loading;
-    private int generation;
     private int PageCount => Math.Max(1, (total + 49) / 50);
     private static string Image(CatalogFigure entry) => $"/asset-preview?library={Uri.EscapeDataString(entry.Library)}&index={entry.Frame}";
     private void Pick(CatalogFigure entry) { if (SelectMode && Kind == "monsters") Dialog.Close(DialogResult.Ok(entry)); }
     private void ViewNpc(CatalogFigure entry) { if (Kind == "npcs") Dialog.Close(DialogResult.Ok(entry)); }
+    private async Task ShowMonster(CatalogFigure entry)
+    {
+        var dialog = await Dialogs.ShowAsync<MonsterEditor>($"怪物：{entry.Name}", new DialogParameters<MonsterEditor> { { d => d.Id, entry.Id } }, AdminDialog.StandardOptions);
+        if ((await dialog.Result)?.Canceled == false) await Load();
+    }
     protected override Task OnInitializedAsync() => Load();
     private Task Search() { page = 1; return Load(); }
     private Task ChangePage(int value) { page = value; return Load(); }
@@ -82,7 +78,7 @@
         {
             var result = await Api.Get<CatalogFigurePage>($"management/admin/catalog/{Kind}?page={page}&search={Uri.EscapeDataString(search)}");
             if (request != generation) return;
-            items = result.Items; total = result.Total; selected = items.FirstOrDefault();
+            items = result.Items; total = result.Total;
         }
         catch (Exception e) { if (request == generation) error = e.Message; }
         finally { if (request == generation) loading = false; }

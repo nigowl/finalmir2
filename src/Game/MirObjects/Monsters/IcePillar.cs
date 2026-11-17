@@ -79,6 +79,7 @@ namespace Server.MirObjects.Monsters
 
             Broadcast(new S.ObjectStruck { ObjectID = ObjectID, AttackerID = attacker.ObjectID, Direction = Direction, Location = CurrentLocation });
 
+            BroadcastDamageIndicator(DamageType.Hit, -1);
             ChangeHP(-1);
             return 1;
         
@@ -133,6 +134,7 @@ namespace Server.MirObjects.Monsters
 
             Broadcast(new S.ObjectStruck { ObjectID = ObjectID, AttackerID = attacker.ObjectID, Direction = Direction, Location = CurrentLocation });
             attacker.GatherElement();
+            BroadcastDamageIndicator(DamageType.Hit, -1);
             ChangeHP(-1);
 
             return 1;

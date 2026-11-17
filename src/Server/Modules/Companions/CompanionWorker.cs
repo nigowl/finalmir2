@@ -13,6 +13,7 @@ public sealed class CompanionWorker
     private Task? reader, errors;
     public ConcurrentQueue<WorkerEvent> Events { get; } = new();
     public bool Running => process is { HasExited: false };
+    public DateTimeOffset StartedAt { get; private set; }
     public static string ExecutableDirectory => Path.Combine(AppContext.BaseDirectory, "companion");
     public static bool Installed => File.Exists(Path.Combine(ExecutableDirectory, "Mir2.Companion.dll"));
     public async Task Start()
@@ -26,6 +27,7 @@ public sealed class CompanionWorker
         { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = ExecutableDirectory };
         if (!File.Exists(native)) info.ArgumentList.Add(Path.Combine(ExecutableDirectory, "Mir2.Companion.dll"));
         process = Process.Start(info) ?? throw new IOException("无法启动陪玩工作进程。");
+        StartedAt=DateTimeOffset.UtcNow;
         reader = Read(process.StandardOutput); errors = ReadErrors(process.StandardError);
     }
     private async Task Read(StreamReader stream)
@@ -40,7 +42,7 @@ public sealed class CompanionWorker
             }
         }
         catch (Exception e) when (e is IOException or JsonException or InvalidDataException)
-        { Events.Enqueue(new("worker-failed", Guid.Empty, Reason: e.Message)); }
+        { Events.Enqueue(new("worker-failed", Guid.Empty, Reason: e.Message, Recoverable:e is IOException)); }
     }
     private static async Task<string?> ReadLine(StreamReader stream)
     {
@@ -57,7 +59,7 @@ public sealed class CompanionWorker
     {
         try { while (await ReadLine(stream) is { } line)
             {if(Events.Count>=2000)throw new InvalidDataException("陪玩诊断积压超限。");Events.Enqueue(new("diagnostic", Guid.Empty, Reason: line[..Math.Min(line.Length,500)]));} }
-        catch (Exception e) when(e is IOException or InvalidDataException) { Events.Enqueue(new("worker-failed", Guid.Empty, Reason: e.Message)); }
+        catch (Exception e) when(e is IOException or InvalidDataException) { Events.Enqueue(new("worker-failed", Guid.Empty, Reason: e.Message, Recoverable:e is IOException)); }
     }
     public async Task Send(WorkerCommand command)
     {

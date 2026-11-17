@@ -32,6 +32,22 @@ def save(path, value):
     temporary.replace(path)
 
 
+def companions():
+    # shortcut: 现有API无事务分页快照；需要并发改名下的同刻全量结果时再扩展。
+    for _ in range(2):
+        first = get('/management/companions?page=0')
+        total = first['total']
+        rows = list(first['items'])
+        for page in range(1, (total + 19) // 20):
+            result = get('/management/companions?page=' + str(page))
+            if result['total'] != total:
+                break
+            rows.extend(result['items'])
+        if len(rows) == total and len({row['profile']['id'] for row in rows}) == total:
+            return rows
+    raise RuntimeError('陪玩列表在分页期间变化或返回不完整，本次采样已停止，未将部分名单视为全量。')
+
+
 logs = version / 'runtime/logs'
 logs.mkdir(exist_ok=True)
 report = get('/management/companions/world-checks')
@@ -42,7 +58,7 @@ samples = []
 while True:
     status = get('/management/status')
     rows = []
-    for row in get('/management/companions')['items']:
+    for row in companions():
         ident = row['profile']['id']
         detail = get('/management/companions/' + ident)
         character = get('/management/admin/characters/' + str(row['characterId'])) if row['characterId'] else {}

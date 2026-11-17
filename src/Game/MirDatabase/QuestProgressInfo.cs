@@ -448,7 +448,6 @@ namespace Server.MirDatabase
                 }
 
                 TaskList.Add(string.Format("{0} {1}", Info.KillMessage, allComplete ? GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.TaskCompleted) : ""));
-                return;
             }
 
             for (int i = 0; i < KillTaskCount.Count; i++)

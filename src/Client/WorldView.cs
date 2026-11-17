@@ -14,20 +14,24 @@ public partial class WorldView : Node2D
     private readonly AStarGrid2D navigation = new();
     private readonly List<(SpriteImage image, Vector2 position, float opacity)> glow = new();
     private GlowLayer glowLayer = null!;
-    private readonly List<(uint id, int damage, long time)> damage = new();
+    private CombatTextLayer combatTextLayer = null!;
+    private readonly List<Actor> drawActors = new();
     public uint Selected;
     private bool loadingMap;
     public bool Loading => loadingMap || Map != null && !initialTerrainReady;
     public string LoadError { get; private set; } = "";
     public Vector2 Centre = new(480, 352);
     private Vector2 cameraPixels;
+    private Vector2 renderScale = Vector2.One;
     private long frameTime;
+    internal double LastDrawMilliseconds { get; private set; }
 
     public override void _Ready()
     {
         TextureFilter = TextureFilterEnum.Nearest;
         glowLayer = new GlowLayer { OwnerView = this, Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Add } };
         AddChild(glowLayer);
+        combatTextLayer = new CombatTextLayer { View = this }; AddChild(combatTextLayer);
     }
 
     public async Task Load(string file)
@@ -63,7 +67,7 @@ public partial class WorldView : Node2D
     {
         route = PathTo(target);
         if (route.Length <= 1) return null;
-        var step = run && route.Length > 2 && Functions.DirectionFromPoint(route[0], route[1]) == Functions.DirectionFromPoint(route[1], route[2]) ? 2 : 1;
+        var step = ClientMovement.StepIndex(route, run ? ClientMovement.RunDistance(State) : 1);
         return route[step];
     }
 
@@ -78,13 +82,26 @@ public partial class WorldView : Node2D
         finally { foreach (var point in occupied) navigation.SetPointSolid(point, false); }
     }
 
-    internal Point? Approach(Actor target)
+    internal Point? Approach(Actor target, int runDistance = 1)
     {
         if (State.User == null) return null;
         var cells = Enumerable.Range(-1, 3).SelectMany(dx => Enumerable.Range(-1, 3).Select(dy => new Point(target.Location.X + dx, target.Location.Y + dy)))
-            .Where(point => point != target.Location && Walkable(point)).OrderBy(point => Math.Max(Math.Abs(point.X - State.User.Location.X), Math.Abs(point.Y - State.User.Location.Y)));
-        foreach (var point in cells) if (point == State.User.Location || NextStep(point) != null) return point;
-        return null;
+            .Where(point => point != target.Location && Walkable(point)).OrderBy(point => Functions.MaxDistance(point, State.User.Location))
+            .ThenBy(point => Math.Abs(point.X - State.User.Location.X) + Math.Abs(point.Y - State.User.Location.Y));
+        Point? nearest = null, flank = null;
+        foreach (var point in cells)
+        {
+            if (point == State.User.Location) return point;
+            var route = PathTo(point);
+            if (route.Length <= 1) continue;
+            nearest ??= point;
+            if (route.Length == 2 && Functions.DirectionFromPoint(State.User.Location, point) != Functions.DirectionFromPoint(State.User.Location, target.Location)) flank ??= point;
+            // 近身追击优先可直接跑到的相邻格，避免永远一步步追着移动目标走。
+            if (runDistance <= 1 || Functions.MaxDistance(State.User.Location, target.Location) > runDistance + 1 ||
+                ClientMovement.StepIndex(route, runDistance) == runDistance && (nearest == point || route.Length <= runDistance + 1)) return point;
+        }
+        // 正前方两格被步行目标占着时先贴侧面，下一步即可跑到邻格，避免同速尾随。
+        return runDistance > 1 && target.Action == MirAction.Walking && Environment.TickCount64 - target.MotionTime < target.MovementDuration(600) + 100 ? flank ?? nearest : nearest;
     }
 
     public Point CellAt(Vector2 screen)
@@ -106,12 +123,12 @@ public partial class WorldView : Node2D
             });
     }
 
-    public void ShowDamage(uint id, int amount) => damage.Add((id, amount, Environment.TickCount64));
     public Vector2 Screen(Point point) => Screen(new Vector2(point.X, point.Y));
     private Vector2 Screen(Vector2 point)
     {
-        return (point * new Vector2(48, 32)).Round() - cameraPixels + Centre;
+        return SnapWorldPixel(point * new Vector2(48, 32)) - cameraPixels + Centre;
     }
+    private Vector2 SnapWorldPixel(Vector2 point) => (point * renderScale).Round() / renderScale;
 
     public uint Hovered { get; private set; }
     internal bool ShowNpcNames = true, ShowMonsterNames, ShowItemNames;
@@ -126,14 +143,23 @@ public partial class WorldView : Node2D
     public override void _Process(double delta)
     {
         frameTime = Environment.TickCount64;
-        // 整帧共用同一个镜头像素位置，避免逐格取时钟让相邻地块在运动时错开。
-        cameraPixels = State.Me == null ? Vector2.Zero : (Visual(State.Me, frameTime) * new Vector2(48, 32)).Round();
+        // 按实际屏幕像素取整，高DPI下不再每次跳一整逻辑像素；整帧仍共用同一镜头。
+        renderScale = GetViewport().GetStretchTransform().Scale.Abs().Max(new Vector2(.01f, .01f));
+        cameraPixels = State.Me == null ? Vector2.Zero : SnapWorldPixel(Visual(State.Me, frameTime) * new Vector2(48, 32));
         UpdateHover(GetGlobalMousePosition(), GetViewport().GuiGetHoveredControl() != null);
         PrefetchTerrain();
         ProcessEffects(frameTime);
-        QueueRedraw(); glowLayer.QueueRedraw();
+        combatTexts.RemoveAll(text => frameTime - text.Start >= text.Duration);
+        QueueRedraw(); glowLayer.QueueRedraw(); combatTextLayer.QueueRedraw();
     }
     public override void _Draw()
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        DrawWorld();
+        LastDrawMilliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+    }
+
+    private void DrawWorld()
     {
         glow.Clear();
         if (State.User == null) return;
@@ -149,6 +175,11 @@ public partial class WorldView : Node2D
         var bounds = MapViewBounds.Around(user, Map.Width, Map.Height);
         var fromX = bounds.FromX; var toX = bounds.ToX; var fromY = bounds.FromY;
         var now = frameTime;
+        drawActors.Clear();
+        foreach (var actor in State.Actors.Values)
+            if (actor.Location.Y >= fromY && actor.Location.Y <= bounds.ObjectToY) drawActors.Add(actor);
+        drawActors.Sort(CompareDrawOrder);
+        var actorIndex = 0;
         for (var y = fromY; y <= bounds.FloorToY; y++)
         for (var x = fromX; x <= toX; x++)
         {
@@ -161,7 +192,8 @@ public partial class WorldView : Node2D
         }
         for (var y = fromY; y <= bounds.ObjectToY; y++)
         {
-            foreach (var actor in State.Actors.Values.Where(a => a.Location.Y == y && (a.Dead || a.Kind == ObjectType.Item))) DrawActor(actor, now);
+            while (actorIndex < drawActors.Count && drawActors[actorIndex].Location.Y == y && (drawActors[actorIndex].Dead || drawActors[actorIndex].Kind == ObjectType.Item))
+                DrawActor(drawActors[actorIndex++], now);
             for (var x = fromX; x <= toX; x++)
             {
                 var cell = Map.MapCells[x, y]; var position = Screen(new Point(x, y)) + new Vector2(0, 32);
@@ -182,10 +214,11 @@ public partial class WorldView : Node2D
                 if ((cell.FrontAnimationFrame & 0x80) != 0) glow.Add((front, position - new Vector2(0, front.Size.Y), 1));
                 else DrawTexture(front.Texture, position - new Vector2(0, front.Size.Y));
             }
-            foreach (var actor in State.Actors.Values.Where(a => a.Location.Y == y && !a.Dead && a.Kind != ObjectType.Item).OrderBy(a => a.Location.X)) DrawActor(actor, now);
+            while (actorIndex < drawActors.Count && drawActors[actorIndex].Location.Y == y) DrawActor(drawActors[actorIndex++], now);
         }
-        foreach (var actor in State.Actors.Values.Where(NameVisible))
+        foreach (var actor in State.Actors.Values)
         {
+            if (!NameVisible(actor)) continue;
             if (actor.Hidden && actor.Id != State.User?.ObjectID) continue;
             var p = NameAnchor(actor, now);
             var namePosition = p - new Vector2(ThemeDB.FallbackFont.GetStringSize(actor.Name, fontSize: 12).X / 2, 0);
@@ -201,12 +234,17 @@ public partial class WorldView : Node2D
                 DrawRect(new Rect2(p + new Vector2(-24, 6), new Vector2(actor.Health * 0.48f, 3)), Colors.Red);
             }
         }
-        damage.RemoveAll(d => now - d.time > 900);
-        foreach (var hit in damage)
-            if (State.Actors.TryGetValue(hit.id, out var actor))
-                DrawString(ThemeDB.FallbackFont, Screen(Visual(actor, now)) + new Vector2(22, -55 - (now - hit.time) / 20f),
-                    hit.damage == 0 ? "未命中" : Math.Abs(hit.damage).ToString(), fontSize: 17, modulate: hit.damage > 0 ? Colors.LightGreen : Colors.OrangeRed);
         DrawSpells(now);
+    }
+
+    private static int CompareDrawOrder(Actor left, Actor right)
+    {
+        var order = left.Location.Y.CompareTo(right.Location.Y);
+        if (order != 0) return order;
+        order = (right.Dead || right.Kind == ObjectType.Item).CompareTo(left.Dead || left.Kind == ObjectType.Item);
+        if (order != 0) return order;
+        order = left.Location.X.CompareTo(right.Location.X);
+        return order != 0 ? order : left.Id.CompareTo(right.Id);
     }
 
     private static bool IsFloor(SpriteImage image) => image.Size == new Vector2(48, 32) || image.Size == new Vector2(96, 64);

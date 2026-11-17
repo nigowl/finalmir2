@@ -12,8 +12,13 @@ public partial class Main
     private CheckBox npcNames = null!, monsterNames = null!, autoHp = null!, autoMp = null!, autoRandom = null!, autoTown = null!, noMonsterRandom = null!, autoRoam = null!;
     private CheckBox crtFilter = null!;
     private CheckBox itemNames = null!;
+    private CheckBox autoPickup = null!;
+    private Control pickupFilters = null!;
+    private OptionButton pickupMode = null!;
+    private TextEdit pickupNames = null!;
     private OptionButton crtStrength = null!;
-    private OptionButton movementMode = null!, singleSkill = null!, areaSkill = null!;
+    private OptionButton movementMode = null!;
+    private ConfirmationDialog resetSettingsDialog = null!;
     private SpinBox hpPercent = null!, mpPercent = null!, randomPercent = null!, townPercent = null!;
     private Godot.Timer settingsSaveTimer = null!;
     private bool loadingSettings;
@@ -28,7 +33,7 @@ public partial class Main
         {
             if (File.Exists(settingsFile))
             {
-                if (new FileInfo(settingsFile).Length > 8192) throw new InvalidDataException("设置文件超过 8KB。");
+                if (new FileInfo(settingsFile).Length > 65536) throw new InvalidDataException("设置文件超过 64KB。");
                 preferences = JsonSerializer.Deserialize<ClientPreferences>(File.ReadAllText(settingsFile)) ?? throw new InvalidDataException("设置文件为空。");
                 preferences.Normalize();
             }
@@ -37,7 +42,7 @@ public partial class Main
         ApplyPreferences();
         checkedIcon = CheckIcon(true); uncheckedIcon = CheckIcon(false);
         settingsDialog = Panel(game, 292, 153, 440, 350); settingsDialog.Hide();
-        Text(settingsDialog, "游戏设置", 16, 5, 380);
+        WindowTitle(settingsDialog, "游戏设置", 370);
         ArtButton(settingsDialog, "Prguse2", 360, 413, 3, "关闭设置", CloseSettings);
         settingsTabs = new TabContainer { Position = new Vector2(10, 32), Size = new Vector2(420, 260) }; settingsDialog.AddChild(settingsTabs);
         var basic = SettingsPage("基础"); var protection = SettingsPage("保护"); var battle = SettingsPage("挂机");
@@ -65,10 +70,28 @@ public partial class Main
         Text(protection, "随机/回城使用背包卷轴；回城优先，同次低血量仅一次。\n拒绝或超时后暂停，重新开启保护或挂机可恢复。", 12, 176, 390).AddThemeFontSizeOverride("font_size", 10);
         noMonsterRandom = SettingToggle(battle, "无怪随机（等待 3 秒，消耗随机卷）", 12);
         autoRoam = SettingToggle(battle, "无怪跑图（当前地图；无随机卷时也可跑图）", 48);
-        singleSkill = SkillChoice(battle, "单体技能", 98); areaSkill = SkillChoice(battle, "群攻技能", 141);
-        Text(battle, "群怪优先群攻；缺蓝/技能冷却时改用单体或普攻。\nEsc或菜单停止；点击地面需确认，界面操作不停止。", 12, 182, 390).AddThemeFontSizeOverride("font_size", 10);
-        settingsHint = Text(settingsDialog, error.Length > 0 ? error : "更改后自动保存。", 26, 317, 388);
-        settingsHint.Size = new Vector2(388, 26); settingsHint.AutowrapMode = TextServer.AutowrapMode.WordSmart; settingsHint.AddThemeFontSizeOverride("font_size", 10);
+        autoRoam.TooltipText = "探索远处、近期少到访区域，战斗/拣取后继续原路线。技能组合由职业页统一控制。";
+        autoPickup = SettingToggle(battle, "自动拣取（战斗结束后拣取附近物品）", 84);
+        pickupFilters = new Control { Position = new Vector2(0, 121), Size = new Vector2(400, 109) }; battle.AddChild(pickupFilters);
+        Text(pickupFilters, "拣取模式", 12, 0, 80);
+        pickupMode = new OptionButton { Name = "PickupMode", Position = new Vector2(100, 0), Size = new Vector2(288, 26) };
+        pickupMode.AddItem("排除拣取（黑名单）"); pickupMode.AddItem("指定拣取（白名单）"); pickupFilters.AddChild(pickupMode);
+        pickupNames = new TextEdit { Name = "PickupNames", Position = new Vector2(12, 31), Size = new Vector2(376, 52),
+            PlaceholderText = "每行一个完整物品名；金币填“金币”。", WrapMode = TextEdit.LineWrappingMode.Boundary };
+        pickupFilters.AddChild(pickupNames);
+        Text(pickupFilters, "最多64项，每项40字；混合格整格过滤，避免误拣。", 12, 85, 376).AddThemeFontSizeOverride("font_size", ClientUi.Small);
+        pickupMode.ItemSelected += _ => SettingsChanged(); pickupNames.TextChanged += SettingsChanged;
+        autoPickup.Toggled += enabled => pickupFilters.Visible = enabled;
+        Button(settingsDialog, "重置", 342, 319, 72, ResetSettingsConfirmation).Name = "ResetSettings";
+        resetSettingsDialog = new ConfirmationDialog { Name = "ResetSettingsConfirmation", Title = "重置游戏设置",
+            DialogText = "将所有游戏设置恢复为默认值并自动保存？\n音量、显示、保护和三职业辅助均会重置，当前挂机会停止。" };
+        game.AddChild(resetSettingsDialog);
+        resetSettingsDialog.GetOkButton().Text = "重置"; resetSettingsDialog.GetCancelButton().Text = "取消";
+        resetSettingsDialog.Confirmed += ResetSettings;
+        settingsHint = Text(settingsDialog, "", 26, 319, 300); settingsHint.Name = "SettingsNotice";
+        settingsHint.Size = new Vector2(300, 26); settingsHint.ClipText = true; settingsHint.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+        settingsHint.MouseFilter = MouseFilterEnum.Pass;
+        settingsHint.AddThemeFontSizeOverride("font_size", 10); SettingsNotice(error.Length > 0 ? error : "更改后自动保存。");
         settingsSaveTimer = new Godot.Timer { OneShot = true, WaitTime = .2 }; settingsDialog.AddChild(settingsSaveTimer);
         settingsSaveTimer.Timeout += () => SaveSettings();
         ArtButton(game, "Prguse", 1912, 997, 692, "游戏设置", OpenSettings);
@@ -84,7 +107,7 @@ public partial class Main
     {
         var checkbox = new CheckBox { Text = text, Position = new Vector2(8, y), Size = new Vector2(390, 28), FocusMode = FocusModeEnum.None };
         StyleCheckBox(checkbox);
-        checkbox.Toggled += _ => SettingsChanged(); parent.AddChild(checkbox); return checkbox;
+        checkbox.Toggled += _ => SettingsChanged(); parent.AddChild(checkbox); checkbox.Size = new Vector2(390, 28); return checkbox;
     }
 
     private void StyleCheckBox(CheckBox checkbox)
@@ -107,24 +130,17 @@ public partial class Main
     private CheckBox ProtectionRow(Control parent, string title, float y, out SpinBox percent)
     {
         var toggle = SettingToggle(parent, title, y); toggle.Size = new Vector2(140, 28);
-        Text(parent, title == "自动喝蓝" ? "魔力≤" : "生命≤", 158, y, 50);
-        percent = new SpinBox { Position = new Vector2(213, y), Size = new Vector2(100, 28), MinValue = 1, MaxValue = 95, Step = 1, Suffix = "%" };
-        percent.ValueChanged += _ => SettingsChanged(); parent.AddChild(percent); return toggle;
+        Text(parent, title == "自动喝蓝" ? "魔力≤" : "生命≤", 158, y, 50).Size = new Vector2(50, 28);
+        percent = SettingPercent(parent, 213, y, 100); return toggle;
     }
 
-    private OptionButton SkillChoice(Control parent, string label, float y)
+    private SpinBox SettingPercent(Control parent, float x, float y, float width)
     {
-        Text(parent, label, 12, y, 80);
-        var choice = new OptionButton { Name = label == "单体技能" ? "SingleSkill" : "AreaSkill", Position = new Vector2(100, y), Size = new Vector2(288, 28) };
-        choice.ItemSelected += _ => SettingsChanged(); parent.AddChild(choice); return choice;
-    }
-
-    private void FillSkills(OptionButton choice, Spell selected, bool area)
-    {
-        choice.Clear(); choice.AddItem(area ? "不使用群攻技能" : "普通攻击", (int)Spell.None);
-        foreach (var magic in State.User?.Magics ?? [])
-            if (area ? ClientAutomation.IsAreaSkill(magic.Spell) : ClientAutomation.IsSingleSkill(magic.Spell)) choice.AddItem(magic.Name, (int)magic.Spell);
-        choice.Select(Math.Max(0, choice.GetItemIndex((int)selected)));
+        var percent = new SpinBox { Position = new Vector2(x, y), MinValue = 1, MaxValue = 95, Step = 1, Suffix = "%" };
+        parent.AddChild(percent);
+        percent.GetLineEdit().ThemeTypeVariation = "GamePercent";
+        percent.Size = new Vector2(width, 28);
+        percent.ValueChanged += _ => SettingsChanged(); return percent;
     }
 
     private void OpenSettings()
@@ -137,7 +153,8 @@ public partial class Main
         autoHp.ButtonPressed = preferences.AutoHp; hpPercent.Value = preferences.HpPercent; autoMp.ButtonPressed = preferences.AutoMp; mpPercent.Value = preferences.MpPercent;
         autoRandom.ButtonPressed = preferences.AutoRandom; randomPercent.Value = preferences.RandomPercent; autoTown.ButtonPressed = preferences.AutoTown; townPercent.Value = preferences.TownPercent;
         noMonsterRandom.ButtonPressed = preferences.NoMonsterRandom; autoRoam.ButtonPressed = preferences.AutoRoam;
-        FillSkills(singleSkill, preferences.SingleSkill, false); FillSkills(areaSkill, preferences.AreaSkill, true);
+        autoPickup.SetPressedNoSignal(preferences.AutoPickup); pickupFilters.Visible = preferences.AutoPickup;
+        pickupMode.Select(preferences.PickupWhitelist ? 1 : 0); pickupNames.Text = string.Join('\n', preferences.PickupNames);
         FillClassSettings();
         loadingSettings = false; settingsDialog.Show(); settingsDialog.MoveToFront();
     }
@@ -145,7 +162,7 @@ public partial class Main
     private void SettingsChanged()
     {
         if (loadingSettings || settingsSaveTimer == null) return;
-        settingsHint.Text = "正在自动保存…"; settingsSaveTimer.Start();
+        SettingsNotice("正在自动保存…"); settingsSaveTimer.Start();
     }
 
     private void CloseSettings()
@@ -157,13 +174,21 @@ public partial class Main
     private bool SaveSettings()
     {
         settingsSaveTimer.Stop();
+        var names = pickupNames.Text.Split(['\n', '\r', ',', '，', ';', '；'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (names.Length > 64 || names.Any(name => name.Length > 40)) { SettingsNotice("保存失败：拣取名单最多64项，每项不超过40字。"); return false; }
         var next = new ClientPreferences { Volume = (int)volumeSlider.Value, DefaultRun = movementMode.Selected == 1,
             ShowNpcNames = npcNames.ButtonPressed, ShowMonsterNames = monsterNames.ButtonPressed, ShowItemNames = itemNames.ButtonPressed, CrtFilter = crtFilter.ButtonPressed, CrtStrength = crtStrength.Selected + 1,
             AutoHp = autoHp.ButtonPressed, HpPercent = (int)hpPercent.Value, AutoMp = autoMp.ButtonPressed, MpPercent = (int)mpPercent.Value,
             AutoRandom = autoRandom.ButtonPressed, RandomPercent = (int)randomPercent.Value, AutoTown = autoTown.ButtonPressed, TownPercent = (int)townPercent.Value,
             NoMonsterRandom = noMonsterRandom.ButtonPressed, AutoRoam = autoRoam.ButtonPressed,
-            SingleSkill = (Spell)singleSkill.GetSelectedId(), AreaSkill = (Spell)areaSkill.GetSelectedId() };
-        ReadClassSettings(next); next.Normalize(); var temporary = settingsFile + "." + Guid.NewGuid() + ".tmp";
+            AutoPickup = autoPickup.ButtonPressed, PickupWhitelist = pickupMode.Selected == 1, PickupNames = names };
+        ReadClassSettings(next);
+        return PersistSettings(next);
+    }
+
+    private bool PersistSettings(ClientPreferences next)
+    {
+        next.Normalize(); var temporary = settingsFile + "." + Guid.NewGuid() + ".tmp";
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(settingsFile))!);
@@ -171,15 +196,32 @@ public partial class Main
             if (next.AutoHp && !preferences.AutoHp || next.AutoMp && !preferences.AutoMp || next.AutoRandom && !preferences.AutoRandom || next.AutoTown && !preferences.AutoTown) automation.Resume();
             preferences = next;
             if (settingsTabs.CurrentTab == 3 && skillEquipmentPending == 0) { skillPreparationPaused = false; classSkillsPaused = false; }
-            ApplyPreferences(); settingsHint.Text = "已自动保存。"; return true;
+            ApplyPreferences(); SettingsNotice("已自动保存。"); return true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { ApplyVolume(preferences.Volume); settingsHint.Text = "保存失败，更改尚未生效：" + error.Message; return false; }
+        { ApplyVolume(preferences.Volume); SettingsNotice("保存失败，更改尚未生效：" + error.Message); return false; }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
+    private void ResetSettingsConfirmation()
+    {
+        if (!settingsSaveTimer.IsStopped() && !SaveSettings()) return;
+        resetSettingsDialog.PopupCentered();
+    }
+
+    private void ResetSettings()
+    {
+        settingsSaveTimer.Stop();
+        if (!PersistSettings(new ClientPreferences())) return;
+        StopAutoBattle(); preparedSkill = null;
+        OpenSettings(); SettingsNotice("已恢复默认设置并保存。");
+    }
+
+    private void SettingsNotice(string text) { settingsHint.Text = text; settingsHint.TooltipText = text; }
+
     private void ApplyPreferences()
     {
+        if (actionTarget != 0 && !autoBattleEnabled) running = preferences.DefaultRun;
         ApplyVolume(preferences.Volume);
         World.ShowNpcNames = preferences.ShowNpcNames; World.ShowMonsterNames = preferences.ShowMonsterNames; World.ShowItemNames = preferences.ShowItemNames;
         crtOverlay.Visible = preferences.CrtFilter;

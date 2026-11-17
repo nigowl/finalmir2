@@ -27,7 +27,7 @@ for ((attempt=0; attempt<120; attempt++)); do
   sleep 1
 done
 GODOT="${GODOT_BIN:-/Applications/Godot_mono.app/Contents/MacOS/Godot}"
-if ! "$GODOT" --path "$ROOT/src/Client" --max-fps 60 -- --spell-effects "--server=http://127.0.0.1:$MIR2_RESOURCE_PORT" "--screenshot=$SKILL_TEST_ROOT/screens" > "$SKILL_TEST_ROOT/client.log" 2>&1; then
+if ! "$GODOT" --path "$ROOT/src/Client" --max-fps 60 -- "--mir2-instance=$ROOT:$MIR2_RUNTIME_ROOT:client" --spell-effects "--server=http://127.0.0.1:$MIR2_RESOURCE_PORT" "--screenshot=$SKILL_TEST_ROOT/screens" > "$SKILL_TEST_ROOT/client.log" 2>&1; then
   cat "$SKILL_TEST_ROOT/client.log" "$SKILL_TEST_ROOT/backend.log"; exit 1
 fi
 cat "$SKILL_TEST_ROOT/client.log"

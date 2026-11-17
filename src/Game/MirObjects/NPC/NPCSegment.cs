@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 ﻿using Server.MirDatabase;
 using Server.MirEnvir;
 using System.Globalization;
@@ -11,7 +11,7 @@ using Server.Library.MirDatabase;
 
 namespace Server.MirObjects
 {
-    public class NPCSegment
+    public partial class NPCSegment
     {
         protected static Envir Envir
         {
@@ -75,7 +75,7 @@ namespace Server.MirObjects
 
             for (int i = 0; i < player.NPCVar.Count; i++)
             {
-                if (!String.Equals(player.NPCVar[i].Key, key, StringComparison.CurrentCultureIgnoreCase)) continue;
+                if (!String.Equals(player.NPCVar[i].Key, key, StringComparison.OrdinalIgnoreCase)) continue;
                 player.NPCVar[i] = new KeyValuePair<string, string>(player.NPCVar[i].Key, value);
                 return;
             }
@@ -93,7 +93,7 @@ namespace Server.MirObjects
 
             foreach (KeyValuePair<string, string> t in player.NPCVar)
             {
-                if (String.Equals(t.Key, tempKey, StringComparison.CurrentCultureIgnoreCase)) return t.Value;
+                if (String.Equals(t.Key, tempKey, StringComparison.OrdinalIgnoreCase)) return t.Value;
             }
 
             return key;
@@ -1229,16 +1229,7 @@ namespace Server.MirObjects
         public List<string> ParseSay(PlayerObject player, List<string> speech)
         {
             for (var i = 0; i < speech.Count; i++)
-            {
-                var parts = speech[i].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                
-                if (parts.Length == 0) continue;
-
-                foreach (var part in parts)
-                {
-                    speech[i] = speech[i].Replace(part, ReplaceValue(player, part));
-                }
-            }
+                speech[i] = ReplaceValue(player, speech[i]);
 
             return LinkFormatter.ReplacePlaceholders(speech, (type, index) => EnsureLinkInfo(player, type, index)) ?? speech;
         }
@@ -1263,50 +1254,30 @@ namespace Server.MirObjects
             }
         }
 
-        public string ReplaceValue(PlayerObject player, string param)
+        private string PlayerTemplateValue(PlayerObject player, Match match)
         {
-            var regex = new Regex(@"\<\$(.*)\>");
-            var varRegex = new Regex(@"(.*?)\(([A-Z][0-9])\)");
-            var oneValRegex = new Regex(@"(.*?)\(((.*?))\)");
-            var twoValRegex = new Regex(@"(.*?)\(((.*?),(.*?))\)");
+            if (!TryTemplateArguments(match, out var innerMatch, out var arguments)) return match.Value;
             ConquestObject Conquest;
             ConquestGuildArcherInfo Archer;
             ConquestGuildGateInfo Gate;
             ConquestGuildWallInfo Wall;
             ConquestGuildSiegeInfo Siege;
 
-            var match = regex.Match(param);
-
-            if (!match.Success) return param;
-
-            string innerMatch = match.Groups[1].Captures[0].Value.ToUpper();
-
-            Match varMatch = varRegex.Match(innerMatch);
-            Match oneValMatch = oneValRegex.Match(innerMatch);
-            Match twoValMatch = twoValRegex.Match(innerMatch);
-
-            if (varRegex.Match(innerMatch).Success)
-                innerMatch = innerMatch.Replace(varMatch.Groups[2].Captures[0].Value.ToUpper(), "");
-            else if (twoValRegex.Match(innerMatch).Success)
-                innerMatch = innerMatch.Replace(twoValMatch.Groups[2].Captures[0].Value.ToUpper(), "");
-            else if (oneValRegex.Match(innerMatch).Success)
-                innerMatch = innerMatch.Replace(oneValMatch.Groups[2].Captures[0].Value.ToUpper(), "");
-
-            string newValue = string.Empty;
+            string newValue = null;
 
             switch (innerMatch)
             {
                 case "MONSTERCOUNT()":
-                    Map map = Envir.GetMapByNameAndInstance(oneValMatch.Groups[2].Captures[0].Value.ToUpper());
+                    Map map = Envir.GetMapByNameAndInstance(TemplateArgument(player, arguments[0]));
                     newValue = map == null ? "N/A" : map.MonsterCount.ToString();
                     break;
                 case "CONQUESTGUARD()":
-                    var val1 = FindVariable(player, "%" + twoValMatch.Groups[3].Captures[0].Value.ToUpper());
-                    var val2 = FindVariable(player, "%" + twoValMatch.Groups[4].Captures[0].Value.ToUpper());
+                    var val1 = FindVariable(player, TemplateArgumentKey(arguments[0]));
+                    var val2 = FindVariable(player, TemplateArgumentKey(arguments[1]));
 
                     int intVal1, intVal2;
 
-                    if (int.TryParse(val1.Replace("%", ""), out intVal1) && int.TryParse(val2.Replace("%", ""), out intVal2))
+                    if (int.TryParse(val1, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal1) && int.TryParse(val2, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal2))
                     {
 
                         Conquest = Envir.Conquests.FirstOrDefault(x => x.Info.Index == intVal1);
@@ -1327,10 +1298,10 @@ namespace Server.MirObjects
                     }
                     break;
                 case "CONQUESTGATE()":
-                    val1 = FindVariable(player, "%" + twoValMatch.Groups[3].Captures[0].Value.ToUpper());
-                    val2 = FindVariable(player, "%" + twoValMatch.Groups[4].Captures[0].Value.ToUpper());
+                    val1 = FindVariable(player, TemplateArgumentKey(arguments[0]));
+                    val2 = FindVariable(player, TemplateArgumentKey(arguments[1]));
 
-                    if (int.TryParse(val1.Replace("%", ""), out intVal1) && int.TryParse(val2.Replace("%", ""), out intVal2))
+                    if (int.TryParse(val1, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal1) && int.TryParse(val2, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal2))
                     {
                         Conquest = Envir.Conquests.FirstOrDefault(x => x.Info.Index == intVal1);
                         if (Conquest == null) return GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.NotFound);
@@ -1350,10 +1321,10 @@ namespace Server.MirObjects
                     }
                     break;
                 case "CONQUESTWALL()":
-                    val1 = FindVariable(player, "%" + twoValMatch.Groups[3].Captures[0].Value.ToUpper());
-                    val2 = FindVariable(player, "%" + twoValMatch.Groups[4].Captures[0].Value.ToUpper());
+                    val1 = FindVariable(player, TemplateArgumentKey(arguments[0]));
+                    val2 = FindVariable(player, TemplateArgumentKey(arguments[1]));
 
-                    if (int.TryParse(val1.Replace("%", ""), out intVal1) && int.TryParse(val2.Replace("%", ""), out intVal2))
+                    if (int.TryParse(val1, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal1) && int.TryParse(val2, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal2))
                     {
                         Conquest = Envir.Conquests.FirstOrDefault(x => x.Info.Index == intVal1);
                         if (Conquest == null) return GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.NotFound);
@@ -1373,10 +1344,10 @@ namespace Server.MirObjects
                     }
                     break;
                 case "CONQUESTSIEGE()":
-                    val1 = FindVariable(player, "%" + twoValMatch.Groups[3].Captures[0].Value.ToUpper());
-                    val2 = FindVariable(player, "%" + twoValMatch.Groups[4].Captures[0].Value.ToUpper());
+                    val1 = FindVariable(player, TemplateArgumentKey(arguments[0]));
+                    val2 = FindVariable(player, TemplateArgumentKey(arguments[1]));
 
-                    if (int.TryParse(val1.Replace("%", ""), out intVal1) && int.TryParse(val2.Replace("%", ""), out intVal2))
+                    if (int.TryParse(val1, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal1) && int.TryParse(val2, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal2))
                     {
                         Conquest = Envir.Conquests.FirstOrDefault(x => x.Info.Index == intVal1);
                         if (Conquest == null) return GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.NotFound);
@@ -1396,9 +1367,9 @@ namespace Server.MirObjects
                     }
                     break;
                 case "CONQUESTOWNER()":
-                    val1 = FindVariable(player, "%" + oneValMatch.Groups[2].Captures[0].Value.ToUpper());
+                    val1 = FindVariable(player, TemplateArgumentKey(arguments[0]));
 
-                    if (int.TryParse(val1.Replace("%", ""), out intVal1))
+                    if (int.TryParse(val1, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal1))
                     {
                         Conquest = Envir.Conquests.FirstOrDefault(x => x.Info.Index == intVal1);
                         if (Conquest == null) return string.Empty;
@@ -1408,9 +1379,9 @@ namespace Server.MirObjects
                     }
                     break;
                 case "CONQUESTGOLD()":
-                    val1 = FindVariable(player, "%" + oneValMatch.Groups[2].Captures[0].Value.ToUpper());
+                    val1 = FindVariable(player, TemplateArgumentKey(arguments[0]));
 
-                    if (int.TryParse(val1.Replace("%", ""), out intVal1))
+                    if (int.TryParse(val1, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal1))
                     {
                         Conquest = Envir.Conquests.FirstOrDefault(x => x.Info.Index == intVal1);
                         if (Conquest == null) return string.Empty;
@@ -1419,9 +1390,9 @@ namespace Server.MirObjects
                     }
                     break;
                 case "CONQUESTRATE()":
-                    val1 = FindVariable(player, "%" + oneValMatch.Groups[2].Captures[0].Value.ToUpper());
+                    val1 = FindVariable(player, TemplateArgumentKey(arguments[0]));
 
-                    if (int.TryParse(val1.Replace("%", ""), out intVal1))
+                    if (int.TryParse(val1, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal1))
                     {
                         Conquest = Envir.Conquests.FirstOrDefault(x => x.Info.Index == intVal1);
                         if (Conquest == null) return string.Empty;
@@ -1430,9 +1401,9 @@ namespace Server.MirObjects
                     }
                     break;
                 case "CONQUESTSCHEDULE()":
-                    val1 = FindVariable(player, "%" + oneValMatch.Groups[2].Captures[0].Value.ToUpper());
+                    val1 = FindVariable(player, TemplateArgumentKey(arguments[0]));
 
-                    if (int.TryParse(val1.Replace("%", ""), out intVal1))
+                    if (int.TryParse(val1, NumberStyles.Integer, CultureInfo.InvariantCulture, out intVal1))
                     {
                         Conquest = Envir.Conquests.FirstOrDefault(x => x.Info.Index == intVal1);
                         if (Conquest == null) return GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.ConquestNotFound);
@@ -1449,7 +1420,7 @@ namespace Server.MirObjects
                     }
                     break;
                 case "OUTPUT()":
-                    newValue = FindVariable(player, "%" + varMatch.Groups[2].Captures[0].Value.ToUpper());
+                    newValue = FindVariable(player, TemplateArgumentKey(arguments[0]));
                     break;
                 case "NPCNAME":
                     for (int i = 0; i < player.CurrentMap.NPCs.Count; i++)
@@ -1500,8 +1471,16 @@ namespace Server.MirObjects
                         player.Info.Equipment[(int)EquipmentSlot.Armour].FriendlyName : GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.NoArmour);
                     break;
                 case "WEAPON":
+                case "USERWEAPON":
                     newValue = player.Info.Equipment[(int)EquipmentSlot.Weapon] != null ?
                         player.Info.Equipment[(int)EquipmentSlot.Weapon].FriendlyName : GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.NoWeapon);
+                    break;
+                case "UPGRADEWEAPONFEE":
+                    var weapon = player.Info.Equipment[(int)EquipmentSlot.Weapon];
+                    newValue = weapon == null ? "0" : PlayerObject.RefineCost(weapon).ToString(CultureInfo.InvariantCulture);
+                    break;
+                case "CASTLEWARDATE":
+                    newValue = CastleWarDate();
                     break;
                 case "RING_L":
                     newValue = player.Info.Equipment[(int)EquipmentSlot.RingL] != null ?
@@ -1598,8 +1577,7 @@ namespace Server.MirObjects
                     }
                     break;
                 default:
-                    newValue = string.Empty;
-                    break;
+                    return match.Value;
 
                 case "GUILDEXTENDFEE":
                     if (player.MyGuild != null && player.MyGuild.HasGT)
@@ -1635,32 +1613,17 @@ namespace Server.MirObjects
                     newValue = (player.MyGuild.Name);
                     break;
             }
-            if (string.IsNullOrEmpty(newValue)) return param;
-
-            return param.Replace(match.Value, newValue);
+            return newValue ?? match.Value;
         }
-        public string ReplaceValue(MonsterObject Monster, string param)
+        private string MonsterTemplateValue(MonsterObject Monster, Match match)
         {
-            var regex = new Regex(@"\<\$(.*)\>");
-            var varRegex = new Regex(@"(.*?)\(([A-Z][0-9])\)");
-
-            var match = regex.Match(param);
-
-            if (!match.Success) return param;
-
-            string innerMatch = match.Groups[1].Captures[0].Value.ToUpper();
-
-            Match varMatch = varRegex.Match(innerMatch);
-
-            if (varRegex.Match(innerMatch).Success)
-                innerMatch = innerMatch.Replace(varMatch.Groups[2].Captures[0].Value.ToUpper(), "");
-
-            string newValue = string.Empty;
+            if (!TryTemplateArguments(match, out var innerMatch, out var arguments)) return match.Value;
+            string newValue = null;
 
             switch (innerMatch)
             {
                 case "OUTPUT()":
-                    newValue = FindVariable(Monster, "%" + varMatch.Groups[2].Captures[0].Value.ToUpper());
+                    newValue = FindVariable(Monster, TemplateArgumentKey(arguments[0]));
                     break;
                 case "USERNAME":
                     newValue = Monster.Name;
@@ -1699,13 +1662,10 @@ namespace Server.MirObjects
                     newValue = Settings.Guild_WarCost.ToString();
                     break;
                 default:
-                    newValue = string.Empty;
-                    break;
+                    return match.Value;
             }
 
-            if (string.IsNullOrEmpty(newValue)) return param;
-
-            return param.Replace(match.Value, newValue);
+            return newValue ?? match.Value;
         }
 
         public bool Check()
@@ -1877,14 +1837,7 @@ namespace Server.MirObjects
 
                 for (int j = 0; j < param.Count; j++)
                 {
-                    var parts = param[j].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-                    if (parts.Length == 0) continue;
-
-                    foreach (var part in parts)
-                    {
-                        param[j] = param[j].Replace(part, ReplaceValue(monster, part));
-                    }
+                    param[j] = ReplaceValue(monster, param[j]);
                 }
 
                 uint tempUint;
@@ -2085,14 +2038,7 @@ namespace Server.MirObjects
 
                 for (int j = 0; j < param.Count; j++)
                 {
-                    var parts = param[j].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-                    if (parts.Length == 0) continue;
-
-                    foreach (var part in parts)
-                    {
-                        param[j] = param[j].Replace(part, ReplaceValue(player, part));
-                    }
+                    param[j] = ReplaceValue(player, param[j]);
                 }
 
                 uint tempUint;
@@ -2187,7 +2133,7 @@ namespace Server.MirObjects
 
                         var info = Envir.GetItemInfo(param[0]);
 
-                        foreach (var item in player.Info.Inventory.Where(item => item != null && item.Info == info))
+                        foreach (var item in (info?.Type == ItemType.Quest ? player.Info.QuestInventory : player.Info.Inventory).Where(item => item != null && item.Info == info))
                         {
                             if (checkDura)
                                 if (item.CurrentDura < (dura * 1000)) continue;
@@ -3055,14 +3001,7 @@ namespace Server.MirObjects
 
                 for (int j = 0; j < param.Count; j++)
                 {
-                    var parts = param[j].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-                    if (parts.Length == 0) continue;
-
-                    foreach (var part in parts)
-                    {
-                        param[j] = param[j].Replace(part, ReplaceValue(player, part));
-                    }
+                    param[j] = ReplaceValue(player, param[j]);
 
                     if (player.NPCData.TryGetValue("NPCInputStr", out object _npcInputStr))
                     {
@@ -3379,9 +3318,10 @@ namespace Server.MirObjects
                                 break;
                             }
 
-                            for (int j = 0; j < player.Info.Inventory.Length; j++)
+                            var inventory = info.Type == ItemType.Quest ? player.Info.QuestInventory : player.Info.Inventory;
+                            for (int j = 0; j < inventory.Length; j++)
                             {
-                                UserItem item = player.Info.Inventory[j];
+                                UserItem item = inventory[j];
                                 if (item == null) continue;
                                 if (item.Info != info) continue;
 
@@ -3392,16 +3332,16 @@ namespace Server.MirObjects
 
                                 if (count > item.Count)
                                 {
-                                    player.Enqueue(new S.DeleteItem { UniqueID = item.UniqueID, Count = item.Count });
-                                    player.Info.Inventory[j] = null;
+                                    player.Enqueue(info.Type == ItemType.Quest ? new S.DeleteQuestItem { UniqueID = item.UniqueID, Count = item.Count } : new S.DeleteItem { UniqueID = item.UniqueID, Count = item.Count });
+                                    inventory[j] = null;
 
                                     count -= item.Count;
                                     continue;
                                 }
 
-                                player.Enqueue(new S.DeleteItem { UniqueID = item.UniqueID, Count = count });
+                                player.Enqueue(info.Type == ItemType.Quest ? new S.DeleteQuestItem { UniqueID = item.UniqueID, Count = count } : new S.DeleteItem { UniqueID = item.UniqueID, Count = count });
                                 if (count == item.Count)
-                                    player.Info.Inventory[j] = null;
+                                    inventory[j] = null;
                                 else
                                     item.Count -= count;
                                 break;
@@ -4758,14 +4698,7 @@ namespace Server.MirObjects
 
                 for (int j = 0; j < param.Count; j++)
                 {
-                    var parts = param[j].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-                    if (parts.Length == 0) continue;
-
-                    foreach (var part in parts)
-                    {
-                        param[j] = param[j].Replace(part, ReplaceValue(monster, part));
-                    }
+                    param[j] = ReplaceValue(monster, param[j]);
                 }
 
                 switch (act.Type)

@@ -1,4 +1,5 @@
 using Crystal.Native;
+using Client.MirObjects;
 using Godot;
 
 // Geometry and library indices follow MainDialogs, CharacterDialog and SelectScene.
@@ -18,6 +19,11 @@ public partial class OriginalArt : Control
     public GameState State = null!;
     public string Page = "hud";
     public SelectInfo? Character;
+    private SelectInfo? previewCharacter;
+    private SpriteImage? previewImage;
+    private long previewStarted;
+    internal int PreviewFrame { get; private set; } = -1;
+    internal bool PreviewReady { get; private set; }
     public override void _Ready() { MouseFilter = MouseFilterEnum.Ignore; }
     public override void _Process(double delta) { if (IsVisibleInTree()) QueueRedraw(); }
     private void Sprite(string library, int index, Vector2 position, bool offset = false)
@@ -29,17 +35,34 @@ public partial class OriginalArt : Control
     {
         if (Page == "select")
         {
+            if (Character != previewCharacter)
+            { previewCharacter = Character; previewImage = null; PreviewFrame = -1; PreviewReady = false; previewStarted = 0; }
             if (Character == null) return;
-            var start = Character.Class switch { MirClass.Warrior => 20, MirClass.Wizard => 40, MirClass.Taoist => 60, _ => 20 };
-            if (Character.Gender == MirGender.Female) start += 280;
-            Sprite("ChrSel", start + (int)(Environment.TickCount64 / 250 % 16), new Vector2(260, 420), true);
+            var start = OriginalPlayerArt.SelectionStart(Character.Class, Character.Gender);
+            if (!PreviewReady)
+            {
+                var ready = true;
+                for (var frame = 0; frame < 16; frame++) ready &= Assets.PrepareSprite("ChrSel", start + frame);
+                if (ready) { PreviewReady = true; previewStarted = Environment.TickCount64; }
+            }
+            var index = start + (PreviewReady ? (int)((Environment.TickCount64 - previewStarted) / 250 % 16) : 0);
+            // 切帧未就绪时保留上一张；先备齐原16帧，不让加载间隙画成空白。
+            if (Assets.Sprite("ChrSel", index) is { } image) { previewImage = image; PreviewFrame = index; }
+            if (previewImage != null) DrawTexture(previewImage.Texture, new Vector2(260, 420) + previewImage.Offset);
             return;
         }
         var user = State.User;
         if (user == null) return;
+        if (Page == "inventory-grid")
+        {
+            if (Assets.Sprite("Title", 196) is { } background)
+                for (var row = 0; row < 6; row++)
+                    DrawTextureRectRegion(background.Texture, new Rect2(0, row * 33, 295, 33), new Rect2(9, 37, 295, 33));
+            return;
+        }
         if (Page == "inventory")
         {
-            var ratio = Math.Clamp(State.InventoryWeight / (float)Math.Max(1, State.CalculateStats()[Stat.BagWeight]), 0, 1);
+            var ratio = Math.Clamp((float)State.InventoryWeight / (float)Math.Max(1, State.CalculateStats()[Stat.BagWeight]), 0, 1);
             var bar = ratio <= .5f ? Assets.Sprite("Prguse", 24) : Assets.Sprite("UI_32bit", ratio <= .75f ? 471 : 470);
             if (bar != null && ratio > 0)
             {
@@ -70,7 +93,7 @@ public partial class OriginalArt : Control
             DrawTextureRectRegion(orb.Texture, new Rect2(0, 646 + 80 * (1 - hp), hpOnly ? 100 : 50, 80 * hp), new Rect2(0, 80 * (1 - hp), hpOnly ? 100 : 50, 80 * hp));
             if (!hpOnly) DrawTextureRectRegion(orb.Texture, new Rect2(51, 646 + 80 * (1 - mp), 50, 80 * mp), new Rect2(51, 80 * (1 - mp), 50, 80 * mp));
         }
-        var weightRatio = Math.Clamp(State.InventoryWeight / (float)Math.Max(1, stats[Stat.BagWeight]), 0, 1);
+        var weightRatio = Math.Clamp((float)State.InventoryWeight / (float)Math.Max(1, stats[Stat.BagWeight]), 0, 1);
         var weight = weightRatio <= .5f ? Assets.Sprite("Prguse", 76) : Assets.Sprite("UI_32bit", weightRatio <= .75f ? 473 : 472);
         if (weight != null && weightRatio > 0)
         {
@@ -92,11 +115,13 @@ public partial class OriginalButton : Button
     public override void _Ready()
     {
         FocusMode = FocusModeEnum.None;
+        if (Text.Length > 0) return;
         foreach (var state in new[] { "normal", "hover", "pressed", "hover_pressed", "disabled", "focus" }) AddThemeStyleboxOverride(state, new StyleBoxEmpty());
     }
     public override void _Process(double delta) { if (IsVisibleInTree()) QueueRedraw(); }
     public override void _Draw()
     {
+        if (Text.Length > 0) return;
         var index = Index;
         if (IsPressed()) index = PressedIndex < 0 ? Index + 2 : PressedIndex;
         else if (IsHovered()) index = HoverIndex < 0 ? Index + 1 : HoverIndex;

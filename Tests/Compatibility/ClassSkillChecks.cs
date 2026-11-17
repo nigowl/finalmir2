@@ -8,22 +8,23 @@ internal static class ClassSkillChecks
 {
     public static void Run(Action<bool, string> check)
     {
-        var preferences = new ClientPreferences();
+        var preferences = new ClientPreferences { SmartBattle = false };
         check(!preferences.AutoSwapAmulet && !preferences.SmartHalfMoon && !preferences.SmartThrusting && !preferences.AutoPoison &&
             !preferences.AutoSummon && !preferences.AutoHeal && preferences.AutoSkills.Count == 0, "职业辅助默认开启");
         preferences = new() { AutoSwapAmulet = true, AutoHeal = true, HealPercent = 999, SummonSkill = Spell.FireBall,
             AutoSkills = [Spell.FireBall, Spell.MagicShield, Spell.FlamingSword, Spell.Haste, Spell.Concentration] };
         preferences.Normalize();
         var saved = JsonSerializer.Deserialize<ClientPreferences>(JsonSerializer.Serialize(preferences))!;
-        check(saved.AutoSwapAmulet && saved.AutoHeal && saved.HealPercent == 95 && saved.AutoSkills.SetEquals([Spell.MagicShield, Spell.FlamingSword]) &&
-            saved.SummonSkill == Spell.None, "职业设置保存或三职业技能白名单错误");
+        check(saved.AutoSwapAmulet && saved.AutoHeal && saved.HealPercent == 95 && saved.AutoSkills.SetEquals([Spell.MagicShield, Spell.FlamingSword, Spell.Haste, Spell.Concentration]) &&
+            saved.SummonSkill == Spell.None, "职业设置保存或五职业技能白名单错误");
         var state = new GameState { BaseStats = new BaseStats(MirClass.Taoist) { Stats = [new BaseStat(Stat.HP) { Base = 100 }, new BaseStat(Stat.MP) { Base = 100 }] } };
         state.Apply(new S.UserInformation { ObjectID = 1, Class = MirClass.Taoist, HP = 100, MP = 100, Location = new Point(10, 10),
             Inventory = new UserItem[10], Equipment = new UserItem[14], QuestInventory = [] });
         var now = Environment.TickCount64;
         ClientMagic Learn(Spell spell) { var magic = new ClientMagic { Spell = spell, BaseCost = 10, CastTime = now - 20000 }; state.User!.Magics.Add(magic); return magic; }
-        preferences = new() { AutoSkills = Enum.GetValues<MirClass>().SelectMany(ClassSkillRules.Maintained).ToHashSet() };
+        preferences = new() { SmartBattle = false, AutoSkills = Enum.GetValues<MirClass>().SelectMany(ClassSkillRules.Maintained).ToHashSet() };
         foreach (var spell in preferences.AutoSkills) Learn(spell);
+        Learn(Spell.Meditation);
         var target = new Actor { Id = 2, Kind = ObjectType.Monster, Location = new Point(11, 10) }; state.Actors[2] = target;
         foreach (var job in Enum.GetValues<MirClass>())
         {
@@ -59,6 +60,9 @@ internal static class ClassSkillChecks
         check(ClassSkillRules.Next(state, preferences, null, false, now) == Spell.None, "自疗没有5秒最短间隔");
         check(!ClassSkillRules.Confirmed(state, Spell.Healing, 1, 0, 70), "自疗没有实际回血即算成功");
         state.User.HP = 71; check(ClassSkillRules.Confirmed(state, Spell.Healing, 1, 0, 70), "实际自疗回血未确认");
+        state.Apply(new S.ObjectPlayer{ObjectID=918,Name="实际队友"});state.Actors[918].Health=40;
+        check(!ClassSkillRules.Confirmed(state,Spell.Healing,918,0,40),"治疗队友被本人回血误确认");
+        state.Actors[918].Health=41;check(ClassSkillRules.Confirmed(state,Spell.Healing,918,0,40),"队友实际回血没有确认");
         state.StorageActive = true;
         check(ClassSkillRules.Next(state, preferences, target, true, now) == Spell.None, "仓库操作中仍自动施法"); state.StorageActive = false;
         state.TradePartner = "隔离交易";
@@ -90,8 +94,8 @@ internal static class ClassSkillChecks
         check(SkillMaterials.Missing(state, materials).Contains("5 份绿毒粉"), "毒云数量不足没有可见错误"); green.Count = 10;
         state.User.Equipment[6] = green;
         check(materials.All(m => SkillMaterials.Equipped(state, m)), "毒云双耗材已装备仍反复换装");
-        learn(Spell.Poisoning); var preferences = new ClientPreferences { AutoPoison = true };
-        check(ClassSkillRules.Next(state, preferences, target, false, now) == Spell.None && ClassSkillRules.Next(state, preferences, target, true, now) == Spell.Poisoning, "自动施毒没有限制为挂机战斗");
+        learn(Spell.Poisoning); var preferences = new ClientPreferences { SmartBattle = false, AutoPoison = true };
+        check(ClassSkillRules.Next(state, preferences, target, false, now) == Spell.Poisoning && ClassSkillRules.Next(state, preferences, target, true, now) == Spell.Poisoning, "手动与挂机战斗未共用自动施毒");
         target.Kind = ObjectType.Merchant;
         check(ClassSkillRules.Next(state, preferences, target, true, now) == Spell.None, "自动施毒误打NPC"); target.Kind = ObjectType.Monster;
         target.MasterObjectId = state.User.ObjectID;

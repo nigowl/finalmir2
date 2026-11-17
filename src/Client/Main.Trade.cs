@@ -1,4 +1,5 @@
 using Godot;
+using Crystal.Native;
 using C = ClientPackets;
 using S = ServerPackets;
 
@@ -30,9 +31,12 @@ public partial class Main
         ArtButton(own, "Prguse2", 360, 181, 3, "取消交易并退回报价", CancelTrade);
         tradeName = Text(own, "", 20, 6, 155); tradeName.HorizontalAlignment = HorizontalAlignment.Center;
         guestTradeName = Text(guest, "", 20, 6, 164); guestTradeName.HorizontalAlignment = HorizontalAlignment.Center;
+        foreach (var title in new[] { tradeName, guestTradeName })
+        { title.Position = new Vector2(28, 4); title.Size = new Vector2(148, 24); title.AddThemeFontSizeOverride("font_size", 12); title.ClipText = true; title.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; }
         tradeGold = Button(own, "0", 35, 120, 90, ShowTradeAmount); CellStyle(tradeGold); tradeGold.TooltipText = "增加交易金币；取消交易会退回";
-        guestTradeGold = Text(guest, "0", 35, 119, 90); guestTradeGold.HorizontalAlignment = HorizontalAlignment.Center;
-        tradeConfirm = ArtButton(own, "Title", 520, 135, 120, "确认当前报价 / 取消确认", ToggleTradeLock);
+        guestTradeGold = Text(guest, "0", 35, 121, 90); guestTradeGold.HorizontalAlignment = HorizontalAlignment.Center;
+        tradeConfirm = ArtButton(own, "Title", 520, 135, 120, "确认当前报价 / 取消确认", ToggleTradeLock, "确认");
+        tradeConfirm.Size = new Vector2(60, ClientUi.ButtonHeight); tradeConfirm.ToggleMode = true;
         for (var i = 0; i < 10; i++)
         {
             var index = i;
@@ -122,9 +126,11 @@ public partial class Main
         else { tradeInvitation.DialogText = $"{State.TradeInvitation} 请求与你交易，是否接受？"; if (!tradeInvitation.Visible) tradeInvitation.PopupCentered(); }
         icons.RemoveAll(pair => tradeCells.Contains(pair.button) || guestTradeCells.Contains(pair.button));
         tradeName.Text = State.User?.Name ?? ""; guestTradeName.Text = State.TradePartner;
+        tradeName.TooltipText = tradeName.Text; guestTradeName.TooltipText = guestTradeName.Text;
         tradeGold.Text = State.TradeGold.ToString("N0"); guestTradeGold.Text = State.GuestTradeGold.ToString("N0");
         tradeGold.Disabled = tradeConfirm.Disabled = tradeBusy || State.PendingTradeGold != 0;
         tradeConfirm.Index = State.TradeLocked ? 521 : 520; tradeConfirm.HoverIndex = 521; tradeConfirm.PressedIndex = 522;
+        tradeConfirm.SetPressedNoSignal(State.TradeLocked); tradeConfirm.Text = State.TradeLocked ? "取消确认" : "确认";
         tradeNotice.Text = tradeBusy || State.PendingTradeGold != 0 ? "等待服务端确认报价…" : State.TradeLocked ? "已确认 · 等待对方确认；点击可取消确认" : "核对对方报价后确认 · 报价变化需双方重新确认";
         for (var i = 0; i < 10; i++)
         foreach (var peer in new[] { false, true })
@@ -148,7 +154,7 @@ public partial class Main
         }
         else if (draggedTradeItem != 0)
         {
-            var bag = inventorySlots.FirstOrDefault(pair => pair.button.IsVisibleInTree() && pair.button.GetGlobalRect().HasPoint(GetGlobalMousePosition()));
+            var bag = InventoryDropAt(GetGlobalMousePosition(), State.TradeItems.FirstOrDefault(item => item?.UniqueID == draggedTradeItem));
             if (bag.button != null) RetrieveTradeItem(Array.FindIndex(State.TradeItems, item => item?.UniqueID == draggedTradeItem), bag.slot);
             draggedTradeItem = 0;
         }

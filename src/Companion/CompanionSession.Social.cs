@@ -23,7 +23,7 @@ public sealed partial class CompanionSession
     {
         if(packet is S.GroupInvite && state.GroupInvitation.Length>0)
         {
-            var accept=Profile.AcceptGroup && Profile.Traits.Social+Profile.Traits.Helpfulness>=70;
+            var accept=Profile.AcceptGroup && (Knowledge?.Party?.Peers.Contains(state.GroupInvitation)==true || Profile.Traits.Social+Profile.Traits.Helpfulness>=70);
             await connection.Send(new C.GroupInvite{AcceptInvite=accept});
             if(accept)await Say("!!一起走，我会先准备好补给。");
         }

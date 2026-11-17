@@ -17,23 +17,24 @@ public partial class Main
         characterName.MaxLength = Globals.MaxCharacterNameLength;
         characterName.TextSubmitted += _ => CreateCharacter();
         characterClass = new OptionButton { Position = new Vector2(240, 18), Size = new Vector2(120, 28) };
-        foreach (var job in new[] { "战士", "法师", "道士" }) characterClass.AddItem(job);
-        create.AddChild(characterClass);
+        foreach (var job in Enum.GetValues<MirClass>()) characterClass.AddItem(job.ToLocalizedString());
+        create.AddChild(characterClass); characterClass.Size = new Vector2(120, 28);
         gender = new OptionButton { Position = new Vector2(375, 18), Size = new Vector2(90, 28) };
-        gender.AddItem("男"); gender.AddItem("女"); create.AddChild(gender);
-        createCharacterButton = Button(create, "创建角色", 485, 18, 120, CreateCharacter);
-        Button(create, "取消", 665, 18, 120, () => create.Hide());
+        gender.AddItem("男"); gender.AddItem("女"); create.AddChild(gender); gender.Size = new Vector2(90, 28);
+        createCharacterButton = Button(create, "创建角色", 485, 19, 120, CreateCharacter);
+        Button(create, "取消", 665, 19, 120, () => create.Hide());
     }
 
     private void OpenCharacterCreation()
     {
+        if (pendingCharacterDeletion >= 0) return;
         characterCreation.Show();
         if (characterCreateSentAt == 0) { selectionNotice.Text = ""; characterName.GrabFocus(); }
     }
 
     private void CreateCharacter()
     {
-        if (scene != "selection" || characterCreateSentAt != 0) return;
+        if (scene != "selection" || characterCreateSentAt != 0 || pendingCharacterDeletion >= 0) return;
         if (!HandshakeReady || !Connection.Connected) { selectionNotice.Text = "连接已断开，请重新登录。"; return; }
         var name = characterName.Text.Trim();
         if (!Regex.IsMatch(name, @"^[\u4e00-\u9fa5_A-Za-z0-9]{" + Globals.MinCharacterNameLength + "," + Globals.MaxCharacterNameLength + "}$"))
@@ -48,17 +49,21 @@ public partial class Main
     private void SetCharacterCreationBusy(bool busy)
     {
         createCharacterButton.Disabled = characterClass.Disabled = gender.Disabled = busy;
+        deleteCharacterButton.Disabled = busy || pendingCharacterDeletion >= 0 || State.Characters.Count == 0;
         characterName.Editable = !busy;
     }
 
     internal void ProcessCharacterCreation(long now)
     {
+        if (pendingCharacterDeletion >= 0 && now - characterDeleteSentAt >= 10000)
+            selectionNotice.Text = "等待删角回执超时，请重新登录核对角色列表；不会自动重复提交。";
         if (characterCreateSentAt != 0 && now - characterCreateSentAt >= 10000)
             selectionNotice.Text = "等待创建回执超时，请退出后重新登录核对角色列表；不会自动重复提交。";
     }
 
     private void ResetCharacterCreation()
     {
+        ResetCharacterDeletion();
         characterCreateSentAt = 0;
         SetCharacterCreationBusy(false);
         characterCreation.Hide();

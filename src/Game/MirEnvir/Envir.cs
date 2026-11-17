@@ -1,4 +1,4 @@
-using ClientPackets;
+﻿using ClientPackets;
 using Server.Library.MirDatabase;
 using Server.Library.Utils;
 using Server.MirDatabase;
@@ -32,6 +32,8 @@ namespace Server.MirEnvir
 
         public static Random GetThreadRandom() =>
             RandomWrapper.Value;
+
+        public double NextDouble() => RandomWrapper.Value.NextDouble();
 
         public int Next() =>
             RandomWrapper.Value.Next();
@@ -4117,7 +4119,7 @@ namespace Server.MirEnvir
                 return;
             }
 
-            if (!Globals.IsClassicClass(p.Class))
+            if (!Settings.CanCreateClass(p.Class))
             {
                 c.Enqueue(new ServerPackets.NewCharacter { Result = 3 });
                 return;
@@ -4179,7 +4181,7 @@ namespace Server.MirEnvir
                 return false;
             }
 
-            if (!Globals.IsClassicClass(p.Class))
+            if (!Enum.IsDefined(p.Class))
             {
                 c.Enqueue(new S.NewHero { Result = 3 });
                 return false;

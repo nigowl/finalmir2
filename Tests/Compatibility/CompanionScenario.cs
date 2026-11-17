@@ -61,7 +61,7 @@ internal static class CompanionScenario
         Console.WriteLine($"已设置隔离回城场景：10HP、卷轴2张、禁药/禁地牢逃脱、禁回城={denied}。");
     }
 
-    public static void PrepareHealing(ProjectPaths paths, int characterId)
+    public static void PrepareHealing(ProjectPaths paths, int characterId, bool retirement=false)
     {
         if(!paths.Data.Contains("mir2-companions-",StringComparison.Ordinal))throw new InvalidOperationException("只允许修改本测试创建的隔离世界。");
         using var ownership=new FileStream(Path.Combine(paths.Data,".server.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -77,10 +77,16 @@ internal static class CompanionScenario
         character.Inventory=new UserItem[46];character.Equipment=new UserItem[14];
         var healing=world.MagicInfoList.Single(magic=>magic.Spell==Spell.Healing);
         healing.BaseCost=4;healing.LevelCost=0;healing.PowerBase=15;healing.PowerBonus=0;healing.DelayBase=1800;
+        if(retirement)
+        {
+            var reserve=new ItemInfo{Index=++world.ItemIndex,Name="NativeHealingReserve",Type=ItemType.Weapon,Durability=5000,Stats=new Stats{[Stat.HP]=2000}};
+            world.ItemInfoList.Add(reserve);character.Equipment[0]=world.CreateFreshItem(reserve);
+            world.GetMapInfo(character.CurrentMapIndex).NoDrug=true;
+        }
         character.Magics=[new Server.MirDatabase.UserMagic(Spell.Healing)];
         foreach(var map in world.MapInfoList)map.Respawns.Clear();
         world.SaveDB();world.SaveAccounts();
-        Console.WriteLine("已设置隔离低血道士：25HP/74MP、已学治愈术、无药品/装备、非安全区、无怪物。");
+        Console.WriteLine(retirement?"已设置隔离安静退场：低血道士、原治愈术、额外2000最大生命、无药品/怪物，不能反复施法刷新退出保护。":"已设置隔离低血道士：25HP/74MP、已学治愈术、无药品/装备、非安全区、无怪物。");
     }
 
     public static void Prepare(ProjectPaths paths,int characterId,bool variant=false)

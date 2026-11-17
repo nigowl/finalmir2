@@ -63,6 +63,24 @@ internal static class SkillDamageChecks
             var expected = spell is Spell.Slaying ? 220 : spell is Spell.DoubleSlash or Spell.TwinDrakeBlade ? 440 : 100;
             check(10000 - target.HP == expected, $"{spell} 实际HP扣减不符原近战单段/双段规则：{10000 - target.HP}/{expected}");
         }
+        player.Stats[Stat.SkillGainMultiplier] = 1;
+        Reset(Spell.Slaying); var practice = player.Info.Magics.Single(); practice.Level = 0; practice.Info.Need1 = 5000;
+        player.Slaying = true; player.Attack(MirDirection.Right, Spell.Slaying); Complete();
+        check(practice.Experience is >= 1 and <= 3 && player.Packets.OfType<S.MagicLeveled>().Count(packet => packet.Spell == Spell.Slaying) == 1,
+            "实际攻杀未增长熟练度或未返回原MagicLeveled");
+        Reset(Spell.Thrusting); practice = player.Info.Magics.Single(); practice.Level = 0; practice.Info.Need1 = 5000;
+        map.Cells[11, 10].Remove(target); target.CurrentLocation = new(12, 10); map.Cells[12, 10].Add(target);
+        player.MP = 0; player.Attack(MirDirection.Right, Spell.Thrusting); Complete();
+        check(target.HP == 9780 && player.MP == 0 && practice.Experience is >= 1 and <= 3 && player.Packets.OfType<S.MagicLeveled>().Count(packet => packet.Spell == Spell.Thrusting) == 1,
+            "隔位刺杀未实际伤害/增加熟练度，或错误耗蓝");
+        var front = new Target(new MonsterInfo { Level = 1 }) { HP = 10000, Stats = new Stats { [Stat.HP] = 10000 }, ArmourRate = 1, DamageRate = 1,
+            CurrentMap = map, CurrentLocation = new(11, 10) };
+        front.Node = new LinkedListNode<MapObject>(front); map.Cells[11, 10].Add(front);
+        player.ActionTime = player.AttackTime = 0; player.Packets.Clear(); practice.Experience = 0;
+        player.Attack(MirDirection.Right, Spell.Thrusting); Complete();
+        check(front.HP == 9900 && target.HP == 9560 && practice.Experience is >= 1 and <= 3 && player.Packets.OfType<S.MagicLeveled>().Count(packet => packet.Spell == Spell.Thrusting) == 1,
+            "刺杀前后两格没有各自命中，或一刀重复结算熟练度");
+        map.Cells[11, 10].Remove(front); map.Cells[12, 10].Remove(target); target.CurrentLocation = new(11, 10); map.Cells[11, 10].Add(target);
         foreach (var spell in new[] { Spell.FireBall, Spell.GreatFireBall, Spell.ThunderBolt, Spell.SoulFireBall, Spell.FrostCrunch, Spell.FlameDisruptor, Spell.StraightShot, Spell.DoubleShot })
         {
             Reset(spell);

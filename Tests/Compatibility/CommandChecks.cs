@@ -41,6 +41,17 @@ internal static class CommandChecks
             Run("@mm 0"); check(player.Messages.Any(text => text.Contains("无权限")), "Short GM command bypassed permissions or failed silently");
             Run("@books Wizard"); check(player.Info.Magics.Count == 0 && player.Messages.Any(text => text.Contains("无权限")), "普通玩家可使用全部技能书GM命令");
             Run("@mv 1 2"); check(player.Messages.Any(text => text.Contains("无权限")), "无传送装备移动命令未说明权限");
+            player.SpecialMode = SpecialItemMode.Teleport;
+            Run("@mv 12 14"); check(player.Teleports == 1 && player.TeleportTarget == new System.Drawing.Point(12,14) && player.Messages.Any(text => text.Contains("坐标传送成功")), "传送装备未通过原MOVE权限或没有成功反馈");
+            Run("@mv 13 15"); check(player.Teleports == 1 && !player.Messages.Any(text => text.Contains("坐标传送成功")), "传送装备绕过原冷却");
+            player.LastTeleportTime = 0; player.CurrentMap.Info.NoPosition = true;
+            Run("@mv 13 15"); check(player.Teleports == 1, "传送装备绕过地图禁坐标传送");
+            player.IsGM = true;
+            Run("@mv 13 15"); check(player.Teleports == 2 && player.TeleportTarget == new System.Drawing.Point(13,15), "GM未保留原禁坐标传送地图权限");
+            player.TeleportAllowed = false;
+            Run("@mv 999999 999999"); check(player.Messages.Any(text => text.Contains("坐标传送失败")) && !player.Messages.Any(text => text.Contains("命令已处理")), "非法落点失败仍被报告成已处理或成功");
+            Run("@mv -1 2"); check(player.Teleports == 3 && player.Messages.Any(text => text.Contains("移动参数错误")), "负坐标被传给传送执行器");
+            player.SpecialMode = SpecialItemMode.None; player.CurrentMap.Info.NoPosition = false; player.LastTeleportTime = 0; player.IsGM = false;
             Run("@fd 不存在"); check(player.Messages.Any(text => text.Contains("无权限")), "无探测装备查找命令未说明权限");
             Run("@! 内容"); check(player.Messages.Any(text => text.Contains("无权限")), "原公告简写绕过权限提示");
             player.IsGM = true;
@@ -63,6 +74,11 @@ internal static class CommandChecks
     private sealed class CommandPlayer : PlayerObject
     {
         public readonly List<string> Messages = new();
+        public int Teleports;
+        public bool TeleportAllowed = true;
+        public System.Drawing.Point TeleportTarget;
+        public override bool Teleport(Map map, System.Drawing.Point point, bool effects = true, byte effectnumber = 0)
+        { Teleports++; TeleportTarget = point; return TeleportAllowed; }
         public override void Enqueue(Packet packet) { }
         public override void ReceiveChat(string text, ChatType type) { Messages.Add(text); base.ReceiveChat(text, type); }
     }

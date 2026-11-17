@@ -1,0 +1,12 @@
+<MudSelect T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="行会发展" @bind-Value="Preferences.Mode">
+    <MudSelectItem T="string" Value="@("off")">关闭</MudSelectItem>
+    <MudSelectItem T="string" Value="@("join")">主动入会</MudSelectItem>
+    <MudSelectItem T="string" Value="@("create")">自主建会</MudSelectItem>
+    <MudSelectItem T="string" Value="@("auto")">优先入会，无合适行会时筹备建会</MudSelectItem>
+</MudSelect>
+<MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="目标行会 / 拟建名称（留空自动）" MaxLength="20" Immediate="true" Disabled="@(Preferences.Mode=="off")" @bind-Value="Preferences.Name" />
+<MudCheckBox T="bool" Label="参与本行会攻城" Disabled="@(Preferences.Mode=="off")" @bind-Value="Preferences.Siege" />
+<MudAlert Severity="Severity.Info" Class="my-2">建会走实际NPC，满足当前版本等级、金币和材料要求后执行，并保留至少半数金币。入会需邀请确认；允许招收的陪玩会长会接纳申请。攻城还须开启陪玩PK总开关，只参与本会有资格的已开战城池；不会自动宣战、退会或操作行会仓库。</MudAlert>
+@code {
+    [Parameter,EditorRequired] public CompanionGuildPreferences Preferences { get; set; } = null!;
+}

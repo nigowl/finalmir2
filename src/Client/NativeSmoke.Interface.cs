@@ -29,7 +29,7 @@ public partial class NativeSmoke
             throw new Exception("The one-line header omitted the map code, coordinates or cache status.");
         var chat = Client.FindChildren("*", "LineEdit", true, false).Cast<LineEdit>().Single(edit => edit.MaxLength == Globals.MaxChatLength);
         var weight = (Label)Client.FindChild("HudWeight", true, false); var free = (Label)Client.FindChild("HudFree", true, false);
-        if (weight.Text != (State.CalculateStats()[Stat.BagWeight] - State.InventoryWeight).ToString() || free.Text != State.User.Inventory.Count(item => item == null).ToString() ||
+        if (weight.Text != (State.CalculateStats()[Stat.BagWeight] - State.InventoryWeight).ToString("0.##") || free.Text != State.User.Inventory.Count(item => item == null).ToString() ||
             weight.GetRect().End.X > 993 || free.GetRect().End.X > 1020 || weight.Position.Y != 717 || free.Position.Y != 717)
             throw new Exception("Lower-right HUD omitted original remaining weight/free cells or escaped their fields.");
         if (chat.GetRect().End.X > 858 || chat.GetRect().End.Y > 735 || chat.Position.X != 231 || chat.Size.Y > 19)
@@ -70,6 +70,7 @@ public partial class NativeSmoke
         await Screenshot("presentation-equipment");
         Client._UnhandledInput(equipment);
         await VerifyEquipmentTabs();
+        await VerifyMapFrameFill();
         if (Argument("--screenshot").Length > 0)
         {
             var route = Enumerable.Range(0, 8).Select(direction => Functions.PointMove(State.User!.Location, (MirDirection)direction, 60))
@@ -85,9 +86,11 @@ public partial class NativeSmoke
     private async Task VerifyMapAndMovement(Point start)
     {
         stage = "expanded map and movement cadence";
+        await VerifyMapTeleportDenied(start);
         var map = Client.MiniMap;
         var revision = map.Revision;
-        if (map.Position.Y != 8 || map.GetRect().End.X != 1016 || map.ImageRect.End.Y > map.Size.Y - 18 || map.GetNode<Label>("MapCaption").Text != State.Map!.Title)
+        if (map.Position.Y != 8 || map.GetRect().End.X != 1016 || map.ImageRect.End.Y > map.Size.Y - 18 || map.GetNode<Label>("MapCaption").Text != State.Map!.Title ||
+            map.GetNode<Label>("MapCaption").Position.X < 24 || map.GetNode<Label>("MapCaption").GetRect().End.X > map.Size.X - 24)
             throw new Exception("The small map lost its 8px top/right inset or caption strip.");
         using (var mouse = new InputEventMouseButton { Position = map.ImageRect.GetCenter(), ButtonIndex = MouseButton.Left, Pressed = true }) map._GuiInput(mouse);
         if (!map.Expanded) throw new Exception("Clicking the small map did not expand it.");
@@ -143,6 +146,7 @@ public partial class NativeSmoke
         if (!effectsPlayed.Any(id => id is >= 10001 and <= 10039)) throw new Exception("Walking/running never played an original footstep stream.");
         if (Client.World.Visual(State.Me!) != new Vector2(target.X, target.Y)) throw new Exception("Navigation stopped before the visual destination.");
         GD.Print($"PASS native map/navigation: M toggle, shared revision, letterbox/edge/cell conversion, walk/run interval={interval}ms, max sampled frame={maxFrame}ms.");
+        await VerifyRingMapTeleport();
         await VerifyFullAttack();
     }
 
@@ -186,6 +190,7 @@ public partial class NativeSmoke
         var label = Client.FindChildren("*", "Label", true, false).Cast<Label>().Single(label => label.Text == expected);
         if (!new Rect2(198, 613, 176, 19).Encloses(label.GetRect())) throw new Exception("The last map/coordinate label escaped the original gold field.");
         var row = Client.FindChildren("*", "VBoxContainer", true, false).Cast<VBoxContainer>().Single(box => box.Position == new Vector2(637, 194));
+        await VerifyCharacterCardArtwork(row);
         if (row.FindChildren("*", "Button", true, false).Cast<Button>().Any(button => button.GetThemeStylebox("hover") is not StyleBoxEmpty)) throw new Exception("Character selection retained the additional rectangular border.");
         await Screenshot("selection-location");
         GD.Print("PASS native selection: optional authenticated location response, selected-character label and no extra row border.");
@@ -196,7 +201,7 @@ public partial class NativeSmoke
         using var key = new InputEventKey { PhysicalKeycode = Key.K, Pressed = true };
         Client._UnhandledInput(key);
         var button = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "技能 K");
-        var tabs = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Where(button => button.Library == "Title" && button.Position.Y == 70).ToArray();
+        var tabs = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Where(button => button.Text is "人物" or "属性" or "状态" or "技能").ToArray();
         var panel = tabs[0].GetParent<Control>();
         if (!panel.Visible || tabs.Single(tab => tab.TooltipText == "技能").Index != 503 || tabs.Count(tab => tab.Index >= 500) != 1) throw new Exception("The skill page lacks a single original selected tab.");
         Client._UnhandledInput(key); if (panel.Visible) throw new Exception("Pressing K twice did not close the skill dialog.");
@@ -224,7 +229,7 @@ public partial class NativeSmoke
             }
             else
             {
-                if (!columns[0].Text.Contains($"背包负重 {State.InventoryWeight}/") || !columns[1].Text.Contains(Stat.PoisonRecovery.ToLocalizedString()) || columns[0].Text.Contains("最低攻击"))
+                if (!columns[0].Text.Contains($"背包负重 {State.InventoryWeight:0.##}/") || !columns[1].Text.Contains(Stat.PoisonRecovery.ToLocalizedString()) || columns[0].Text.Contains("最低攻击"))
                     throw new Exception("状态页仍与属性页相同或未显示负重和抗性。");
                 await Screenshot("status-two-columns");
             }
@@ -247,7 +252,7 @@ public partial class NativeSmoke
         {
             Client.SetDestination(State.User.Location);
             await Until(() => Environment.TickCount64 - State.Me!.MotionTime >= Actor.MoveDuration);
-            var point = new Vector2(260 + slot * 35, 637);
+            var point = ((Control)Client.FindChild($"ItemShortcut{slot + 1}", true, false)).GetGlobalRect().GetCenter();
             using var motion = new InputEventMouseMotion { Position = point, GlobalPosition = point };
             GetViewport().PushInput(motion, true);
             foreach (var pressed in new[] { true, false })

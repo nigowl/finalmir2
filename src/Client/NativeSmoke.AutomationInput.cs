@@ -23,6 +23,15 @@ public partial class NativeSmoke
             .First(point => point != State.User!.Location && Client.World.Walkable(point) && Client.World.NextStep(point) != null &&
                 Client.World.ActorAt(Client.World.Screen(point)+new Vector2(24,16))==null && !State.Actors.Values.Any(actor => actor.Location == point));
         var position = Client.World.Screen(target) + new Vector2(24, 16);
+        await ClickMapTeleport(target);
+        var teleportConfirm = (ConfirmationDialog)Client.FindChild("StopBattleConfirmation", true, false);
+        if (!teleportConfirm.Visible || !teleportConfirm.DialogText.Contains("传送") || menu.GetItemText(menu.GetItemIndex(7)) != "停止挂机")
+            throw new Exception("挂机中右键地图未确认便传送或提前停止挂机。");
+        teleportConfirm.GetCancelButton().EmitSignal(BaseButton.SignalName.Pressed);
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        if (menu.GetItemText(menu.GetItemIndex(7)) != "停止挂机") throw new Exception("取消地图传送仍停止了挂机。");
+        Client.MiniMap.SetExpanded(false);
+        position = Client.World.Screen(target) + new Vector2(24, 16);
         using var ground = new InputEventMouseButton { Position = position, GlobalPosition = position, ButtonIndex = MouseButton.Left, Pressed = true };
         Client._UnhandledInput(ground);
         var confirm = (ConfirmationDialog)Client.FindChild("StopBattleConfirmation", true, false);

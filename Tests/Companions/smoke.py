@@ -65,7 +65,7 @@ def start():
 def stop():
     p,log=children[-1];p.terminate();p.wait(60);assert p.returncode==0,pathlib.Path(log.name).read_text();log.close()
 try:
-    subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--fixture',str(data)],cwd=repo,check=True)
+    subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--fixture',str(data),'--companion-fixture'],cwd=repo,check=True)
     start()
     base='/management/companions'
     server_settings=call('/management/settings')

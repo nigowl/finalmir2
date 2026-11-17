@@ -1,4 +1,6 @@
 @using Microsoft.JSInterop
+@using Shared
+@using Point = System.Drawing.Point
 @implements IAsyncDisposable
 @inject IJSRuntime Js
 <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-2">
@@ -14,19 +16,28 @@
         {
             <g data-marker="@($"{marker.Kind}:{marker.Id}")" class="@($"map-marker {marker.Kind}")" style="pointer-events:visiblePainted" role="button" tabindex="0" aria-label="@Label(marker)" @onclick="@(() => Select(marker))" @onkeydown="@((KeyboardEventArgs e) => Key(e, marker))" @onclick:stopPropagation="true">
                 <title>@Label(marker)</title>
-                @if (marker.Spread > 0) { <rect x="@(marker.X - marker.Spread)" y="@(marker.Y - marker.Spread)" width="@(2 * marker.Spread + 1)" height="@(2 * marker.Spread + 1)" class="map-spread" /> }
-                <circle cx="@(marker.X + .5)" cy="@(marker.Y + .5)" r="@F(Radius)" />
+                @if (marker.Spread > 0 && centers.GetValueOrDefault((marker.X, marker.Y)) is { } center)
+                {
+                    <circle cx="@(center.X + .5)" cy="@(center.Y + .5)" r="@marker.Spread" class="map-spread" pointer-events="none" />
+                }
                 @if (marker.Kind.Contains("npc"))
                 {
+                    <g>
+                    <circle cx="@(marker.X + .5)" cy="@(marker.Y + .5)" r="@F(Radius)" class="map-npc-point" />
                     <image href="@PopulationMarker.NpcImage(marker.Image)" x="@F(marker.X + .5 - Radius * 2)" y="@F(marker.Y + .5 - Radius * 5)" width="@F(Radius * 4)" height="@F(Radius * 5)" preserveAspectRatio="xMidYMax meet" />
+                    <text transform="@($"translate({F(marker.X + Radius * 1.5)} {F(marker.Y - Radius)}) scale(1 1.5)")" style="@($"font-size:{F(Radius * 1.6)}px")">@marker.Name</text>
+                    </g>
                 }
-                <text transform="@($"translate({F(marker.X + Radius * 1.5)} {F(marker.Y - Radius)}) scale(1 1.5)")" style="@($"font-size:{F(Radius * 1.6)}px")">@marker.Name @(marker.Kind.Contains("spawn") ? $"×{marker.Count}" : "")</text>
+                else
+                {
+                    <g><text class="map-spawn-label" text-anchor="middle" dominant-baseline="central" transform="@($"translate({F(marker.X + .5)} {F(marker.Y + .5)}) scale(1 1.5)")" style="@($"font-size:{F(Radius * 2)}px")"><tspan>@System.Globalization.StringInfo.GetNextTextElement(marker.Name)</tspan><tspan font-size="80%">×@marker.Count</tspan></text></g>
+                }
             </g>
         }
         @if (Point != null) { <rect x="@Point.X" y="@Point.Y" width="1" height="1" class="map-cell" pointer-events="none" /> }
     </svg>
 </div>
-<MudText Typo="Typo.caption" Class="mt-2">@Map.Width × @Map.Height 格 · @Map.ImageSource · 绿色 NPC / 红色刷怪 / 黄色未保存 · 放大后滚动定位</MudText>
+<MudText Typo="Typo.caption" Class="mt-2">@Map.Width × @Map.Height 格 · @Map.ImageSource · 红色刷怪 / 黄色未保存 · 悬停查看全名 · 圆形格距范围按地图 48:32 比例显示</MudText>
 @if (error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@error</MudAlert> }
 @code {
     [Parameter, EditorRequired] public MapOverview Map { get; set; } = null!;
@@ -39,19 +50,24 @@
     private ElementReference svg; private IJSObjectReference? module; private DotNetObjectReference<PopulationMap>? self;
     private double zoom = 1; private bool blocks; private string? error; private string imageVersion = "", blockedPath = ""; private byte[] mask = [];
     private double Radius => Map.Width / 100d / zoom;
+    private Dictionary<(int, int), Point?> centers = [];
     private static string F(double value) => value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
-    private static string Label(PopulationMarker m) => $"{(m.Kind.Contains("npc") ? "NPC" : "刷怪")} {m.Name}，坐标 {m.X},{m.Y}" + (m.Kind.Contains("spawn") ? $"，{m.Count} 只，范围 {m.Spread}" : "");
+    private string Label(PopulationMarker m) => $"{(m.Kind.Contains("npc") ? "NPC" : "刷怪")} {m.Name}，坐标 {m.X},{m.Y}" + (m.Kind.Contains("spawn") ? $"，{m.Count} 只，半径 {m.Spread} 格" + (centers.GetValueOrDefault((m.X, m.Y)) is { } c && (c.X != m.X || c.Y != m.Y) ? $"，实际中心 {c.X},{c.Y}" : "") : "");
     protected override void OnParametersSet()
     {
-        if (imageVersion == Map.ImageVersion) return;
-        imageVersion = Map.ImageVersion; zoom = 1; error = null; mask = Convert.FromBase64String(Map.Walkable);
-        var path = new System.Text.StringBuilder();
-        for (var y = 0; y < Map.Height; y++) for (var x = 0; x < Map.Width;)
+        if (imageVersion != Map.ImageVersion)
         {
-            if (Walkable(x, y)) { x++; continue; } var start = x; while (x < Map.Width && !Walkable(x, y)) x++;
-            path.Append($"M{start} {y}h{x - start}v1h-{x - start}z");
+            imageVersion = Map.ImageVersion; zoom = 1; error = null; mask = Convert.FromBase64String(Map.Walkable); centers.Clear();
+            var path = new System.Text.StringBuilder();
+            for (var y = 0; y < Map.Height; y++) for (var x = 0; x < Map.Width;)
+            {
+                if (Walkable(x, y)) { x++; continue; } var start = x; while (x < Map.Width && !Walkable(x, y)) x++;
+                path.Append($"M{start} {y}h{x - start}v1h-{x - start}z");
+            }
+            blockedPath = path.ToString();
         }
-        blockedPath = path.ToString();
+        centers = Markers.Where(m => m.Kind.Contains("spawn")).Select(m => (m.X, m.Y)).Distinct()
+            .ToDictionary(p => p, p => centers.TryGetValue(p, out var center) ? center : RespawnArea.Center(new(p.X, p.Y), Map.Width, Map.Height, Walkable));
     }
     private bool Walkable(int x, int y) { var i = y * Map.Width + x; return x >= 0 && y >= 0 && x < Map.Width && y < Map.Height && i / 8 < mask.Length && (mask[i / 8] & (1 << (i % 8))) != 0; }
     [JSInvokable] public async Task Pick(int x, int y)

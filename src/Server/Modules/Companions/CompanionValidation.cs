@@ -5,8 +5,8 @@ namespace Server.ConsoleHost;
 
 public static class CompanionValidation
 {
-    public static bool CanCreateClass(int value) => value is >= 0 and <= 2;
-    public static int[] AvailableClasses => [0, 1, 2];
+    public static bool CanCreateClass(int value) => value is >= 0 and <= 4 && Server.Settings.CanCreateClass((MirClass)value);
+    public static int[] AvailableClasses => Enumerable.Range(0,5).Where(CanCreateClass).ToArray();
 
     public static void Profile(CompanionProfile p, CompanionStore store)
     {
@@ -18,6 +18,7 @@ public static class CompanionValidation
         if (p.Class is < 0 or > 4 || p.Gender is < 0 or > 1 || p.LlmMode is < 0 or > 2 || p.DeathLimit is < 1 or > 20)
             throw new InvalidDataException("职业、性别、LLM 模式或死亡预算无效。");
         if (p.PkMode is not ("avoid" or "defend" or "duel")) throw new InvalidDataException("不支持的 PK 模式。");
+        Guilds(p.Guilds);
         if(p.LlmMode>0&&CompanionModels.Select(store.Configuration,p.LlmModelId)==null)throw new InvalidDataException("增强模式需要选择当前版本中已启用的模型。");
         if (p.Traits == null || PersonalityPresets.Values(p.Traits).Any(x => x is < 0 or > 100)) throw new InvalidDataException("人格维度必须为 0–100。");
         if (!store.Presets.Any(x => x.Key == p.PresetKey && x.Revision == p.PresetRevision)) throw new InvalidDataException("人格预制修订不存在。");
@@ -33,10 +34,21 @@ public static class CompanionValidation
         if (old == null && Envir.Main.CharacterList.Any(x => x.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("该昵称已被原角色使用，请选择其他昵称。");
     }
+    public static void Guilds(CompanionGuildPreferences? guild)
+    {
+        if (guild == null || guild.Mode is not ("off" or "join" or "create" or "auto") || guild.Name == null ||
+            guild.Name.Length > 20 || guild.Name.Length is > 0 and < 3 || guild.Name != guild.Name.Trim() ||
+            guild.Name.Any(c => char.IsControl(c) || c == '\\'))
+            throw new InvalidDataException("行会策略无效，行会名称须为空或3–20个字符，不能含控制字符或反斜杠。");
+    }
     public static void Settings(CompanionSettingsEdit edit)
     {
         var s = edit.Settings;
         if(s==null||s.LlmEndpoint==null||s.LlmModel==null)throw new InvalidDataException("陪玩系统配置不能为空。");
+        if(s.Arrivals==null||s.Arrivals.Schedule==null||s.Arrivals.MinMinutes is <1 or >43200||
+            s.Arrivals.MaxMinutes<s.Arrivals.MinMinutes||s.Arrivals.MaxMinutes>43200||s.Arrivals.MaxProfiles is <1 or >500)
+            throw new InvalidDataException("随机新增间隔须为1分钟–1个月（30天）且最大值不小于最小值，档案上限须为1–500。");
+        CompanionScheduling.Validate(s.Arrivals.Schedule);
         if (s.MaxOnline is < 1 or > 100 || s.ReservePlayers is < 1 or > 1000 || s.DailyLlmCalls is < 0 or > 100000 || s.LlmModel.Length > 200 || edit.LlmKey?.Length > 4096)
             throw new InvalidDataException("陪玩数量、真人预留或 LLM 配额无效。");
         if (s.LlmEndpoint.Length > 0 && (!Uri.TryCreate(s.LlmEndpoint, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || uri.UserInfo.Length > 0))

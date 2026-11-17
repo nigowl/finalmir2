@@ -31,6 +31,26 @@ internal static class ClientAnimationChecks
         check(actor.Action == MirAction.Running && actor.PositionAt(2600, Actor.MoveDuration) == end, "Walk/run transition jumped between tiles");
         check(actor.PositionAt(2900, Actor.MoveDuration) == new Vector2(12, 10), "Running failed to interpolate both tiles");
         check(actor.PositionAt(9999, Actor.MoveDuration) == new Vector2(13, 10), "Movement overshot its server-confirmed endpoint");
+        var runner = new Actor { Kind = ObjectType.Player, Location = new Point(10, 10) };
+        runner.Move(new Point(11, 10), MirDirection.Right, MirAction.Walking, 1000);
+        runner.Move(new Point(13, 10), MirDirection.Right, MirAction.Running, 1640);
+        check(runner.MovementDuration(600) == 640 && runner.PositionAt(2250, 600).X is > 12.8f and < 13, "Player stopped before the next normal movement acknowledgement");
+        var visual = runner.PositionAt(2260, 600);
+        runner.Move(new Point(15, 10), MirDirection.Right, MirAction.Running, 2260);
+        check(runner.PositionAt(2260, 600) == visual, "A player acknowledgement snapped to the previous logical tile");
+        check(runner.PositionAt(10000, 600) == new Vector2(15, 10), "Smoothed player moved beyond its authoritative endpoint");
+        runner.Poison = PoisonType.Slow;
+        check(runner.MoveDelay == 1200, "A slowed player lost the original doubled movement delay");
+        runner.Poison = PoisonType.None;
+        runner.Move(new Point(16, 10), MirDirection.Right, MirAction.Walking, 4000);
+        check(runner.MovementDuration(600) == 600, "A stopped player resumed with a stale slow movement interval");
+        runner.Move(new Point(14, 10), MirDirection.Left, MirAction.Jump, 4500);
+        check(runner.MovementDuration(800) == 800, "Ordinary movement smoothing changed a skill movement duration");
+        runner.Poison = PoisonType.Slow;
+        check(runner.MovementDuration(800) == 800, "Ordinary slow-walk timing changed a skill movement duration");
+        check(MapTileLibraries.Resolve(28) == "Map/WemadeMir2/Objects27" && MapTileLibraries.Resolve(100) == "Map/ShandaMir2/Tiles" &&
+            MapTileLibraries.Resolve(374) == "" && MapTileLibraries.Resolve(375) == "" && MapTileLibraries.Resolve(-1) == "", "Map library caching changed original indices or bounds");
+        check(MapTileLibraries.Resolve(200) == "Map/WemadeMir3/Tilesc" && MapTileLibraries.Resolve(360) == "Map/ShandaMir3/Tilescforest", "Map library caching changed original Mir3 themes");
         var guard = new Actor { Kind = ObjectType.Monster, Location = new Point(10, 10) };
         guard.Move(new Point(11, 10), MirDirection.Right, MirAction.Walking, 1000);
         var inFlight = guard.PositionAt(1500, 600);

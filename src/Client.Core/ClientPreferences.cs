@@ -19,13 +19,16 @@ public sealed class ClientPreferences
     public int TownPercent { get; set; } = 20;
     public bool NoMonsterRandom { get; set; }
     public bool AutoRoam { get; set; } = true;
-    public Spell SingleSkill { get; set; }
-    public Spell AreaSkill { get; set; }
+    public bool AutoPickup { get; set; }
+    public bool PickupWhitelist { get; set; }
+    public string[] PickupNames { get; set; } = [];
+    public bool SmartBattle { get; set; } = true;
     public bool AutoSwapAmulet { get; set; }
     public bool SmartHalfMoon { get; set; }
     public bool SmartThrusting { get; set; }
     public bool AutoPoison { get; set; }
     public bool AutoSummon { get; set; }
+    public bool AutoMirroring { get; set; }
     public Spell SummonSkill { get; set; }
     public bool AutoHeal { get; set; }
     public int HealPercent { get; set; } = 70;
@@ -40,9 +43,9 @@ public sealed class ClientPreferences
         RandomPercent = Math.Clamp(RandomPercent, 1, 95);
         TownPercent = Math.Clamp(TownPercent, 1, 95);
         HealPercent = Math.Clamp(HealPercent, 1, 95);
+        PickupNames = (PickupNames ?? []).Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name.Trim())
+            .Where(name => name.Length <= 40).Distinct(StringComparer.OrdinalIgnoreCase).Take(64).ToArray();
         AutoSkills ??= new(); AutoSkills.RemoveWhere(spell => !ClassSkillRules.CanMaintain(spell));
         if (SummonSkill != Spell.None && !ClassSkillRules.Summons(MirClass.Taoist).Contains(SummonSkill)) SummonSkill = Spell.None;
-        if (!ClientAutomation.IsSingleSkill(SingleSkill)) SingleSkill = Spell.None;
-        if (!ClientAutomation.IsAreaSkill(AreaSkill)) AreaSkill = Spell.None;
     }
 }

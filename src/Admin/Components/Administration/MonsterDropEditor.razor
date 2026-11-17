@@ -1,0 +1,107 @@
+@implements IDisposable
+@if (error != null) { <MudAlert Severity="Severity.Error" Class="mb-3">@error</MudAlert> }
+@if (notice != null) { <MudAlert Severity="Severity.Success" Class="mb-3">@notice</MudAlert> }
+@if (busy) { <MudProgressLinear Indeterminate="true" Class="mb-3" /> }
+@if (document != null)
+{
+    <fieldset disabled="@busy" class="monster-drop-editor">
+        <MudSelect T="string" Label="脚本目录" @bind-Value="directory" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+            <MudSelectItem Value="@string.Empty">全部目录</MudSelectItem>
+            @foreach (var folder in Directories) { <MudSelectItem Value="@folder">@folder</MudSelectItem> }
+        </MudSelect>
+        <MudAutocomplete T="string" Label="添加公共脚本" Value="picker" ValueChanged="AddScript" SearchFunc="FindScripts" MaxItems="50"
+            Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" CoerceText="false" Clearable="true" MinCharacters="0" />
+        <div class="my-2" style="max-height:180px;overflow:auto" aria-label="已选公共脚本">
+            @foreach (var script in selected)
+            {
+                <div class="d-flex align-center gap-2">
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                        OnClick="@(() => RemoveScript(script))" aria-label="@($"移除脚本 {script}")" />
+                    <MudText Typo="Typo.caption" Class="path">@script</MudText>
+                </div>
+            }
+            @if (selected.Count == 0) { <MudText Typo="Typo.caption">尚未选择公共脚本，仅使用怪物自身规则。</MudText> }
+        </div>
+        <MudTextField T="string" Label="怪物自身规则" Value="content" ValueChanged="ContentChanged" Immediate="true"
+            Lines="7" Margin="Margin.Dense" Variant="Variant.Outlined" Class="code" />
+        <MudText Typo="Typo.caption" Class="mt-2">每行：1/100 金创药(小量) 2 或 10% 金创药(小量)。数量省略为1，范围1–100；任务物品追加 Q，金币使用 Gold 数额。支持 GROUP / GROUP* / GROUP^ 分组。</MudText>
+        <MudText Typo="Typo.caption" Class="mt-2">最终规则＝全部所选公共脚本＋怪物自身规则。同物品概率相加（最高100%）、数量相加；任务限定和分组分别保留。公共仅保留金币与普通补给；统一概率的文件名四舍五入为整数，低于1%标0，混合概率不加后缀。实际概率以正文为准。</MudText>
+        @if (previewing) { <MudProgressLinear Indeterminate="true" Class="mt-3" /><MudText Typo="Typo.caption">正在更新最终规则…</MudText> }
+        <MudTextField T="string" Label="最终掉落规则" Value="finalContent" ReadOnly="true" Lines="9"
+            Margin="Margin.Dense" Variant="Variant.Outlined" Class="code mt-3" />
+        <MudText Typo="Typo.caption" Class="mt-2">最终 @finalRules 条根规则，为掉落倍率和角色加成前的基础值，预览四舍五入保留3位小数，低于0.001%显示为&lt;0.001%；实际判定保留原始精度。保存后当前怪物即时生效。</MudText>
+    </fieldset>
+}
+@code {
+    [Parameter] public int Id { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    private MonsterDropDocument? document;
+    private int loadedId, generation, finalRules;
+    private bool busy, previewing, disposed;
+    private string content = "", finalContent = "", previewVersion = "", picker = "", directory = "";
+    private List<string> selected = [];
+    private CancellationTokenSource? debounce;
+    private string? error, notice;
+    private IEnumerable<string> Directories => (document?.Scripts ?? []).SelectMany(s =>
+        Enumerable.Range(1, s.Count(c => c == '/')).Select(depth => string.Join('/', s.Split('/').Take(depth))))
+        .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
+    public bool Dirty => document != null && (content != document.Content || !selected.SequenceEqual(document.SelectedScripts));
+    public bool Busy => busy;
+    public bool CanSave => !busy && !previewing && error == null && document != null && Dirty;
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedId == Id) return;
+        loadedId = Id; busy = true; error = null;
+        try { Set(await Api.Get<MonsterDropDocument>($"management/admin/monsters/{Id}/drops")); }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; await Changed.InvokeAsync(); }
+    }
+    private void Set(MonsterDropDocument value)
+    {
+        document = value; selected = value.SelectedScripts.ToList(); content = value.Content;
+        finalContent = value.FinalContent; previewVersion = value.PreviewVersion;
+        finalRules = value.FinalRules;
+    }
+    private Task<IEnumerable<string>> FindScripts(string value, CancellationToken token) => Task.FromResult(
+        (document?.Scripts ?? []).Where(s => !selected.Contains(s) && (directory.Length == 0 || s.StartsWith(directory + "/", StringComparison.Ordinal)) &&
+            (string.IsNullOrWhiteSpace(value) || value.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(word => s.Contains(word, StringComparison.OrdinalIgnoreCase)))));
+    private async Task AddScript(string value)
+    {
+        picker = "";
+        if (busy || document == null || string.IsNullOrWhiteSpace(value) || selected.Contains(value)) return;
+        if (!document.Scripts.Contains(value)) { error = "请选择当前版本已有的公共脚本。"; return; }
+        selected.Add(value); await RefreshPreview();
+    }
+    private async Task RemoveScript(string script) { if (!busy) { selected.Remove(script); await RefreshPreview(); } }
+    private async Task ContentChanged(string value) { content = value; await RefreshPreview(); }
+    private async Task RefreshPreview()
+    {
+        debounce?.Cancel(); debounce?.Dispose(); debounce = new();
+        var token = debounce.Token; var request = ++generation;
+        previewing = true; finalContent = previewVersion = ""; finalRules = 0; error = notice = null; await Changed.InvokeAsync();
+        try
+        {
+            await Task.Delay(300, token);
+            var preview = await Api.Post<MonsterDropPreview>($"management/admin/monsters/{Id}/drops/preview", new MonsterDropEdit(selected.ToArray(), content, document!.Version));
+            if (request != generation || disposed) return;
+            finalContent = preview.FinalContent; previewVersion = preview.Version; finalRules = preview.Rules;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception e) { if (request == generation && !disposed) error = e.Message; }
+        finally { if (request == generation && !disposed) { previewing = false; await Changed.InvokeAsync(); } }
+    }
+    public async Task Save()
+    {
+        if (!CanSave) return;
+        busy = true; error = notice = null; await Changed.InvokeAsync();
+        try
+        {
+            Set(await Api.Put<MonsterDropDocument>($"management/admin/monsters/{Id}/drops", new MonsterDropEdit(selected.ToArray(), content, document!.Version, previewVersion)));
+            notice = "掉落规则已保存，即时生效。"; await Saved.InvokeAsync();
+        }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; await Changed.InvokeAsync(); }
+    }
+    public void Dispose() { disposed = true; generation++; debounce?.Cancel(); debounce?.Dispose(); }
+}

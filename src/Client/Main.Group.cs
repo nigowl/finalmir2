@@ -1,4 +1,5 @@
 using Godot;
+using Crystal.Native;
 using C = ClientPackets;
 
 public partial class Main
@@ -16,7 +17,7 @@ public partial class Main
     private void BuildGroup()
     {
         group = Panel(game, 18, 290, 228, 250); group.Hide();
-        Picture(group, "Prguse", 120, 0, 0); Picture(group, "Title", 5, 18, 8);
+        Picture(group, "Prguse", 120, 0, 0); WindowTitle(group, "组队", 160);
         ArtButton(group, "Prguse2", 360, 206, 3, "关闭组队 P", () => group.Hide());
         for (var i = 0; i < Globals.MaxGroup; i++)
         {
@@ -27,10 +28,11 @@ public partial class Main
         }
         groupStatus = Text(group, "", 12, 194, 210); groupStatus.AddThemeFontSizeOverride("font_size", 10);
         groupSwitch = ArtButton(group, "Prguse", 114, 25, 219, "开启 / 关闭组队（关闭会离队）", ToggleGroupMode);
-        groupAdd = ArtButton(group, "Title", 130, 70, 219, "创建队伍 / 邀请成员", () => ShowGroupTarget(false));
-        groupRemove = ArtButton(group, "Title", 136, 140, 219, "移除成员（队长）", () => ShowGroupTarget(true));
+        groupAdd = ArtButton(group, "Title", 130, 70, 219, "创建队伍 / 邀请成员", () => ShowGroupTarget(false), "邀请");
+        groupRemove = ArtButton(group, "Title", 136, 140, 219, "移除成员（队长）", () => ShowGroupTarget(true), "移除");
+        groupAdd.Size = groupRemove.Size = new Vector2(60, ClientUi.ButtonHeight);
         groupTarget = Panel(game, 355, 275, 314, 155); groupTarget.Hide();
-        groupPrompt = Text(groupTarget, "", 14, 10, 286);
+        groupPrompt = WindowTitle(groupTarget, "", 286);
         groupName = Edit(groupTarget, 14, 43, 286, "角色名称"); groupName.MaxLength = Globals.MaxCharacterNameLength;
         groupName.TextSubmitted += _ => SubmitGroupTarget();
         Button(groupTarget, "确认", 14, 93, 132, SubmitGroupTarget);

@@ -29,3 +29,7 @@ public sealed record MapThumbnailInfo(string Revision, int Width, int Height);
 public sealed record MapAssetUsage(int Id, string Code, string Name, int MiniMap, int BigMap, int Music, string Light, int Npcs, int Spawns);
 public sealed record CatalogFigure(int Id, string Name, string Library, int Frame, Dictionary<string, string> Attributes);
 public sealed record CatalogFigurePage(CatalogFigure[] Items, int Total);
+public sealed record MonsterDropDocument(int Id, string Name, string Script, string[] SelectedScripts, string Content,
+    string FinalContent, string Version, string PreviewVersion, string[] Scripts, int LoadedRules, int FinalRules);
+public sealed record MonsterDropEdit(string[] Scripts, string Content, string Version, string PreviewVersion = "");
+public sealed record MonsterDropPreview(string FinalContent, string Version, int Rules);

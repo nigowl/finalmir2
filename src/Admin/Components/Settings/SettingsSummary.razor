@@ -1,75 +1,78 @@
 <MudSimpleTable Dense="true" Hover="true" Class="settings-summary my-3">
-    <thead><tr><th>参数</th><th>当前值</th><th>说明</th></tr></thead>
-    <tbody>@foreach(var row in Rows().Concat(BalanceRows())){<tr><td>@row.Name</td><td class="metric-value">@row.Value</td><td>@row.Detail</td></tr>}</tbody>
+    <thead><tr><th>参数</th><th>当前值</th><th>默认值</th><th>说明</th></tr></thead>
+    <tbody>@foreach(var (row, defaults) in Rows(Settings).Concat(BalanceRows(Settings)).Zip(Rows(DefaultSettings).Concat(BalanceRows(DefaultSettings)))){<tr><td>@row.Name</td><td class="metric-value">@row.Value</td><td class="metric-value">@defaults.Value</td><td>@row.Detail</td></tr>}</tbody>
 </MudSimpleTable>
 @code {
     [Parameter,EditorRequired] public ServerSettings Settings { get; set; } = null!;
     [Parameter] public string Group { get; set; } = "access";
+    private static readonly ServerSettings DefaultSettings = new();
     private static string On(bool value)=>value?"开启":"关闭";
-    private (string Name,string Value,string Detail)[] Rows()=>Group switch
+    private (string Name,string Value,string Detail)[] Rows(ServerSettings value)=>Group switch
     {
         "access"=>[
-            ("最大在线连接数",Settings.MaxUser.ToString(),"登录、选角和游戏内连接的总上限"),
-            ("同 IP 最大连接数",Settings.MaxIP.ToString(),"陪玩共用本机 IP，另预留 1 个本机名额"),
-            ("注册账户",On(Settings.AllowNewAccount),"仍遵守原服注册频率保护"),("登录",On(Settings.AllowLogin),"关闭后拒绝新的登录，已有玩家保持在线"),
-            ("修改密码",On(Settings.AllowChangePassword),"原客户端账户改密"),("创建角色",On(Settings.AllowNewCharacter),"原客户端及陪玩首次建角"),
-            ("删除角色",On(Settings.AllowDeleteCharacter),"原客户端删角"),("仓库密码",On(Settings.RequireStoragePassword),"沿用原引擎仓库校验")],
+            ("最大在线连接数",value.MaxUser.ToString(),"登录、选角和游戏内连接的总上限"),
+            ("同 IP 最大连接数",value.MaxIP.ToString(),"陪玩共用本机 IP，另预留 1 个本机名额"),
+            ("注册账户",On(value.AllowNewAccount),"按注册频率限制排队"),("登录",On(value.AllowLogin),"关闭后拒绝新的登录，已有玩家保持在线"),
+            ("修改密码",On(value.AllowChangePassword),"允许玩家修改账户密码"),("创建角色",On(value.AllowNewCharacter),"允许玩家及陪玩创建角色"),
+            ("启用战士职业",On(value.AllowCreateWarrior),"允许创建战士"),("启用法师职业",On(value.AllowCreateWizard),"允许创建法师"),
+            ("启用道士职业",On(value.AllowCreateTaoist),"允许创建道士"),("启用刺客职业",On(value.AllowCreateAssassin),"允许创建刺客"),("启用弓箭手职业",On(value.AllowCreateArcher),"允许创建弓箭手"),
+            ("删除角色",On(value.AllowDeleteCharacter),"允许玩家删除角色"),("仓库密码",On(value.RequireStoragePassword),"存取前验证仓库密码")],
         "game"=>[
-            ("经验倍率",$"{Settings.ExpRate:0.##} 倍","原击杀及任务经验规则"),("掉落倍率",$"{Settings.DropRate:0.##} 倍","也影响原任务金币奖励"),
-            ("普通掉落保留",$"{Settings.ItemTimeOut} 分钟","应用于后续掉落"),("死亡掉落保留",$"{Settings.PlayerDiedItemTimeOut} 分钟","应用于后续死亡掉落"),
-            ("PK 值衰减间隔",$"{Settings.PKDelay} 秒","下一次衰减后使用新间隔"),("怪物等级差经验",On(Settings.ExpMobLevelDifference),"沿用原引擎经验修正")],
+            ("经验倍率",$"{value.ExpRate:0.##} 倍","影响击杀和任务经验"),("掉落倍率",$"{value.DropRate:0.##} 倍","也影响任务金币奖励"),
+            ("普通掉落保留",$"{value.ItemTimeOut} 分钟","应用于后续掉落"),("死亡掉落保留",$"{value.PlayerDiedItemTimeOut} 分钟","应用于后续死亡掉落"),
+            ("PK 值衰减间隔",$"{value.PKDelay} 秒","下一次衰减后使用新间隔"),("怪物等级差经验",On(value.ExpMobLevelDifference),"按角色与怪物的等级差调整经验")],
         "protection"=>[
-            ("自动存档间隔",$"{Settings.SaveDelay} 分钟","下一次已安排的自动存档后使用新间隔"),
-            ("安全区边界",On(Settings.SafeZoneBorder),"安全区边界效果"),("安全区恢复",On(Settings.SafeZoneHealing),"安全区原恢复规则"),
-            ("怪物召回",On(Settings.MonsterRecallEnabled),"怪物定义也须允许召回"),("召回距离",$"{Settings.MonsterRecallRange} 格","与目标的触发距离"),
-            ("召回冷却",$"{Settings.MonsterRecallCooldown} 毫秒","原怪物召回冷却")],
+            ("自动存档间隔",$"{value.SaveDelay} 分钟","下一次已安排的自动存档后使用新间隔"),
+            ("安全区边界",On(value.SafeZoneBorder),"安全区边界效果"),("安全区恢复",On(value.SafeZoneHealing),"安全区内自动恢复"),
+            ("怪物召回",On(value.MonsterRecallEnabled),"怪物定义也须允许召回"),("召回距离",$"{value.MonsterRecallRange} 格","与目标的触发距离"),
+            ("召回冷却",$"{value.MonsterRecallCooldown} 毫秒","两次召回的最小间隔")],
         _=>[]
     };
 }
 
 @code {
-    private (string Name,string Value,string Detail)[] BalanceRows() => Group switch
+    private (string Name,string Value,string Detail)[] BalanceRows(ServerSettings value) => Group switch
     {
         "combat" => [
-            ("玩家物理伤害倍率",$"{Settings.PlayerPhysicalDamageRate:0.##} 倍","按原物理防御类型结算，默认1倍"),
-            ("玩家法术伤害倍率",$"{Settings.PlayerMagicDamageRate:0.##} 倍","按原魔法防御类型结算，包含火墙等"),
-            ("玩家对战额外伤害倍率",$"{Settings.PlayerPvpDamageRate:0.##} 倍","玩家/英雄间伤害再乘此值；不改变安全区权限"),
-            ("怪物伤害倍率",$"{Settings.MonsterDamageRate:0.##} 倍","野怪和敌对召唤物造成的伤害"),
-            ("战宠伤害倍率",$"{Settings.PetDamageRate:0.##} 倍","玩家/英雄所属战宠；原归属和攻击权限不变"),
-            ("技能冷却时间倍率",$"{Settings.SkillCooldownRate:0.##} 倍","越小冷却越短；需重启以同步原客户端技能元数据"),
-            ("玩家基础攻速修正",Settings.PlayerAttackSpeedBonus.ToString(),"每点约减少60毫秒；沿用原550毫秒下限，同步玩家/英雄"),
-            ("暴击率系数",Settings.CriticalRateWeight.ToString(),"原暴击属性乘此系数，受原100%概率上限限制"),
-            ("暴击伤害除数",Settings.CriticalDamageWeight.ToString(),"原暴击伤害计算的除数；越小伤害越高"),
-            ("幸运判定基数",Settings.MaxLuck.ToString(),"沿用原幸运取最高攻击的概率规则"),
-            ("玩家对战允许抗魔",On(Settings.PvpCanResistMagic),"保留原魔法抵抗判断")
+            ("玩家物理伤害倍率",$"{value.PlayerPhysicalDamageRate:0.##} 倍","影响物理攻击伤害"),
+            ("玩家法术伤害倍率",$"{value.PlayerMagicDamageRate:0.##} 倍","影响法术伤害，包含火墙"),
+            ("玩家对战额外伤害倍率",$"{value.PlayerPvpDamageRate:0.##} 倍","玩家/英雄间伤害再乘此值；不改变安全区权限"),
+            ("怪物伤害倍率",$"{value.MonsterDamageRate:0.##} 倍","野怪和敌对召唤物造成的伤害"),
+            ("战宠伤害倍率",$"{value.PetDamageRate:0.##} 倍","玩家/英雄所属战宠；遵守归属和攻击权限"),
+            ("技能冷却时间倍率",$"{value.SkillCooldownRate:0.##} 倍","越小冷却越短；保存后重启同步技能数据"),
+            ("玩家基础攻速修正",value.PlayerAttackSpeedBonus.ToString(),"每点约减少60毫秒，最低550毫秒；影响玩家和英雄"),
+            ("暴击率系数",value.CriticalRateWeight.ToString(),"暴击属性乘此系数，最高100%"),
+            ("暴击伤害除数",value.CriticalDamageWeight.ToString(),"越小暴击伤害越高"),
+            ("幸运判定基数",value.MaxLuck.ToString(),"影响触发最高攻击的概率"),
+            ("玩家对战允许抗魔",On(value.PvpCanResistMagic),"玩家对战可触发魔法抵抗")
         ],
         "effects" => [
-            ("中毒持续伤害倍率",$"{Settings.PoisonDamageRate:0.##} 倍","绿毒/流血的每次伤害；不改变红毒降防比例"),
-            ("中毒持续时间倍率",$"{Settings.PoisonDurationRate:0.##} 倍","红毒/绿毒/流血；仅影响后续新施加状态"),
-            ("控制状态时间倍率",$"{Settings.ControlDurationRate:0.##} 倍","麻痹、冰冻、减速、眩晕、失明；不改固定延时爆炸"),
-            ("技能加成时间倍率",$"{Settings.SkillBuffDurationRate:0.##} 倍","技能Buff，永久/物品Buff及盾受击剩余时间不重复放大"),
-            ("魔法抗性判定基数",Settings.MagicResistWeight.ToString(),"抗性/基数参与原概率判定；越大通常越难抵抗"),
-            ("毒抗判定基数",Settings.PoisonResistWeight.ToString(),"沿用原中毒抗性算法"),
-            ("冰冻判定基数",Settings.FreezingAttackWeight.ToString(),"装备冰冻属性参与原概率判定"),
-            ("毒素判定基数",Settings.PoisonAttackWeight.ToString(),"装备毒素属性参与原概率判定"),
-            ("生命恢复属性除数",Settings.HealthRegenWeight.ToString(),"恢复属性的原计算除数；越小加成越高"),
-            ("魔力恢复属性除数",Settings.ManaRegenWeight.ToString(),"魔力恢复属性的原计算除数"),
-            ("玩家对战允许抗毒",On(Settings.PvpCanResistPoison),"保留原毒抗判断"),
-            ("玩家对战允许冰冻",On(Settings.PvpCanFreeze),"装备冰冻效果的原权限开关")
+            ("中毒持续伤害倍率",$"{value.PoisonDamageRate:0.##} 倍","绿毒/流血的每次伤害；不改变红毒降防比例"),
+            ("中毒持续时间倍率",$"{value.PoisonDurationRate:0.##} 倍","红毒/绿毒/流血；仅影响后续新施加状态"),
+            ("控制状态时间倍率",$"{value.ControlDurationRate:0.##} 倍","麻痹、冰冻、减速、眩晕、失明；不改固定延时爆炸"),
+            ("技能加成时间倍率",$"{value.SkillBuffDurationRate:0.##} 倍","技能Buff，永久/物品Buff及盾受击剩余时间不重复放大"),
+            ("魔法抗性判定基数",value.MagicResistWeight.ToString(),"越大越难抵抗"),
+            ("毒抗判定基数",value.PoisonResistWeight.ToString(),"影响抵抗中毒的概率"),
+            ("冰冻判定基数",value.FreezingAttackWeight.ToString(),"影响装备冰冻的触发概率"),
+            ("毒素判定基数",value.PoisonAttackWeight.ToString(),"影响装备毒素的触发概率"),
+            ("生命恢复属性除数",value.HealthRegenWeight.ToString(),"越小生命恢复加成越高"),
+            ("魔力恢复属性除数",value.ManaRegenWeight.ToString(),"越小魔力恢复加成越高"),
+            ("玩家对战允许抗毒",On(value.PvpCanResistPoison),"玩家对战可抵抗中毒"),
+            ("玩家对战允许冰冻",On(value.PvpCanFreeze),"玩家对战可触发装备冰冻")
         ],
         "monster" => [
-            ("怪物生命倍率",$"{Settings.MonsterHpRate:0.##} 倍","新刷出或原规则刷新属性时生效，不重置现存生命"),
-            ("怪物防御倍率",$"{Settings.MonsterDefenceRate:0.##} 倍","物防/魔防；新刷出或原规则刷新属性时生效"),
-            ("怪物攻击速度倍率",$"{Settings.MonsterAttackSpeedRate:0.##} 倍","越大越快；新刷出/原属性刷新生效，含战宠基础速度"),
-            ("怪物移动速度倍率",$"{Settings.MonsterMoveSpeedRate:0.##} 倍","越大越快；新刷出/恢复速度时生效，含战宠基础速度"),
-            ("可驯服首领上限",Settings.MaxBossTames.ToString(),"仍要求原怪物定义可驯服及原技能判定"),
-            ("保存战宠",On(Settings.PetSave),"沿用原战宠保存/退出角色恢复规则")
+            ("怪物生命倍率",$"{value.MonsterHpRate:0.##} 倍","新刷出或属性刷新时生效，不重置现存生命"),
+            ("怪物防御倍率",$"{value.MonsterDefenceRate:0.##} 倍","物防/魔防；新刷出或属性刷新时生效"),
+            ("怪物攻击速度倍率",$"{value.MonsterAttackSpeedRate:0.##} 倍","越大越快；新刷出或属性刷新时生效，含战宠基础速度"),
+            ("怪物移动速度倍率",$"{value.MonsterMoveSpeedRate:0.##} 倍","越大越快；新刷出/恢复速度时生效，含战宠基础速度"),
+            ("可驯服首领上限",value.MaxBossTames.ToString(),"仅对可驯服且满足技能条件的首领生效"),
+            ("保存战宠",On(value.PetSave),"退出时保存，登录后恢复")
         ],
         "game" => [
-            ("允许怪物掉金币",On(Settings.DropGold),"沿用原掉金币开关"),
-            ("单次金币掉落上限",Settings.MaxDropGold.ToString(),"原单次金币掉落上限，不改玩家金币总额上限"),
-            ("掉落搜索范围",Settings.DropRange.ToString(),"原掉落落点搜索格数"),
-            ("同格掉落堆数",Settings.DropStackSize.ToString(),"原单格掉落堆数限制")
+            ("允许怪物掉金币",On(value.DropGold),"控制怪物是否掉落金币"),
+            ("单次金币掉落上限",value.MaxDropGold.ToString(),"超过上限时分成多堆"),
+            ("掉落搜索范围",value.DropRange.ToString(),"寻找掉落位置的格数"),
+            ("同格掉落堆数",value.DropStackSize.ToString(),"每格最多容纳的掉落堆数")
         ],
         _ => []
     };

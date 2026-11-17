@@ -8,7 +8,7 @@ public partial class SkillIconButton : Button
     public bool ShowSlotFrame;
     public Func<long>? GlobalCooldownUntil;
     internal long CooldownRemaining => Magic != null && !ClientSkillRules.IsPassive(Magic.Spell) && !ClientSkillRules.IsToggle(Magic.Spell)
-        ? Math.Max(0, Math.Max(Magic.CastTime + Math.Max(0, Magic.Delay), GlobalCooldownUntil?.Invoke() ?? 0) - Environment.TickCount64) : 0;
+        ? Math.Max(0, Math.Max(Magic.CastTime + ClientSkillRules.Cooldown(Magic), GlobalCooldownUntil?.Invoke() ?? 0) - Environment.TickCount64) : 0;
     public override void _Process(double delta) { if (IsVisibleInTree()) QueueRedraw(); }
     public override void _Draw()
     {

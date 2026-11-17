@@ -477,6 +477,7 @@ namespace Server.MirObjects
         public override void Process()
         {
             if (Connection == null || Node == null || Info == null) return;
+            if (QuestInventoryDirty) OrganizeQuestInventory();
 
             if (GroupInvitation != null && GroupInvitation.Node == null)
                 GroupInvitation = null;
@@ -937,6 +938,7 @@ namespace Server.MirObjects
             base.LevelUp();
 
             Enqueue(new S.LevelChanged { Level = Level, Experience = Experience, MaxExperience = MaxExperience });
+            AutoLearnSelectedSkills();
 
             if (Info.Mentor != 0 && !Info.IsMentor)
             {
@@ -1085,20 +1087,22 @@ namespace Server.MirObjects
             if (temp == null || !temp.ValidPoint(CurrentLocation))
             {
                 temp = Envir.GetMap(BindMapIndex);
+                var bindLocation = temp?.GetBindLocation(BindLocation);
 
-                if (temp == null || !temp.ValidPoint(BindLocation))
+                if (bindLocation == null)
                 {
                     SetBind();
                     temp = Envir.GetMap(BindMapIndex);
+                    bindLocation = temp?.GetBindLocation(BindLocation);
 
-                    if (temp == null || !temp.ValidPoint(BindLocation))
+                    if (bindLocation == null)
                     {
                         StartGameFailed();
                         return;
                     }
                 }
                 CurrentMapIndex = BindMapIndex;
-                CurrentLocation = BindLocation;
+                CurrentLocation = bindLocation.Value;
             }
             CurrentMapIndex = temp.Info.Index;
             temp.AddObject(this);
@@ -1178,6 +1182,7 @@ namespace Server.MirObjects
             SetLevelEffects();
 
             Helpers.InventoryStacks.Compact(Info.Inventory);
+            OrganizeQuestInventory(false);
             GetItemInfo(Connection);
             GetMapInfo(Connection);
             GetUserInfo(Connection);
@@ -1410,7 +1415,8 @@ namespace Server.MirObjects
                 }
             }
 
-            if (temp == null || !temp.ValidPoint(bindLocation)) return;
+            if (temp?.GetBindLocation(bindLocation) is not Point validBind) return;
+            bindLocation = validBind;
 
             Dead = false;
             SetHP(Stats[Stat.HP]);
@@ -1650,6 +1656,7 @@ namespace Server.MirObjects
         }
         public void GetUserInfo(MirConnection c)//was private luke
         {
+            Account.UnlockQuestStorage();
             string guildname = MyGuild != null ? MyGuild.Name : "";
             string guildrank = MyGuild != null ? MyGuildRank.Name : "";
             S.UserInformation packet = new S.UserInformation
@@ -2895,12 +2902,12 @@ namespace Server.MirObjects
                         {
                             if (!IsGM)
                                 LastTeleportTime = Envir.Time + 10000;
-                            TeleportRandom(200, 0);
+                            ReceiveChat(TeleportRandom(200, 0) ? "随机移动成功。" : "随机移动失败：当前地图没有可用落点。", ChatType.System);
                             return;
                         }
                         if (!IsGM)
                             LastTeleportTime = Envir.Time + 10000;
-                        Teleport(CurrentMap, new Point(x, y));
+                        ReceiveChat(Teleport(CurrentMap, new Point(x, y)) ? $"坐标传送成功：{x},{y}。" : "坐标传送失败：目标坐标越界、不可通行或不满足地图进入条件。", ChatType.System);
                         break;
 
                     case "MAPMOVE":
@@ -3716,6 +3723,8 @@ namespace Server.MirObjects
 
                     case "ADDSTORAGE":
                         {
+                            if (Account.ExpandedStorageExpiryDate == DateTime.MaxValue)
+                            { ReceiveChat("仓库已通过任务永久开通，无需租用。", ChatType.System); break; }
                             TimeSpan addedTime = new TimeSpan(10, 0, 0, 0);
                             uint cost = 1000000;
 
@@ -6028,7 +6037,8 @@ namespace Server.MirObjects
                             }
                             break;
                         case 1: //TT
-                            if (!Teleport(Envir.GetMap(BindMapIndex), BindLocation))
+                            var town = Envir.GetMap(BindMapIndex);
+                            if (town?.GetBindLocation(BindLocation) is not Point townLocation || !Teleport(town, townLocation))
                             {
                                 Enqueue(p);
                                 return;
@@ -6195,17 +6205,11 @@ namespace Server.MirObjects
                     }
                     break;
                 case ItemType.Book:
-                    UserMagic magic = new UserMagic((Spell)item.Info.Shape);
-
-                    if (magic.Info == null)
+                    if (!LearnSkill((Spell)item.Info.Shape))
                     {
                         Enqueue(p);
                         return;
                     }
-
-                    Info.Magics.Add(magic);
-                    SendMagicInfo(magic);
-                    RefreshStats();
                     break;
                 case ItemType.Script:
                     CallDefaultNPC(DefaultNPCType.UseItem, item.Info.Shape);
@@ -7929,6 +7933,7 @@ namespace Server.MirObjects
         }
         public void TakeQuestItem(ItemInfo uItem, ushort count)
         {
+            QuestInventoryDirty = true;
             for (int o = 0; o < Info.QuestInventory.Length; o++)
             {
                 UserItem item = Info.QuestInventory[o];
@@ -9905,65 +9910,15 @@ namespace Server.MirObjects
             if ((MyGuild != null) || (Info.GuildIndex != -1)) return false;
             if (Envir.GetGuild(guildName) != null) return false;
 
-            if (Info.Level < Settings.Guild_RequiredLevel)
+            var failure = Server.Helpers.GuildCreationRules.Failure(this, guildName);
+            if (failure != null)
             {
-                ReceiveChat(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.LevelNotEnoughCreateGuild), Settings.Guild_RequiredLevel), ChatType.System);
-                return false;
-            }
-
-            if (!Info.AccountInfo.AdminAccount && String.Equals(guildName, Settings.NewbieGuild, StringComparison.OrdinalIgnoreCase))
-            {
-                ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.CannotCreateNewbieGuild), ChatType.System);
+                ReceiveChat(failure, ChatType.System);
                 return false;
             }
 
             if (!Info.AccountInfo.AdminAccount)
             {
-                //check if we have the required items
-                for (int i = 0; i < Settings.Guild_CreationCostList.Count; i++)
-                {
-                    GuildItemVolume Required = Settings.Guild_CreationCostList[i];
-                    if (Required.Item == null)
-                    {
-                        if (Info.AccountInfo.Gold < Required.Amount)
-                        {
-                            ReceiveChat(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.InsufficientGoldCreateGuild), Required.Amount), ChatType.System);
-                            return false;
-                        }
-                    }
-                    else
-                    {
-                        ushort count = (ushort)Math.Min(Required.Amount, ushort.MaxValue);
-
-                        foreach (var item in Info.Inventory.Where(item => item != null && item.Info == Required.Item))
-                        {
-                            if ((Required.Item.Type == ItemType.Ore) && (item.CurrentDura / 1000 > Required.Amount))
-                            {
-                                count = 0;
-                                break;
-                            }
-                            if (item.Count > count)
-                                count = 0;
-                            else
-                                count = (ushort)(count - item.Count);
-                            if (count == 0) break;
-                        }
-                        if (count != 0)
-                        {
-                            if (Required.Amount == 1)
-                                ReceiveChat(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.RequiredToCreateGuild), Required.Item.FriendlyName), ChatType.System);
-                            else
-                            {
-                                if (Required.Item.Type == ItemType.Ore)
-                                    ReceiveChat(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.ItemPurityRequiredForGuildCreation), Required.Item.FriendlyName, Required.Amount / 1000), ChatType.System);
-                                else
-                                    ReceiveChat(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.InsufficientNeedCreateGuild), Required.Item.FriendlyName, Required.Amount), ChatType.System);
-                            }
-                            return false;
-                        }
-                    }
-                }
-
                 //take the required items
                 for (int i = 0; i < Settings.Guild_CreationCostList.Count; i++)
                 {
@@ -11563,7 +11518,7 @@ namespace Server.MirObjects
 
                         if (!CanGainQuestItem(item))
                         {
-                            RecalculateQuestBag();
+                            RecalculateQuestBag(info);
                             return;
                         }
 
@@ -11687,13 +11642,18 @@ namespace Server.MirObjects
                 GainItem(item);
             }
 
-            RecalculateQuestBag();
+            RecalculateQuestBag(quest.Info);
 
             GainGold((uint)(quest.Info.GoldReward * Settings.DropRate));
             GainExp((uint)(quest.Info.ExpReward * Settings.ExpRate));
             GainCredit(quest.Info.CreditReward);
 
             CallDefaultNPC(DefaultNPCType.OnFinishQuest, questIndex);
+            if (Account.UnlockQuestStorage())
+            {
+                Enqueue(new S.ResizeStorage { Size = Account.Storage.Length, HasExpandedStorage = true, ExpiryTime = Account.ExpandedStorageExpiryDate });
+                ReceiveChat("任务已完成，账户仓库已永久扩容。", ChatType.System);
+            }
         }
         public void AbandonQuest(int questIndex)
         {
@@ -11703,7 +11663,7 @@ namespace Server.MirObjects
 
             SendUpdateQuest(quest, QuestState.Remove);
 
-            RecalculateQuestBag();
+            RecalculateQuestBag(quest.Info);
         }
         public void ShareQuest(int questIndex)
         {
@@ -11825,8 +11785,9 @@ namespace Server.MirObjects
             }
         }
 
-        public void RecalculateQuestBag()
+        public void RecalculateQuestBag(QuestInfo removedQuest = null)
         {
+            QuestInventoryDirty = true;
             for (int i = Info.QuestInventory.Length - 1; i >= 0; i--)
             {
                 UserItem itm = Info.QuestInventory[i];
@@ -11857,7 +11818,8 @@ namespace Server.MirObjects
                     }
                 }
 
-                if (!itemRequired && !isCarryItem)
+                if (!itemRequired && !isCarryItem && (removedQuest == null ||
+                    removedQuest.CarryItems.Any(task => task.Item == itm.Info) || removedQuest.ItemTasks.Any(task => task.Item == itm.Info)))
                 {
                     Info.QuestInventory[i] = null;
                     Enqueue(new S.DeleteQuestItem { UniqueID = itm.UniqueID, Count = itm.Count });
@@ -12880,6 +12842,8 @@ namespace Server.MirObjects
                 }
             }
         }
+        public static uint RefineCost(UserItem item) => (uint)((item.Info.RequiredAmount * 10) * Settings.RefineCost);
+
         public void RefineItem(ulong uniqueID)
         {
             Enqueue(new S.RepairItem { UniqueID = uniqueID }); //CHECK THIS.
@@ -12930,7 +12894,7 @@ namespace Server.MirObjects
 
 
             //CHECK GOLD HERE
-            uint cost = (uint)((Info.Inventory[index].Info.RequiredAmount * 10) * Settings.RefineCost);
+            uint cost = RefineCost(Info.Inventory[index]);
 
             if (cost > Account.Gold)
             {

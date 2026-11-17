@@ -1,4 +1,5 @@
 using Godot;
+using Crystal.Native;
 using C = ClientPackets;
 using S = ServerPackets;
 
@@ -8,11 +9,29 @@ public partial class Main
     private Vector2 itemDragStart;
     private Vector2 itemDragPosition;
     private int inventoryDragSource = -1;
+    private bool inventoryDragShortcut;
     private ConfirmationDialog dropDialog = null!;
     private Label dropHint = null!;
     private SpinBox dropCount = null!;
     private ulong dropCandidate, pendingDrop;
     private long dropSentAt;
+
+    private static bool IsItemShortcut(Button button) => button is OriginalItemButton { SlotAssets: not null };
+
+    private (Button button, int slot) InventoryDropAt(Vector2 position, UserItem? item)
+    {
+        var hovered = GetViewport().GuiGetHoveredControl();
+        var cell = inventorySlots.FirstOrDefault(pair => pair.button == hovered && pair.button.IsVisibleInTree() && pair.button.GetGlobalRect().HasPoint(position));
+        if (cell.button != null && IsItemShortcut(cell.button) && !ItemPresentation.CanQuickUse(item))
+        { Log("物品快捷栏仅可放入使用类道具，装备和材料请放在背包。"); return default; }
+        return cell;
+    }
+
+    private void UseQuickItem(int slot)
+    {
+        var item = State.User?.Inventory.ElementAtOrDefault(slot);
+        if (ItemPresentation.CanQuickUse(item)) UseItem(item!.UniqueID);
+    }
 
     private void BuildItemDrag()
     {
@@ -65,9 +84,11 @@ public partial class Main
             var source = inventorySlots.FirstOrDefault(pair => pair.button == hovered && pair.button.IsVisibleInTree() && pair.button.GetGlobalRect().HasPoint(mouse.Position));
             if (source.button == null) return;
             inventoryDragSource = source.slot; itemDragStart = mouse.Position;
+            inventoryDragShortcut = IsItemShortcut(source.button);
             draggedItem = State.User.Inventory.ElementAtOrDefault(source.slot)?.UniqueID ?? 0;
+            if (inventoryDragShortcut && !ItemPresentation.CanQuickUse(State.User.Inventory.ElementAtOrDefault(source.slot))) draggedItem = 0;
             if (draggedItem == pendingDrop || draggedItem == automation.PendingItem) draggedItem = 0;
-            if (source.slot >= 6 && mouse.DoubleClick && draggedItem != 0) { UseItem(draggedItem); draggedItem = 0; }
+            if (!inventoryDragShortcut && mouse.DoubleClick && draggedItem != 0) { UseItem(draggedItem); draggedItem = 0; }
             GetViewport().SetInputAsHandled(); return;
         }
         if (inventoryDragSource < 0) return;
@@ -77,9 +98,9 @@ public partial class Main
 
     private void ReleaseInventoryDrag(Vector2 position)
     {
-        var destinationButton = inventorySlots.FirstOrDefault(pair => pair.button.IsVisibleInTree() && pair.button.GetGlobalRect().HasPoint(position));
         var from = Array.FindIndex(State.User!.Inventory, item => item?.UniqueID == draggedItem);
         if (from < 0) return;
+        var destinationButton = InventoryDropAt(position, State.User.Inventory[from]);
         var storageSlot = StorageCellAtMouse(); var tradeSlot = TradeCellAtMouse(); var guildSlot = GuildCellAtMouse();
         if (repairCell.IsVisibleInTree() && repairCell.GetGlobalRect().HasPoint(position)) SelectRepairItem(draggedItem);
         else if (guildSlot >= 0) StoreGuildItem(from, guildStorageRow * 8 + guildSlot);
@@ -92,7 +113,7 @@ public partial class Main
                 Send(new C.MergeItem { GridFrom = MirGridType.Inventory, GridTo = MirGridType.Inventory, IDFrom = source.UniqueID, IDTo = target.UniqueID });
             else Send(new C.MoveItem { Grid = MirGridType.Inventory, From = from, To = destinationButton.slot });
         }
-        else if (inventoryDragSource < 6 && destinationButton.button != null && destinationButton.slot == from) UseItem(draggedItem);
+        else if (inventoryDragShortcut && destinationButton.button != null && destinationButton.slot == from && position.DistanceTo(itemDragStart) < 4) UseQuickItem(from);
         else if (position.DistanceTo(itemDragStart) >= 4) OfferItemDrop(draggedItem, position);
     }
 

@@ -26,23 +26,38 @@ public sealed partial class CompanionSession
         if(attackMode!=AttackMode.Peace){await connection.Send(new C.ChangeAMode{Mode=AttackMode.Peace});nextAction=now+300;return true;}
         if(Profile.AcceptGroup&&state.GroupMembers.Count>1)
         {
+            if(await HealParty(now))return true;
             var leader=state.GroupMembers[0];var actor=state.Actors.Values.FirstOrDefault(a=>a.Kind==ObjectType.Player&&a.Name==leader&&!a.Hidden&&!a.Dead);
-            if(actor!=null&&leader!=user.Name)
+            if(leader!=user.Name)
             {
-                var heal=user.Magics.FirstOrDefault(m=>m.Spell==Spell.Healing&&now>=m.CastTime+Math.Max(m.Delay,2000)&&m.BaseCost+m.LevelCost*m.Level<=user.MP);
-                if(heal!=null&&Profile.Traits.Helpfulness>=60&&actor.Health<(Profile.Goal=="协助队友"||goalHint=="help"?85:70))
-                {
-                    await connection.Send(new C.Magic{ObjectID=user.ObjectID,TargetID=actor.Id,Location=actor.Location,Spell=heal.Spell,Direction=Direction(user.Location,actor.Location)});
-                    heal.CastTime=now;nextAction=now+2000;await Status("辅助中","为当前可见队友治疗");return true;
-                }
-                if(Distance(user.Location,actor.Location)>3){await Status("跟队中","跟随当前可见队长");return await MoveTo(actor.Location,2);}
+                if(Knowledge?.Goal?.Kind=="party"&&(Knowledge.Goal.MapId!=Knowledge.MapId||actor==null||Distance(user.Location,actor.Location)>3))
+                    return await FollowObjective(now);
             }
         }
-        if(Profile.AcceptGroup&&state.GroupMembers.Count==0&&Profile.Traits.Social>=70&&now>nextInvite)
+        return false;
+    }
+
+    private async Task<bool> HealParty(long now)
+    {
+        var user=state.User!;
+        var ally=state.Actors.Values.Where(a=>a.Kind==ObjectType.Player&&!a.Hidden&&!a.Dead&&a.Id!=user.ObjectID&&
+            state.GroupMembers.Contains(a.Name)&&Distance(user.Location,a.Location)<=7&&
+            a.Health<(Profile.Goal=="协助队友"||goalHint=="help"?85:Profile.Traits.Helpfulness>=60?70:45)).OrderBy(a=>a.Health).FirstOrDefault();
+        var heal=user.Magics.FirstOrDefault(m=>m.Spell==Spell.Healing&&now>=m.CastTime+Math.Max(m.Delay,5000)&&ClassSkillRules.Ready(state,m,now));
+        if(skillsPaused||ally==null||heal==null||!await SendSkill(heal.Spell,ally,true,now))return false;
+        heal.CastTime=now;await Status("辅助中","治疗当前实际低血队友："+ally.Name);return true;
+    }
+
+    private async Task<bool> InviteParty(long now)
+    {
+        if(Profile.AcceptGroup&&Knowledge?.Party is {Invite.Length:>0} party&&now>=nextInvite&&
+            (Knowledge.Goal==null||Knowledge.Goal.Kind is "hunt" or "party" or "wait"))
         {
-            nextInvite=now+120000;
-            var player=state.Actors.Values.FirstOrDefault(a=>a.Kind==ObjectType.Player&&a.Id!=user.ObjectID&&!a.Hidden&&!a.Dead&&Distance(user.Location,a.Location)<=8);
-            if(player!=null){await connection.Send(new C.AddMember{Name=player.Name});await Say("附近有一起发展的朋友吗？");}
+            var target=state.Actors.Values.FirstOrDefault(a=>a.Kind==ObjectType.Player&&a.Name==party.Invite&&!a.Hidden&&!a.Dead&&Distance(state.User!.Location,a.Location)<=8);
+            if(target==null)return false;
+            nextInvite=now+30000+(100-Profile.Traits.Social)*900;
+            await connection.Send(new C.AddMember{Name=target.Name});
+            await report(new("party-invite",Profile.Id,Text:"向允许组队的陪玩发送原邀请："+target.Name));return true;
         }
         return false;
     }

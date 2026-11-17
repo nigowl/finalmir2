@@ -21,16 +21,18 @@ public sealed partial class CompanionSession
         if (remote && goal.NextExit == null)
         { if(travelOnly)return false; await Status("待目标", "目标地图没有可用的公开步行入口"); nextAction = now + 3000; return true; }
         var point = remote ? new Point(goal.NextExit!.X, goal.NextExit.Y) : new Point(goal.X, goal.Y);
-        var near = remote ? 0 : goal.Kind is "accept" or "turn-in" or "service" ? 3 : 1;
+        var near = remote || goal.Kind == "guild-siege" ? 0 : goal.Kind is "accept" or "turn-in" or "service" or "guild-create" or "party" ? 3 : 1;
         var key = $"{Knowledge.MapId}/{goal.Kind}/{goal.MapId}/{goal.QuestId}/{goal.NpcId}/{string.Join(',', goal.MonsterIds ?? [])}";
         var distance = Distance(state.User!.Location, point);
         if (key != progressGoal) { progressGoal = key; bestGoalDistance = distance; arrivedAt=0; }
         else if (distance < bestGoalDistance) { bestGoalDistance = distance; lastProgress = now; }
         await Status(travelOnly ? "撤离中" : remote ? "跨图中" : goal.Kind == "hunt" ? "寻怪中" : "任务中",
-            travelOnly ? "补给途中遭受攻击，优先沿可通行路线撤离" : goal.Reason);
+            travelOnly ? goal.Kind=="service" && goal.QuestId==0 ? "补给途中遭受攻击，优先沿可通行路线撤离" : "赶路途中遭受攻击，优先沿当前目标路线前进" : goal.Reason);
         var atExit=remote && distance==0;
-        if (distance > near && await MoveTo(point, near)) {reportedBlockedGoal="";arrivedAt=0;return true;}
+        if (distance > near && await MoveTo(point, near, !remote && goal.Kind=="hunt" ? goal.Key : "",run:true)) {reportedBlockedGoal="";arrivedAt=0;return true;}
         if (travelOnly && !atExit) return false;
+        if(goal.Kind=="party"&&!remote&&distance<=near)
+        {await Status("跟队中","与队长会合，等待合适的协同战斗目标");nextAction=now+500;return true;}
         if(distance<=near&&arrivedAt==0)arrivedAt=now;
         if((distance>near||arrivedAt>0&&now-arrivedAt>15000)&&goal.Key.Length>0&&reportedBlockedGoal!=goal.Key)
         {

@@ -17,14 +17,20 @@ public partial class NativeSmoke
     private async Task VerifyCharacterCreation(string name)
     {
         stage = "visible character creation validation and server acknowledgements";
-        var submit = Client.FindChildren("*", "Button", true, false).OfType<Button>().Single(button => button.Text == "创建角色");
+        var submit = Client.FindChildren("*", "Button", true, false).OfType<Button>().Single(button => button is not OriginalButton && button.Text == "创建角色");
         var form = submit.GetParent<Control>();
         var input = form.GetChildren().OfType<LineEdit>().Single();
-        var jobs = form.GetChildren().OfType<OptionButton>().Single(option => option.ItemCount == 3);
-        if (!Enumerable.Range(0, jobs.ItemCount).Select(jobs.GetItemText).SequenceEqual(new[] { "战士", "法师", "道士" }))
-            throw new Exception("创建角色入口不是战士、法师、道士三职业。");
+        var jobs = form.GetChildren().OfType<OptionButton>().Single(option => option.ItemCount == 5);
+        var controls = form.GetChildren().OfType<Control>().Where(control => control is LineEdit or OptionButton or Button).ToArray();
+        if (controls.Any(control => Math.Abs(control.GetRect().GetCenter().Y - input.GetRect().GetCenter().Y) > .5f))
+            throw new Exception("建角名称、职业、性别及操作按钮的水平中心线不一致：" + string.Join(" / ", controls.Select(control => control.GetRect())));
+        if (!Enumerable.Range(0, jobs.ItemCount).Select(jobs.GetItemText).SequenceEqual(new[] { "战士", "法师", "道士", "刺客", "弓箭手" }))
+            throw new Exception("创建角色入口没有完整五职业。");
         var notice = (Label)Client.FindChild("SelectionNotice", true, false);
         if (!form.IsVisibleInTree() || !notice.IsVisibleInTree()) throw new Exception("选角页没有显示建角表单和反馈区域。");
+        using (var background = ((StyleBoxTexture)form.GetThemeStylebox("panel")).Texture.GetImage())
+            if (background.GetData().Where((_, index) => index % 4 == 3).Any(alpha => alpha != 255))
+                throw new Exception("新建角色框的角区或右边线存在透明空洞。");
         foreach (var invalid in new[] { "", "ab", "bad!" })
         {
             input.Text = invalid; await ClickSelectionControl(submit);

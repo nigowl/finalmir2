@@ -19,6 +19,7 @@ builder.WebHost.UseStaticWebAssets();
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 builder.WebHost.UseUrls($"http://127.0.0.1:{Environment.GetEnvironmentVariable("MIR2_ADMIN_PORT") ?? "5081"}");
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddRazorPages();
 builder.Services.AddMudServices(); builder.Services.AddTransient<MudBlazor.MudLocalizer, ChineseMudLocalizer>();
 builder.Services.AddCascadingAuthenticationState(); builder.Services.AddAuthorization();
 builder.Services.AddSingleton(paths);

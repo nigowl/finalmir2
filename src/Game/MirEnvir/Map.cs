@@ -137,12 +137,13 @@ namespace Server.MirEnvir
 
                     if (Cells[x, y] == null) Cells[x, y] = new Cell { Attribute = CellAttribute.Walk };
 
-                    offSet += 4;
+                    // 原v0每格12字节：门号紧跟前景编号，不能错读后面的动画帧。
+                    offSet += 2;
 
                     if (fileBytes[offSet] > 0)
                         DoorIndex[x, y] = AddDoor(fileBytes[offSet], new Point(x, y));
 
-                    offSet += 3;
+                    offSet += 5;
 
                     byte light = fileBytes[offSet++];
 
@@ -525,22 +526,11 @@ namespace Server.MirEnvir
         public List<Point> GetRespawnCells(RespawnInfo info)
         {
             GetWalkableCells();
-            var center = info.Location;
-            if (center.X < 0 || center.Y < 0 || center.X >= Width || center.Y >= Height || WalkableCells.Count == 0)
+            if (WalkableCells.Count == 0)
                 return new List<Point>();
-            if (!ValidPoint(center))
-            {
-                long nearest = long.MaxValue;
-                foreach (var point in WalkableCells)
-                {
-                    long dx = point.X - info.Location.X, dy = point.Y - info.Location.Y;
-                    long distance = dx * dx + dy * dy;
-                    if (distance >= nearest) continue;
-                    nearest = distance; center = point;
-                }
-            }
+            var center = RespawnArea.Center(info.Location, Width, Height, (x, y) => Cells[x, y].Attribute == CellAttribute.Walk);
             // 保存原布点坐标，只在引擎生成候选落点时修正阻挡中心；热更新和重启共用。
-            return WalkableCells.Where(point => Math.Abs(point.X - center.X) <= info.Spread && Math.Abs(point.Y - center.Y) <= info.Spread).ToList();
+            return center == null ? new List<Point>() : WalkableCells.Where(point => RespawnArea.Contains(center.Value, point, info.Spread)).ToList();
         }
 
         private void CreateSafeZone(SafeZoneInfo info)
@@ -658,6 +648,20 @@ namespace Server.MirEnvir
         public bool ValidPoint(int x, int y)
         {
             return x >= 0 && x < Width && y >= 0 && y < Height && GetCell(x, y).Valid;
+        }
+
+        public Point? GetBindLocation(Point location)
+        {
+            if (ValidPoint(location)) return location;
+            var zone = Info.SafeZones.FirstOrDefault(zone => zone.Location == location);
+            if (zone == null) return null;
+            // 原安全区中心可能是建筑阻挡，只在同一安全区内找最近合法落点。
+            for (var radius = 1; radius <= zone.Size && radius <= Math.Max(Width, Height); radius++)
+                for (var y = Math.Max(0, location.Y - radius); y <= Math.Min(Height - 1, location.Y + radius); y++)
+                    for (var x = Math.Max(0, location.X - radius); x <= Math.Min(Width - 1, location.X + radius); x++)
+                        if (Math.Max(Math.Abs(x - location.X), Math.Abs(y - location.Y)) == radius && ValidPoint(x, y))
+                            return new Point(x, y);
+            return null;
         }
 
         public bool CheckDoorOpen(Point location)

@@ -46,6 +46,11 @@ try:
         detail=call(base+'/'+ident);row=detail['row'];maps.add(row['map']);positions.add((row['map'],row['x'],row['y']));reasons.add(row['reason'])
         assets.update(event['text'] for event in detail['events'] if event['kind']=='asset')
         if row['lastError']:raise AssertionError(detail)
+        if detail['runtime'] is not None:
+            runtime=detail['runtime'];combat=runtime.get('combat')
+            assert combat is not None,'运行详情缺少原引擎战斗属性与技能熟练度'
+            assert combat['stats']['values']['HP']==runtime['maxHp'] and combat['stats']['values']['MP']==runtime['maxMp'],combat
+            assert isinstance(combat['skills'],list) and all(skill['name'] and skill['experience']>=0 for skill in combat['skills']),combat
         if not row['characterId']:return False
         character=call('/management/admin/characters/'+str(row['characterId']))
         return character if {1,2,3}.issubset(character['completedQuests']) and 'sell:成功' in assets else False

@@ -34,6 +34,7 @@ public partial class Main
                 _ => $"{mode.ToLocalizedString()}攻击模式，以服务器回执为准。"
             });
         }
-        gameMenu.SetItemText(gameMenu.GetItemIndex(8), $"攻击模式：{State.CurrentAttackMode.ToLocalizedString()}");
+        // PopupMenu 的加速键与子菜单箭头共用右侧位置，提示写入标题以免重叠。
+        gameMenu.SetItemText(gameMenu.GetItemIndex(8), $"攻击模式：{State.CurrentAttackMode.ToLocalizedString()}（Ctrl+H）");
     }
 }

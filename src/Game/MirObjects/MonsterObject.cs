@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 ﻿using Server.MirDatabase;
 using Server.MirEnvir;
@@ -1092,6 +1092,9 @@ namespace Server.MirObjects
         }
 
         protected virtual void Drop()
+        { Drop(Info.Drops); }
+
+        protected void Drop(IEnumerable<DropInfo> drops)
         {
             if (CurrentMap.Info.NoDropMonster)
                 return;
@@ -1102,10 +1105,8 @@ namespace Server.MirObjects
             int totalItemBonus = ownerItemBonus + profile.ItemDropBonusPercent;
             int totalGoldBonus = ownerGoldBonus + profile.GoldDropBonusPercent;
 
-            for (int i = 0; i < Info.Drops.Count; i++)
+            foreach (var drop in drops)
             {
-                DropInfo drop = Info.Drops[i];
-
                 var reward = drop.AttemptDrop(totalItemBonus, totalGoldBonus);
 
                 if (reward != null)
@@ -2789,6 +2790,7 @@ namespace Server.MirObjects
             if (armour >= damage) return 0;
             Broadcast(new S.ObjectStruck { ObjectID = ObjectID, AttackerID = 0, Direction = Direction, Location = CurrentLocation });
 
+            BroadcastDamageIndicator(DamageType.Hit, armour - damage);
             ChangeHP(armour - damage);
             return damage - armour;
         }

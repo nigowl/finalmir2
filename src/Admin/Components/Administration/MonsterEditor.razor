@@ -1,0 +1,62 @@
+@inject IDialogService Dialogs
+<NavigationLock ConfirmExternalNavigation="Dirty" OnBeforeInternalNavigation="BeforeNavigation" />
+<AdminDialog Dirty="Dirty" OnClose="Close" OnSave="Save" CanSave="CanSave" Busy="Busy" SaveText="保存" SaveConfirmation="@(activeTab == 0 ? $"确认保存怪物「{draft?.Name}」的全部属性？将保存在线角色并正常重启游戏引擎，请客户端重新连接。" : $"确认保存怪物「{draft?.Name}」的掉落配置？所选公共脚本与怪物自身规则将合并，保存后当前怪物即时生效。")">
+    <DialogContent>
+        <div class="monster-editor">
+        @if (error != null) { <MudAlert Severity="Severity.Error" Class="mb-3">@error</MudAlert> }
+        @if (busy) { <MudProgressLinear Indeterminate="true" /> }
+        @if (draft != null)
+        {
+            <MudTabs ActivePanelIndex="activeTab" ActivePanelIndexChanged="SelectTab" KeepPanelsAlive="true">
+                <MudTabPanel Text="属性" Disabled="Busy">
+                    <fieldset disabled="@Busy" class="monster-drop-editor"><MonsterAttributes @key="generation" Value="draft" Changed="Changed" /></fieldset>
+                </MudTabPanel>
+                <MudTabPanel Text="掉落" Disabled="Busy">
+                    @if (activeTab == 1) { <MonsterDropEditor @key="generation" @ref="drops" Id="Id" Changed="Changed" /> }
+                </MudTabPanel>
+            </MudTabs>
+        }
+        </div>
+    </DialogContent>
+</AdminDialog>
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public int Id { get; set; }
+    private MonsterDefinition? draft;
+    private MonsterDropEditor? drops;
+    private string original = "";
+    private string? error;
+    private int activeTab, generation;
+    private bool busy;
+    private bool Busy => busy || drops?.Busy == true;
+    private bool AttributeDirty => draft != null && System.Text.Json.JsonSerializer.Serialize(draft) != original;
+    private bool Dirty => activeTab == 0 ? AttributeDirty : drops?.Dirty == true;
+    private bool CanSave => !Busy && (activeTab == 0 ? AttributeDirty : drops?.CanSave == true);
+    protected override Task OnInitializedAsync() => Load();
+    private async Task Load()
+    {
+        busy = true; error = null;
+        try { draft = await Api.Get<MonsterDefinition>($"management/admin/monsters/{Id}"); original = System.Text.Json.JsonSerializer.Serialize(draft); }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; }
+    }
+    private Task Changed() { StateHasChanged(); return Task.CompletedTask; }
+    private async Task SelectTab(int value)
+    {
+        if (Busy || value == activeTab) return;
+        if (Dirty && !await AdminDialog.Confirm(Dialogs, "放弃未保存修改", "切换选项卡将放弃当前未保存的修改，请先保存或确认放弃。", "放弃修改")) return;
+        await Load(); drops = null; generation++; activeTab = value;
+    }
+    private async Task Save()
+    {
+        if (!CanSave) return;
+        if (activeTab == 1) { await drops!.Save(); return; }
+        busy = true; error = null;
+        try { var result = await Api.Put<ActionResult>($"management/admin/monsters/{Id}", draft!); Dialog.Close(DialogResult.Ok(result.Message)); }
+        catch (Exception e) { error = e.Message; }
+        finally { busy = false; }
+    }
+    private void Close() { if (!Busy) Dialog.Cancel(); }
+    private async Task BeforeNavigation(LocationChangingContext context)
+    { if (Busy || Dirty && !await AdminDialog.Confirm(Dialogs, "放弃未保存修改", "离开将放弃当前怪物的未保存修改。", "放弃修改")) context.PreventNavigation(); }
+}

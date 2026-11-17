@@ -17,6 +17,22 @@ internal static class ClientSkillChecks
         magic.Level = 3; check(ClientSkillRules.ExperienceText(magic).Contains("已满级"), "满级技能继续提示升级");
         check(ClientSkillRules.IsPassive(Spell.Fencing) && !ClientSkillRules.IsPassive(Spell.FireBall), "技能被动分类错误");
         check(ClientSkillRules.IsToggle(Spell.Thrusting) && !ClientSkillRules.IsToggle(Spell.FlamingSword) && ClientSkillRules.IsTrigger(Spell.FlamingSword), "蓄力技能被误当可取消开关");
+        foreach (var spell in Enum.GetValues<Spell>().Where(spell => (byte)spell is > 0 and < 90))
+            check(!ClientSkillRules.Description(spell).StartsWith("具体效果"), $"经典三职业缺少技能介绍：{spell}");
+        var described = new ClientMagic { Name = "火球术", Spell = Spell.FireBall, Delay = 2350, BaseCost = 2, LevelCost = 3, Level = 2, Range = 9 };
+        var tooltip = ClientSkillRules.Tooltip(described);
+        check(tooltip.Contains("发射火球") && tooltip.Contains("冷却：2.35秒") && tooltip.Contains("基础耗蓝：8") && tooltip.Contains("施法距离：9格"), "技能说明没有使用服务端冷却/等级耗蓝/距离");
+        described.Spell = Spell.Fencing;
+        check(ClientSkillRules.Tooltip(described).Contains("冷却：无（被动生效）") && !ClientSkillRules.Tooltip(described).Contains("基础耗蓝"), "被动技能误显示施法冷却或耗蓝");
+        described.Spell = Spell.Thrusting;
+        check(ClientSkillRules.Tooltip(described, false).Contains("已关闭") && ClientSkillRules.Tooltip(described, true).Contains("已开启"), "技能介绍未跟随原技能开关");
+        described.Spell = Spell.FlamingSword;
+        check(ClientSkillRules.Cooldown(described) == 10000 && ClientSkillRules.Tooltip(described).Contains("冷却：10秒"), "烈火说明丢失原10秒准备限制");
+        described.Delay = 12000;
+        check(ClientSkillRules.Cooldown(described) == 12000, "技能说明覆盖了更长的版本冷却");
+        described.Spell = Spell.FastMove;
+        check(ClientSkillRules.Tooltip(described).Contains("尚未实现"), "技能介绍把未实现技能标成可用");
+        check(ClientSkillRules.Description(Spell.Poisoning).Contains("绿毒") && ClientSkillRules.Description(Spell.Poisoning).Contains("红毒"), "施毒介绍缺少两类毒粉效果");
         var state = new GameState();
         var torch = new UserItem(new ItemInfo { Type = ItemType.Torch, Weight = 3 }) { Count = 1 };
         var armour = new UserItem(new ItemInfo { Type = ItemType.Armour, Weight = 7 }) { Count = 1, Slots = [torch] };

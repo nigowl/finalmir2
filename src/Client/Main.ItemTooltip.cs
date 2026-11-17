@@ -4,8 +4,8 @@ using Godot;
 public partial class Main
 {
     private string ItemText(UserItem item) => string.Join('\n', new[] { ItemPresentation.Name(item) }
-        .Concat(ItemPresentation.Stats(item)).Concat(ItemPresentation.Requirements(item, State).Select(requirement => requirement.Text))
-        .Append($"耐久 {item.CurrentDura / 1000f:0.###}/{item.MaxDura / 1000f:0.###}").Append(item.Info?.ToolTip ?? ""));
+        .Append(ItemPresentation.Category(item)).Concat(ItemPresentation.Stats(item)).Concat(ItemPresentation.Requirements(item, State).Select(requirement => requirement.Text))
+        .Append(ItemPresentation.Details(item)).Append(item.Info?.ToolTip ?? ""));
 
     private void ItemTooltip(Button button, UserItem? item, string empty = "空格")
     {
@@ -15,16 +15,18 @@ public partial class Main
 
     internal Control BuildItemTooltip(UserItem item)
     {
+        var scroll = new ItemTooltip { Name = "ItemTooltipScroll", Theme = Theme };
         var columns = new HBoxContainer { Name = "ItemComparison" }; columns.AddThemeConstantOverride("separation", 14);
+        scroll.AddChild(columns);
         AddItemTooltipColumn(columns, item, "物品详情");
-        if (item.Info == null || State.User == null || State.User.Equipment.Any(worn => worn?.UniqueID == item.UniqueID)) return columns;
+        if (item.Info == null || State.User == null || State.User.Equipment.Any(worn => worn?.UniqueID == item.UniqueID)) return scroll;
         foreach (var slot in ItemPresentation.Slots(item.Info.Type))
             if (State.User.Equipment.ElementAtOrDefault(slot) is { } worn && worn.Info != null)
             {
                 columns.AddChild(new VSeparator());
                 AddItemTooltipColumn(columns, worn, $"已装备 · {((EquipmentSlot)slot).ToLocalizedString()}", item);
             }
-        return columns;
+        return scroll;
     }
 
     private void AddItemTooltipColumn(Control parent, UserItem item, string title, UserItem? candidate = null)
@@ -35,8 +37,9 @@ public partial class Main
         text.AddThemeFontSizeOverride("normal_font_size", 11); column.AddChild(text);
         void Line(string value, Color? colour = null) { text.PushColor(colour ?? new Color("eadbb6")); text.AddText(value + "\n"); text.Pop(); }
         Line(title, Colors.Wheat); Line(ItemPresentation.Name(item), Colors.White);
+        Line(ItemPresentation.Category(item));
         foreach (var value in ItemPresentation.Stats(item)) Line(value);
-        Line($"耐久 {item.CurrentDura / 1000f:0.###}/{item.MaxDura / 1000f:0.###} · 重量 {item.Weight}");
+        Line(ItemPresentation.Details(item));
         foreach (var requirement in ItemPresentation.Requirements(item, State)) Line(requirement.Text, requirement.Met ? null : new Color("ff6060"));
         if (!string.IsNullOrWhiteSpace(item.Info?.ToolTip)) Line(item.Info.ToolTip);
         if (candidate != null)

@@ -23,20 +23,20 @@ public partial class Main
         var magic = State.User!.Magics[index];
         var row = new Control { Name = $"Skill{magic.Spell}", CustomMinimumSize = new Vector2(0, 56), SizeFlagsHorizontal = SizeFlags.ExpandFill };
         skillList.AddChild(row);
-        var name = new Label { Text = magic.Name, Position = new Vector2(46, 0), Size = new Vector2(176, 24),
-            ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
-        row.AddChild(name);
-        name.TooltipText = ClientSkillRules.IsPassive(magic.Spell) ? "被动技能按原引擎自动生效。" : ClientSkillRules.IsToggle(magic.Spell)
-            ? "点击图标或按快捷键切换原技能开关。" : "点击图标或按快捷键施放；自动技能在职业设置中调整。";
+        var name = new Label { Name = "SkillName", Text = magic.Name, Position = new Vector2(46, 4),
+            VerticalAlignment = VerticalAlignment.Center, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
+        row.AddChild(name); name.Size = new Vector2(176, 24);
+        name.MouseFilter = MouseFilterEnum.Pass;
         var cast = new SkillIconButton { Name = "SkillIcon", Assets = Assets, Magic = magic, GlobalCooldownUntil = () => spellTime, Position = new Vector2(0, 8), Size = new Vector2(40, 40),
-            TooltipText = $"{magic.Name} · {(ClientSkillRules.IsPassive(magic.Spell) ? "被动" : ClientSkillRules.IsTrigger(magic.Spell) ? "蓄力" : "点击施放/切换")}", FocusMode = FocusModeEnum.None };
+            FocusMode = FocusModeEnum.None };
         CellStyle(cast); row.AddChild(cast); cast.Pressed += () => Cast(index);
-        var experience = Text(row, "", 46, 29, 118); experience.Size = new Vector2(118, 20); experience.AddThemeFontSizeOverride("font_size", 9);
+        var experience = Text(row, "", 46, 28, 118); experience.Name = "SkillExperience";
+        experience.AddThemeFontSizeOverride("font_size", 9); experience.Size = new Vector2(118, 24);
         skillRows[magic.Spell] = (name, experience, cast);
         if (ClientSkillRules.IsPassive(magic.Spell)) return;
         var key = new OptionButton { Position = new Vector2(168, 28), Size = new Vector2(54, 24), FitToLongestItem = false,
             ClipText = true, FocusMode = FocusModeEnum.None, TooltipText = $"技能快捷键 · {SkillKeys.Label(magic.Key)}" };
-        key.AddThemeFontSizeOverride("font_size", 9); row.AddChild(key); key.AddItem("无", 0);
+        key.AddThemeFontSizeOverride("font_size", 9); row.AddChild(key); key.Size = new Vector2(54, 24); key.AddItem("无", 0);
         for (var k = 1; k <= Assets.FunctionKeys; k++) key.AddItem($"F{k}", SkillKeys.FunctionKey(k));
         for (var k = 9; k <= 16; k++) key.AddItem(SkillKeys.Label((byte)k), k);
         key.Select(Math.Max(0, key.GetItemIndex(magic.Key)));
@@ -66,9 +66,8 @@ public partial class Main
             var passive = ClientSkillRules.IsPassive(magic.Spell);
             var enabled = ClientSkillRules.IsToggle(magic.Spell) ? State.ActiveSkills.Contains(magic.Spell) : !State.DisabledSkills.Contains(magic.Spell);
             row.name.Modulate = ClientSkillRules.IsToggle(magic.Spell) && enabled ? new Color("78d888") : Colors.White;
-            if (ClientSkillRules.IsToggle(magic.Spell)) row.name.TooltipText = $"{magic.Name} · {(enabled ? "已开启" : "已关闭")}；点击图标或按快捷键切换。";
+            row.name.TooltipText = row.cast.TooltipText = row.name.GetParent<Control>().TooltipText = ClientSkillRules.Tooltip(magic, enabled);
             row.cast.Disabled = !ClientSkillRules.IsImplemented(magic.Spell) || passive || (!ClientSkillRules.IsToggle(magic.Spell) && !enabled) || State.Me?.Dead != false;
-            if (!ClientSkillRules.IsImplemented(magic.Spell)) row.cast.TooltipText = "当前原引擎尚未实现此技能。";
             row.experience.Text = ClientSkillRules.ExperienceText(magic).Replace("熟练度 ", "");
             row.experience.TooltipText = ClientSkillRules.ExperienceText(magic);
         }

@@ -15,7 +15,7 @@ public partial class Main
         }
         else
         {
-            attributes.Text = $"背包负重 {State.InventoryWeight}/{stats[Stat.BagWeight]}\n穿戴负重 {State.WearWeight}/{stats[Stat.WearWeight]}\n手持负重 {State.HandWeight}/{stats[Stat.HandWeight]}\n" +
+            attributes.Text = $"背包负重 {State.InventoryWeight:0.##}/{stats[Stat.BagWeight]}\n穿戴负重 {State.WearWeight:0.##}/{stats[Stat.WearWeight]}\n手持负重 {State.HandWeight:0.##}/{stats[Stat.HandWeight]}\n" +
                 Values(Stat.MagicResist, Stat.PoisonResist, Stat.HealthRecovery);
             attributesRight.Text = Values(Stat.SpellRecovery, Stat.PoisonRecovery, Stat.Holy, Stat.Freezing, Stat.PoisonAttack);
         }

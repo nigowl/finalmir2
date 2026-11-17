@@ -283,12 +283,22 @@ namespace Server.MirDatabase
 
         public bool IsValidStorageIndex(int index)
         {
-            if (index >= Globals.StorageGridSize)
+            return index >= 0 && index < Mir2.StorageRules.Capacity(Storage.Length, HasExpandedStorage && ExpandedStorageExpiryDate > Envir.Now);
+        }
+
+        public bool UnlockQuestStorage()
+        {
+            var completed = Characters.Where(character => !character.Deleted).SelectMany(character => character.CompletedQuests).ToHashSet();
+            var pages = 1;
+            foreach (var quest in Settings.StorageQuestIds)
             {
-                var level = index / Globals.StorageGridSize;
-                if (level > (HasExpandedStorage ? 1 : 0))
-                    return false;
+                if (quest <= 0 || !Envir.QuestInfoList.Any(info => info.Index == quest) || !completed.Contains(quest)) break;
+                pages++;
             }
+            if (pages == 1 || HasExpandedStorage && ExpandedStorageExpiryDate == DateTime.MaxValue && Storage.Length >= pages * Globals.StorageGridSize) return false;
+            // 原数组长度保存开通页数，沿用原扩展权限与到期字段，不另建仓库资产模型。
+            if (Storage.Length < pages * Globals.StorageGridSize) Array.Resize(ref Storage, pages * Globals.StorageGridSize);
+            HasExpandedStorage = true; ExpandedStorageExpiryDate = DateTime.MaxValue;
             return true;
         }
 

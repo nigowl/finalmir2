@@ -24,6 +24,7 @@ public partial class NativeSpellSmoke : Node
         try
         {
             if (!(Environment.GetEnvironmentVariable("MIR2_CLIENT_CACHE") ?? "").Contains("mir2-skills-")) throw new InvalidOperationException("技能检查必须使用隔离缓存和版本。");
+            if (OS.GetCmdlineUserArgs().Contains("--class-combos")) { await VerifyClassCombosOnly(); return; }
             await Until(() => Client.HandshakeReady);
             Client.Login("NativeSkills", "Native123"); await Until(() => State.Characters.Count > 0);
             Client.Send(new C.StartGame { CharacterIndex = State.Characters.Single(character => character.Class == MirClass.Warrior).Index });
@@ -41,6 +42,8 @@ public partial class NativeSpellSmoke : Node
         }
         catch (Exception error)
         {
+            var flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+            GD.PrintErr($"Combat state: location={State.User?.Location}, MP={State.User?.MP}, targets={string.Join(';',ClientAutomation.Targets(State).Select(a=>$"{a.Id}:{a.Location}:{a.AI}"))}, skills={string.Join(';',State.User?.Magics.Select(m=>$"{m.Spell}:ready={ClassSkillRules.Ready(State,m,Environment.TickCount64)}:MP={ClassSkillRules.ManaCost(State,m)}")??[])}, fields={string.Join(';',new[]{"classPendingSpell","classSkillsPaused","actionTarget","destination","moving","spellTime","preparedSkill"}.Select(name=>$"{name}={typeof(Main).GetField(name,flags)?.GetValue(Client)}"))}");
             var chat = ((RichTextLabel)Client.FindChild("ChatMessages", true, false)).GetParsedText();
             GD.PrintErr($"FAIL native skills [{stage}]: {error}\nBuffs={string.Join(',', State.UserBuffs.Keys)}, shield={State.Me?.MagicShield}/{State.Me?.ElementalBarrier}, concentration={State.Me?.Concentrating}\nMagic={string.Join(';', packets.OfType<S.Magic>().Select(packet => $"{packet.Spell}:{packet.Cast}"))}\nChat={chat[^Math.Min(650, chat.Length)..]}"); GetTree().Quit(1);
         }

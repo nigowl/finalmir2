@@ -59,16 +59,7 @@ public static class ChineseWorldTranslation
         var files = PrepareFiles(paths, text);
         if (checkOnly || changes.Count + files.Count == 0) return $"中文预检通过：{changes.Count} 项定义字段、{files.Count} 个文本文件待更新。";
 
-        var backup = Path.Combine(paths.Runtime, "backups", "chinese-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff"));
-        Directory.CreateDirectory(backup);
-        storage.Backup(Path.Combine(backup, "mir2.sqlite3"));
-        foreach (var file in WorldFiles(paths.World))
-        {
-            // 原 Windows 导入可能有带反斜杠的真实文件名，备份必须逐字保留，不能归并路径。
-            var relative = Path.GetRelativePath(paths.World, file);
-            var target = Path.Combine(backup, "world", relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(file, target);
-        }
+        var backup = Backup(paths, storage, "chinese");
         var applied = new List<string>();
         try
         {
@@ -130,7 +121,21 @@ public static class ChineseWorldTranslation
         return m.Value;
     });
 
-    private static IEnumerable<string> WorldFiles(string root)
+    internal static string Backup(ProjectPaths paths, SqliteDatabaseStorage storage, string prefix)
+    {
+        var backup = Path.Combine(paths.Runtime, "backups", prefix + "-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff"));
+        Directory.CreateDirectory(backup);
+        storage.Backup(Path.Combine(backup, "mir2.sqlite3"));
+        foreach (var file in WorldFiles(paths.World))
+        {
+            // 原Windows导入可能有反斜杠文件名，备份必须逐字保留，不能归并路径。
+            var target = Path.Combine(backup, "world", Path.GetRelativePath(paths.World, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(file, target);
+        }
+        return backup;
+    }
+
+    internal static IEnumerable<string> WorldFiles(string root)
     {
         var pending = new Stack<string>(); pending.Push(root);
         while (pending.TryPop(out var directory))
@@ -143,7 +148,7 @@ public static class ChineseWorldTranslation
         }
     }
 
-    private static void Replace(string path, byte[] bytes)
+    internal static void Replace(string path, byte[] bytes)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temporary = path + "." + Guid.NewGuid() + ".tmp";

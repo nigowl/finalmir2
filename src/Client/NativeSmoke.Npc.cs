@@ -8,37 +8,30 @@ public partial class NativeSmoke
 {
     private async Task VerifyNpcGoods(S.NPCGoods goods)
     {
-        stage = "compact NPC links and clipped scrollable goods";
+        stage = "grouped original goods, item icons and inline quest link";
         var panel = (Control)Client.FindChild("NpcDialog", true, false);
         var scroll = (ScrollContainer)Client.FindChild("NpcScroll", true, false);
-        var text = (VBoxContainer)Client.FindChild("NpcText", true, false);
         var rows = (VBoxContainer)Client.FindChild("NpcGoods", true, false);
-        await Until(() => scroll.GetVScrollBar().MaxValue > scroll.GetVScrollBar().Page);
-        var back = panel.FindChildren("*", "Button", true, false).Cast<Button>().Single(button => button.Text == "返回");
-        var quest = panel.FindChildren("*", "Button", true, false).Cast<Button>().Single(button => button.Text == "任务");
-        if (quest.Position.Y != back.Position.Y || quest.GetRect().End.X >= back.Position.X || quest.GetThemeStylebox("normal") is not StyleBoxTexture || back.GetThemeStylebox("normal") is not StyleBoxTexture)
-            throw new Exception("NPC quest/back actions do not share the original button skin and bottom baseline.");
-        if (goods.List.Count < 15 || !panel.ClipContents || !scroll.ClipContents || scroll.GetRect().End.Y > 190 || scroll.GetRect().End.X > 428 ||
-            text.GetChildCount() != 0 || !back.IsVisibleInTree() || back.GetRect().End.Y > 225)
-            throw new Exception("NPC content lacks compact highlighted/hover-underlined links or escaped its original art bounds.");
-        var point = scroll.GetGlobalRect().GetCenter(); await MoveMouse(point);
-        for (var index = 0; index < 25; index++) MouseButtonAt(point, true, MouseButton.WheelDown);
-        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        if (scroll.ScrollVertical <= 0 || rows.GetChildren().Cast<Control>().Any(row => row.Size.X > scroll.Size.X))
-            throw new Exception("The long goods list did not scroll within its clipped viewport.");
-        var itemButton = rows.GetChildren().OfType<Button>().First();
-        var insets = new[] { "normal", "hover", "pressed", "disabled" }.Select(state => itemButton.GetThemeStylebox(state).ContentMarginLeft).ToArray();
-        if (insets.Any(inset => inset != 7)) throw new Exception("Hovering goods shifts the fixed text inset.");
-        await Screenshot("npc-goods");
+        var groups = rows.GetChildren().OfType<Button>().ToArray();
+        if (groups.Length != goods.List.GroupBy(item => (item.Info.Type, item.Info.FriendlyName)).Count() ||
+            panel.GetChildren().OfType<Button>().Any(button => button.Text is "返回" or "任务") ||
+            !panel.ClipContents || scroll.GetRect().End.Y > 190 || scroll.GetRect().End.X > 428)
+            throw new Exception("商品分组、移除底部任务/返回按钮或内容裁剪不正确。");
+        groups[0].ButtonPressed = true;
+        var first = rows.FindChildren("GoodsItem", "Button", true, false).OfType<ItemTipButton>().First();
+        await Until(() => first.Icon != null);
+        if (new[] { "normal", "hover", "pressed" }.Any(state => first.GetThemeStylebox(state).ContentMarginLeft != 16))
+            throw new Exception("商品图标或悬停固定内边距错误。");
+        await Screenshot("npc-grouped-goods");
         packets.RemoveAll(packet => packet is S.NPCResponse);
-        back.EmitSignal(BaseButton.SignalName.Pressed); await Packet<S.NPCResponse>();
-        var links = text.FindChildren("*", "LinkButton", true, false).Cast<LinkButton>().ToArray();
-        if (links.Length == 0 || links.Any(link => link.Underline != LinkButton.UnderlineMode.OnHover || link.GetThemeFontSize("font_size") != 11))
-            throw new Exception("NPC main links lack compact gold text and hover-only underlines.");
-        await MoveMouse(links[0].GetGlobalRect().GetCenter());
-        await Screenshot("npc-link-hover");
+        Client.Send(new C.CallNPC { ObjectID = State.Actors.Values.Single(actor => actor.Kind == ObjectType.Merchant).Id, Key = "[@MAIN]" });
+        await Packet<S.NPCResponse>();
+        var link = (LinkButton)Client.FindChild("NpcQuestLink", true, false);
+        if (link.Text != "查看 任务" || link.Underline != LinkButton.UnderlineMode.OnHover || link.GetParent().Name != "NpcText")
+            throw new Exception("任务入口没有位于对白内并使用统一链接样式。");
+        await Screenshot("npc-inline-quest");
         Client.Send(new C.CallNPC { ObjectID = State.Actors.Values.Single(actor => actor.Kind == ObjectType.Merchant).Id, Key = "[@BUY]" }); await Packet<S.NPCGoods>();
-        GD.Print("PASS native NPC goods: 20+ original entries, compact gold links with hover underline, wheel scroll and clipped original content area.");
+        GD.Print("PASS native NPC goods: deduplicated expandable groups, real item icons, fixed hover inset, clipped scroll and inline task link; no back/footer actions.");
     }
 
     private async Task VerifyNpcRepair()
@@ -63,8 +56,7 @@ public partial class NativeSmoke
             throw new Exception("Repair mode bypassed inventory unequip or sent an invalid equipped-item repair.");
         Client._UnhandledInput(equipment);
         var slot = Array.FindIndex(State.User.Inventory, value => value?.UniqueID == item.UniqueID);
-        var source = Client.FindChildren("*", "Button", true, false).OfType<OriginalItemButton>().Single(button =>
-            button.Position == (slot < 6 ? OriginalArt.QuickSlotPosition(slot) : new Vector2(9 + (slot - 6) % 8 * 37, 37 + (slot - 6) / 8 * 33)));
+        var source = await VisibleBagCell(slot);
         await MoveMouse(source.GetGlobalRect().GetCenter()); MouseButtonAt(source.GetGlobalRect().GetCenter(), true);
         await MoveMouse(cell.GetGlobalRect().GetCenter(), true); MouseButtonAt(cell.GetGlobalRect().GetCenter(), false);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);

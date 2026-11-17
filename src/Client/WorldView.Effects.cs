@@ -24,7 +24,7 @@ public partial class WorldView
     internal event Action<string, int>? EffectFrameDrawn;
     internal int EffectCount => effects.Count;
     internal int EffectFramesDrawn { get; private set; }
-    private void ClearEffects() { effects.Clear(); damage.Clear(); effectWarmup.Clear(); }
+    private void ClearEffects() { effects.Clear(); ClearCombatText(); effectWarmup.Clear(); }
 
     private bool PrepareClip(SpellEffectClip clip)
     {
@@ -41,15 +41,15 @@ public partial class WorldView
         effects.Add(new VisualEffect { Clip = clip, Owner = owner, Source = location, Start = start, RepeatFor = repeatFor, Tag = tag, Sound = sound });
     }
 
-    private void AddMissile(Spell spell, uint caster, uint target, Point source, Point destination, long start)
+    private void AddMissile(Spell spell, uint caster, uint target, Point source, Point destination, long start, SpellMissile? original = null)
     {
-        if (effects.Count >= 512 || OriginalSpellEffects.Missile(spell) is not { } missile) return;
+        if (effects.Count >= 512 || (original ?? OriginalSpellEffects.Missile(spell)) is not { } missile) return;
         var direction = Direction16(source, destination);
         var clip = missile.Flight with { Index = missile.Flight.Index + direction * missile.DirectionStride };
         PrepareClip(clip);
         if (missile.Impact is { } impact) PrepareClip(impact);
         var effect = new VisualEffect { Clip = clip, Target = missile.GroundImpact ? 0 : target, Source = source,
-            Destination = destination, Start = start, Missile = missile, Sound = MissileSound(spell) };
+            Destination = destination, Start = start, Missile = missile, Sound = original == null ? MissileSound(spell) : 0 };
         effect.Completed = () =>
         {
             var point = State.Actors.GetValueOrDefault(effect.Target)?.Location ?? destination;

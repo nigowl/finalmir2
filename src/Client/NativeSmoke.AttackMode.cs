@@ -29,6 +29,8 @@ public partial class NativeSmoke
         var modes = menu.GetNode<PopupMenu>("AttackModes");
         if (menu.GetItemSubmenuNode(menu.GetItemIndex(8)) != modes || modes.ItemCount != 8)
             throw new Exception("游戏菜单未显示完整攻击模式二级菜单。");
+        if (menu.GetItemAccelerator(menu.GetItemIndex(8)) != Key.None || !menu.GetItemText(menu.GetItemIndex(8)).Contains("Ctrl+H"))
+            throw new Exception("攻击模式的快捷键提示会与二级菜单箭头重叠。");
         foreach (var mode in Enum.GetValues<AttackMode>())
         {
             packets.RemoveAll(packet => packet is S.ChangeAMode);

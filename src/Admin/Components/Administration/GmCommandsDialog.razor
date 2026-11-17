@@ -1,7 +1,7 @@
 @using Mir2.Commands
 <AdminDialog @bind-Visible="Visible" Title="GM命令清单" OnClose="Close">
     <DialogContent>
-        <MudText Typo="Typo.body2" Class="mb-3">在游戏聊天框输入。中文名、英文简写和原英文名等效，英文不区分大小写；[] 为可选参数。所有命令保留原权限及校验，普通玩家命令已在说明中标注。</MudText>
+        <MudText Typo="Typo.body2" Class="mb-3">在游戏聊天框输入。中文名、英文简写和英文全称等效，英文不区分大小写；[] 为可选参数。普通玩家可用的命令已标注。</MudText>
         <MudTextField T="string" Label="搜索名称、命令或说明" Value="search" ValueChanged="value => search = value ?? string.Empty" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" Clearable="true" />
         <MudTabs>
             <MudTabPanel Text="系统"><GmCommandTable Commands="Filtered.Where(command => !command.Custom).ToArray()" /></MudTabPanel>

@@ -19,7 +19,7 @@ internal static class ClientAutomationChecks
         preferences.CrtFilter = true;
         preferences.ShowItemNames = true;
         var restored = JsonSerializer.Deserialize<ClientPreferences>(JsonSerializer.Serialize(preferences))!;
-        check(restored.Volume == 100 && restored.HpPercent == 1 && !JsonSerializer.Serialize(preferences).Contains("Battle"), "Client settings persisted session-only auto-battle state");
+        check(restored.Volume == 100 && restored.HpPercent == 1 && !JsonSerializer.Serialize(preferences).Contains("autoBattleEnabled"), "Client settings persisted session-only auto-battle state");
         check(restored.CrtFilter && restored.CrtStrength == 5 && restored.ShowNpcNames && !restored.ShowMonsterNames && restored.ShowItemNames, "Visual settings lost the CRT/name display preferences on persistence");
         check(!JsonSerializer.Deserialize<ClientPreferences>("{}")!.ShowItemNames, "Existing settings enabled ground names without selecting the option");
         var red = new UserItem(new ItemInfo { Index = 1, Type = ItemType.Potion, Shape = 0, Stats = new Stats { [Stat.HP] = 20 } }) { UniqueID = 1, Count = 2 };
@@ -29,7 +29,7 @@ internal static class ClientAutomationChecks
         state.Apply(new S.NewItemInfo { Info = red.Info }); state.Apply(new S.NewItemInfo { Info = blue.Info }); state.Apply(new S.NewItemInfo { Info = buff.Info });
         state.Apply(new S.UserInformation { ObjectID = 1, Location = new Point(10, 10), HP = 20, MP = 10, Inventory = [buff, red, blue], Equipment = new UserItem[14], QuestInventory = [] });
         red.Info.Weight = 2; blue.Info.Weight = 3;
-        check(state.InventoryWeight == 10, "Client inventory weight omitted original item counts or treated missing cells as items");
+        check(state.InventoryWeight == .12m, "客户端未按不同规格药品的小数重量累计或遗漏数量");
         var automation = new ClientAutomation(); preferences = new ClientPreferences { AutoHp = true, AutoMp = true };
         check(automation.NextItem(state, preferences, 1000) == red && red.Count == 2, "Auto-potion selected a buff or deducted the item before its acknowledgement");
         check(automation.NextItem(state, preferences, 1200) == null, "Auto-potion sent a duplicate while waiting for the server");
@@ -62,6 +62,30 @@ internal static class ClientAutomationChecks
         check(state.Actors[4].MasterObjectId == 1 && state.Actors[3].AI == 6, "Monster AI/ownership metadata was lost in the reducer");
         check(ClientAutomation.Targets(state).Select(actor => actor.Id).SequenceEqual(new[] { 2u }), "Auto-battle selected a guard, pet, corpse or hidden monster");
         ProtectionAndSkills(state, check);
+        EmergencyCooldown(check);
+    }
+
+    private static void EmergencyCooldown(Action<bool,string> check)
+    {
+        var state=new GameState{BaseStats=new BaseStats(MirClass.Wizard){Stats=[new(Stat.HP){Base=100}]}};
+        var red=new UserItem(new ItemInfo{Index=1,Type=ItemType.Potion,Stats=new Stats{[Stat.HP]=30}}){UniqueID=1,Count=5};
+        var town=new UserItem(new ItemInfo{Index=2,Type=ItemType.Scroll,Shape=1}){UniqueID=2,Count=2};
+        state.Apply(new S.NewItemInfo{Info=red.Info});state.Apply(new S.NewItemInfo{Info=town.Info});
+        state.Apply(new S.UserInformation{ObjectID=1,HP=60,Inventory=[red,town],Equipment=new UserItem[14],QuestInventory=[]});
+        var preferences=new ClientPreferences{AutoHp=true,HpPercent=65,AutoTown=true,TownPercent=35};var automation=new ClientAutomation();
+        check(automation.NextItem(state,preferences,1000)==red,"紧急回城场景没有先正常喝药");
+        state.User!.HP=20;
+        check(automation.NextItem(state,preferences,1100)==null,"未确认药品仍并发消耗回城卷");
+        automation.Apply(new S.UseItem{Grid=MirGridType.Inventory,UniqueID=1,Success=true},1200);
+        check(automation.NextItem(state,preferences,1250)==town,"喝药成功后的普通间隔阻止危急回城");
+        automation.Apply(new S.UseItem{Grid=MirGridType.Inventory,UniqueID=2,Success=true},1300);
+        check(automation.NextItem(state,preferences,1400)==null,"同一次低血保护重复耗卷或取消普通药品间隔");
+        automation.Reset();state.User.HP=60;preferences.AutoTown=false;preferences.AutoRandom=true;preferences.RandomPercent=35;
+        check(automation.NextItem(state,preferences,2000)==red,"随机回城场景没有先喝药");
+        town.Info.Shape=2;state.User.HP=20;automation.Apply(new S.UseItem{Grid=MirGridType.Inventory,UniqueID=1,Success=true},2100);
+        check(automation.NextItem(state,preferences,2150)==town,"喝药间隔阻止危急随机保护");
+        automation.Apply(new S.UseItem{Grid=MirGridType.Inventory,UniqueID=2,Success=false},2200);
+        check(automation.Paused&&automation.NextItem(state,preferences,6000)==null,"紧急逃生放宽了原拒绝停用保护");
     }
 
     private static void ProtectionAndSkills(GameState state, Action<bool, string> check)
@@ -93,7 +117,7 @@ internal static class ClientAutomationChecks
         state.User.MP = 100;
         var single = new ClientMagic { Spell = Spell.FireBall, BaseCost = 5 };
         var area = new ClientMagic { Spell = Spell.FireBang, BaseCost = 25 };
-        state.User.Magics = [single, area]; preferences.SingleSkill = Spell.FireBall; preferences.AreaSkill = Spell.FireBang;
+        state.User.Class = MirClass.Wizard; state.User.Magics = [single, area];
         var target = state.Actors[2];
         check(ClientAutomation.SkillFor(state, preferences, target, 20000) == single, "A single monster did not use the configured learned single-target skill");
         state.Apply(new S.ObjectMonster { ObjectID = 8, Location = new Point(12, 10), AI = 0 });
@@ -114,7 +138,7 @@ internal static class ClientAutomationChecks
         check(ClientAutomation.SkillFor(state, preferences, target, 20000) == single, "Insufficient area-skill mana did not fall back to single-target casting");
         single.CastTime = 19500; single.Delay = 1000;
         check(ClientAutomation.SkillFor(state, preferences, target, 20000) == null, "Automatic casting bypassed the learned skill cooldown");
-        preferences.SingleSkill = Spell.Healing; preferences.AreaSkill = (Spell)255; preferences.RandomPercent = -1; preferences.TownPercent = 999; preferences.Normalize();
-        check(preferences.SingleSkill == Spell.None && preferences.AreaSkill == Spell.None && preferences.RandomPercent == 1 && preferences.TownPercent == 95, "Invalid protection/skill preferences escaped normalization");
+        preferences.RandomPercent = -1; preferences.TownPercent = 999; preferences.Normalize();
+        check(preferences.RandomPercent == 1 && preferences.TownPercent == 95 && !JsonSerializer.Serialize(preferences).Contains("SingleSkill"), "无效保护阈值或已移除的挂机技能设置仍被保存");
     }
 }

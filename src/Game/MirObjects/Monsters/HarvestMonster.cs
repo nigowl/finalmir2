@@ -17,7 +17,9 @@ namespace Server.MirObjects.Monsters
             RemainingSkinCount = 2;
         }
 
-        protected override void Drop() { }
+        public static bool GroundSupply(DropInfo drop) => !drop.QuestRequired && drop.GroupedDrop == null &&
+            (drop.Gold > 0 || drop.Item?.Type == ItemType.Potion && drop.Item.Shape is 0 or 1 && (drop.Item.Stats[Stat.HP] > 0 || drop.Item.Stats[Stat.MP] > 0));
+        protected override void Drop() { Drop(Info.Drops.Where(GroundSupply)); }
         public override bool Harvest(PlayerObject player)
         {
             if (RemainingSkinCount == 0)
@@ -57,6 +59,7 @@ namespace Server.MirObjects.Monsters
             for (int i = 0; i < Info.Drops.Count; i++)
             {
                 DropInfo drop = Info.Drops[i];
+                if (GroundSupply(drop)) continue;
 
                 var reward = drop.AttemptDrop(EXPOwner?.Stats[Stat.ItemDropRatePercent] ?? 0, EXPOwner?.Stats[Stat.GoldDropRatePercent] ?? 0);
 

@@ -26,6 +26,7 @@ public sealed partial class CompanionService
         var pool=names.ToArray();RandomNumberGenerator.Shuffle(pool.AsSpan());
         var presets=store.Presets.Where(p=>!p.Archived).ToArray();
         var classes=CompanionValidation.AvailableClasses;
+        if(request.RandomClass&&classes.Length==0)throw new InvalidDataException("当前没有启用可创建的陪玩职业，请先在游戏设置中启用职业。");
         var profiles=pool.Take(request.Count).Select(name=>
         {
             var preset=request.RandomPersonality?presets[RandomNumberGenerator.GetInt32(presets.Length)]:null;

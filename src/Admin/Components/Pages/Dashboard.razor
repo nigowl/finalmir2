@@ -3,7 +3,7 @@
 @implements IAsyncDisposable
 <PageTitle>运行监控 · Mir2</PageTitle>
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-5">
-    <div><MudText Typo="Typo.h4" HtmlTag="h1">运行监控</MudText><MudText Color="Color.Secondary">原游戏引擎实时状态，每 3 秒刷新</MudText></div><MudSpacer />
+    <div><MudText Typo="Typo.h4" HtmlTag="h1">运行监控</MudText><MudText Color="Color.Secondary">游戏运行状态，每 3 秒刷新</MudText></div><MudSpacer />
     <MudChip T="string" Color="@(status?.Ready == true ? Color.Success : Color.Warning)">@(status?.Ready == true ? "游戏在线" : "离线 / 启动中")</MudChip>
 </MudStack>
 @if (error != null) { <MudAlert Severity="Severity.Error" Class="mb-4">@error</MudAlert> }

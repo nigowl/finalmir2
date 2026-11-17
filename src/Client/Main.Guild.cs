@@ -1,4 +1,5 @@
 using Godot;
+using Crystal.Native;
 using C = ClientPackets;
 using S = ServerPackets;
 
@@ -24,26 +25,29 @@ public partial class Main
 
     private void BuildGuild()
     {
-        guild = Panel(game, 218, 145, 588, 440); guild.Hide();
-        Picture(guild, "Prguse", 180, 0, 0); Picture(guild, "Title", 25, 18, 9);
+        guild = Panel(game, 218, 145, 590, 432); guild.Hide();
+        Picture(guild, "Prguse", 180, 0, 0, nativeFrame: true); WindowTitle(guild, "行会", 520);
         ArtButton(guild, "Prguse2", 360, 565, 4, "关闭行会 H", CloseGuild);
-        guildTabs.Add(ArtButton(guild, "Title", 93, 20, 38, "公告", () => SelectGuildPage(0)));
-        guildTabs.Add(ArtButton(guild, "Title", 99, 91, 38, "成员", () => SelectGuildPage(1)));
-        guildTabs.Add(ArtButton(guild, "Title", 101, 233, 38, "职位与权限", () => SelectGuildPage(2)));
-        Picture(guild, "Prguse", 1850, 365, 62);
-        guildSummary = Text(guild, "", 370, 90, 202); guildSummary.Size = new Vector2(202, 175); guildSummary.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        guildTabs.Add(ArtButton(guild, "Title", 93, 20, 34, "公告", () => SelectGuildPage(0), "公告"));
+        guildTabs.Add(ArtButton(guild, "Title", 99, 91, 34, "成员", () => SelectGuildPage(1), "成员"));
+        guildTabs.Add(ArtButton(guild, "Title", 101, 162, 34, "职位与权限", () => SelectGuildPage(2), "权限"));
+        guild.AddChild(new VSeparator { Position = new Vector2(355, 62), Size = new Vector2(1, 336), MouseFilter = MouseFilterEnum.Ignore });
+        Text(guild, "行会信息", 370, 64, 202).AddThemeFontSizeOverride("font_size", ClientUi.Title);
+        guildSummary = Text(guild, "", 370, 94, 202); guildSummary.Size = new Vector2(202, 175); guildSummary.VerticalAlignment = VerticalAlignment.Top; guildSummary.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         guildRecruit = Edit(guild, 372, 285, 130, "邀请角色名"); guildRecruit.MaxLength = Globals.MaxCharacterNameLength;
         guildRecruit.TextSubmitted += _ => InviteGuildMember(guildRecruit.Text);
-        ArtButton(guild, "Title", 356, 525, 286, "邀请加入行会", () => InviteGuildMember(guildRecruit.Text));
+        var invite = ArtButton(guild, "Title", 356, 510, 286, "邀请加入行会", () => InviteGuildMember(guildRecruit.Text), "邀请");
+        invite.Size = new Vector2(60, ClientUi.ButtonHeight);
         guildInviteToggle = Button(guild, "", 368, 321, 204, ToggleGuildInvitations);
         Button(guild, "离开行会", 368, 357, 204, () => ConfirmGuild("离开当前行会？原引擎将检查会长和战争规则。", LeaveGuild));
-        guildHint = Text(guild, "", 18, 408, 550); guildHint.AddThemeFontSizeOverride("font_size", 10);
+        guildHint = Text(guild, "", 24, 402, 542); guildHint.Size = new Vector2(542, 18); guildHint.ClipText = true; guildHint.AddThemeFontSizeOverride("font_size", 10);
         guildNoticePage = new Control { Position = new Vector2(0, 60), Size = new Vector2(352, 342) }; guild.AddChild(guildNoticePage);
         guildNotice = new TextEdit { Position = new Vector2(13, 1), Size = new Vector2(322, 298), Editable = false, WrapMode = TextEdit.LineWrappingMode.Boundary }; guildNoticePage.AddChild(guildNotice);
         guildNotice.AddThemeFontSizeOverride("font_size", 11);
         guildNotice.AddThemeColorOverride("font_readonly_color", new Color("eadbb6"));
-        guildEditNotice = ArtButton(guildNoticePage, "Prguse", 560, 20, 304, "编辑公告", BeginGuildNoticeEdit);
-        guildSaveNotice = ArtButton(guildNoticePage, "Prguse", 554, 20, 304, "保存公告", SaveGuildNotice);
+        guildEditNotice = ArtButton(guildNoticePage, "Prguse", 560, 12, 304, "编辑公告", BeginGuildNoticeEdit, "编辑公告");
+        guildSaveNotice = ArtButton(guildNoticePage, "Prguse", 554, 12, 304, "保存公告", SaveGuildNotice, "保存公告");
+        guildEditNotice.Size = guildSaveNotice.Size = new Vector2(76, ClientUi.ButtonHeight);
         guildReloadNotice = Button(guildNoticePage, "放弃编辑 / 读取最新公告", 94, 304, 240, () => GuardGuildDraft(ReloadGuildNotice));
         guildMembersPage = new Control { Position = new Vector2(13, 61), Size = new Vector2(330, 339) }; guild.AddChild(guildMembersPage);
         var scroll = new ScrollContainer { Size = new Vector2(330, 338) }; guildMembersPage.AddChild(scroll);
@@ -172,6 +176,7 @@ public partial class Main
         {
             guildTabs[page].Index = indices[page] + (guildPage == page ? 1 : 0);
             guildTabs[page].HoverIndex = guildTabs[page].Index; guildTabs[page].PressedIndex = indices[page] + 1;
+            guildTabs[page].SetPressedNoSignal(guildPage == page);
         }
         guildNoticePage.Visible = State.InGuild && guildPage == 0; guildMembersPage.Visible = State.InGuild && guildPage == 1; guildRanksPage.Visible = State.InGuild && guildPage == 2;
         guildSummary.Text = State.Guild is { } g ? $"{g.GuildName}\n职位：{g.GuildRankName}\n等级：{g.Level}\n成员：{g.MemberCount}/{g.MaxMembers}\n经验：{g.Experience}/{g.MaxExperience}\n资金：{g.Gold:N0}\n\n!~内容 发送行会聊天" : "尚未加入行会。\n允许邀请后，由有招收权限的成员邀请你。\n\n行会可由管理台创建。";

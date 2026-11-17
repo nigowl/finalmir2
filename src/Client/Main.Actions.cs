@@ -21,7 +21,7 @@ public partial class Main
         destination = point; actionTarget = 0; pendingAttack = null; running = run;
         MiniMap.Route = State.User?.Location == point ? [] : World.PathTo(point);
     }
-    public void SelectTarget(uint id) { actionTarget = id; World.Selected = id; destination = null; pendingAttack = null; MiniMap.Route = []; }
+    public void SelectTarget(uint id) { actionTarget = id; running = preferences.DefaultRun; autoPickupTarget = 0; World.Selected = id; destination = null; pendingAttack = null; MiniMap.Route = []; }
     private void ProcessActions()
     {
         var me = State.Me; var user = State.User;
@@ -30,26 +30,27 @@ public partial class Main
         if (autoBattleEnabled && (State.Trading || State.StorageActive || npc.Visible || GuildStorageOpen))
         { destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; return; }
         var now = Environment.TickCount64;
+        if (destination.HasValue) World.WarmMovement(MiniMap.Route, running);
         if (moving)
         {
             if (now - moveTime > 3000) { moving = false; destination = null; actionTarget = 0; MiniMap.Route = []; Log("移动回执超时，请检查连接后重新选择目标。"); }
             return;
         }
-        if (now - moveTime < Actor.MoveDuration || now - me.ActionTime < World.ActionDuration(me) && me.Action != MirAction.Standing) return;
+        if (State.Actors.GetValueOrDefault(actionTarget) is { Kind: ObjectType.Item } loot && loot.Location == user.Location)
+        { PickUpTarget(loot); return; }
+        if (now - moveTime < me.MoveDelay || now - me.ActionTime < World.ActionDuration(me) && me.Action != MirAction.Standing) return;
         if (pendingAttack is { } direction) { Attack(direction, pendingAttackSpell); return; }
+        var canRun = ClientMovement.CanRun(State, running, lastMoved, now);
         if (actionTarget != 0)
         {
             if (!State.Actors.TryGetValue(actionTarget, out var target) || target.Hidden) { actionTarget = 0; return; }
             var distance = Distance(user.Location, target.Location);
             if (target.Kind == ObjectType.Merchant && distance <= 5)
             { destination = null; MiniMap.Route = []; State.NpcId = target.Id; Send(new C.CallNPC { ObjectID = target.Id, Key = "[@MAIN]" }); actionTarget = 0; return; }
-            if (target.Kind == ObjectType.Item && distance == 0) { Send(new C.PickUp()); actionTarget = 0; return; }
             if (target.Kind == ObjectType.Monster && !target.Dead && BattleSkill(target, now)) return;
-            if (target.Kind == ObjectType.Monster && !target.Dead && user.Class == MirClass.Warrior && preferences.SmartThrusting && distance == 2 &&
-                target.Location == Functions.PointMove(user.Location, Direction(user.Location, target.Location), 2) &&
-                State.User.Magics.FirstOrDefault(magic => magic.Spell == Spell.Thrusting) is { } thrust && !State.DisabledSkills.Contains(thrust.Spell) && !ClientAutomation.RequiresPhysicalAttack(target))
+            if (ClassSkillRules.Thrusting(State, preferences, target, SmartCombatActive, now))
             { Attack(Direction(user.Location, target.Location), Spell.Thrusting); return; }
-            if (target.Kind == ObjectType.Monster && !target.Dead && OriginalPlayerArt.HasBow(user.Class, me.Weapon) && distance <= Globals.MaxAttackRange)
+            if (target.Kind == ObjectType.Monster && !target.Dead && !ClientAutomation.RequiresPhysicalAttack(target) && OriginalPlayerArt.HasBow(user.Class, me.Weapon) && distance <= Globals.MaxAttackRange)
             { RangeAttack(target); return; }
             if (target.Kind == ObjectType.Monster && distance <= 1)
             {
@@ -60,18 +61,17 @@ public partial class Main
             destination = target.Location;
             if (target.Kind != ObjectType.Item)
             {
-                destination = World.Approach(target);
+                destination = World.Approach(target, canRun ? ClientMovement.RunDistance(State) : 1);
                 if (destination == null) { actionTarget = 0; MiniMap.Route = []; return; }
             }
         }
         if (destination == null) return;
         if (user.Location == destination) { destination = null; MiniMap.Route = []; return; }
-        // 原服务端要求先走一步；提前准备同向走跑素材，避免切换跑步时再次停顿。
-        var step = World.NextStep(destination.Value, running && now - lastMoved < 700, out var route);
+        var step = World.NextStep(destination.Value, canRun, out var route);
         MiniMap.Route = route;
         if (step == null) { destination = null; MiniMap.Route = []; Log("寻路已停止：目标不可到达或道路被阻挡。"); return; }
         var dir = Direction(user.Location, step.Value);
-        var run = Distance(user.Location, step.Value) == 2;
+        var run = Distance(user.Location, step.Value) > 1;
         var ready = World.PlayerAnimationReady(dir, MirAction.Walking);
         if (running) ready &= World.PlayerAnimationReady(dir, MirAction.Running);
         if (!ready) return;
@@ -100,19 +100,9 @@ public partial class Main
         if (State.Me == null || State.User == null || State.Me.Dead) return;
         var speed = Math.Max(550, 1400 - State.CalculateStats()[Stat.AttackSpeed] * 60 - Math.Min(370, State.User.Level * 14));
         var now = Environment.TickCount64;
-        if (moving || now - moveTime < Actor.MoveDuration || now - attackTime < speed) return;
-        var spell = automaticSpell ?? Spell.None;
-        var smart = preferences.SmartHalfMoon && State.User.Class == MirClass.Warrior ? ClassSkillRules.SmartMelee(State, direction) : Spell.None;
-        foreach (var candidate in new[] { Spell.Slaying, Spell.Thrusting, Spell.HalfMoon, Spell.CrossHalfMoon, Spell.DoubleSlash, Spell.TwinDrakeBlade, Spell.FlamingSword })
-        {
-            if (automaticSpell.HasValue) break;
-            if (preferences.SmartHalfMoon && State.User.Class == MirClass.Warrior && candidate is Spell.HalfMoon or Spell.CrossHalfMoon && candidate != smart) continue;
-            if (!State.ActiveSkills.Contains(candidate) || State.DisabledSkills.Contains(candidate)) continue;
-            if (candidate == Spell.Thrusting && !State.Actors.Values.Any(a => !a.Dead && a.Kind == ObjectType.Monster && a.Location == Functions.PointMove(State.User.Location, direction, 2))) continue;
-            var magic = State.User.Magics.FirstOrDefault(m => m.Spell == candidate);
-            if (magic != null && (candidate == Spell.FlamingSword || magic.BaseCost + magic.LevelCost * magic.Level <= State.User.MP)) spell = candidate;
-        }
-        if (spell is Spell.None or Spell.Slaying or Spell.Thrusting && smart != Spell.None) spell = smart;
+        if (moving || now - moveTime < State.Me.MoveDelay || now - attackTime < speed) return;
+        var spell = ClassSkillRules.Melee(State, direction, automaticSpell,
+            State.User.Class == MirClass.Warrior && preferences.SmartHalfMoon || SmartCombatActive);
         var level = State.User.Magics.FirstOrDefault(magic => magic.Spell == spell)?.Level ?? 0;
         if (!World.MeleeReady(spell, level, direction)) { pendingAttack = direction; pendingAttackSpell = automaticSpell; return; }
         pendingAttack = null;

@@ -38,6 +38,7 @@ public sealed partial class ResourceCache : IDisposable
     public bool SupportsCharacterLocation { get; private set; }
     public int FunctionKeys { get; private set; } = 8;
     public int AttackModes { get; private set; } = 6;
+    public Mir2.StorageUnlockHint[] StorageUnlocks { get; private set; } = [];
     private int downloads, cachedFiles, pendingDownloads;
     private long downloadBytes;
     public int Downloads => Volatile.Read(ref downloads);
@@ -72,6 +73,7 @@ public sealed partial class ResourceCache : IDisposable
         root = new Uri(uri, $"assets/{Version}/").ToString();
         directory = Path.Combine(cacheRoot, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(uri.ToString())))[..12], Version);
         Directory.CreateDirectory(directory);
+        StorageUnlocks = await http.GetFromJsonAsync<Mir2.StorageUnlockHint[]>(new Uri(uri, "game/storage-unlocks")) ?? [];
         var list = Encoding.UTF8.GetString(await Fetch("sound-list"));
         foreach (var line in list.Split('\n'))
         {
@@ -227,6 +229,7 @@ public sealed partial class ResourceCache : IDisposable
             gzip.ReadExactly(pixels);
             if (gzip.ReadByte() != -1) throw new InvalidDataException("素材帧像素长度无效。");
             for (var i = 0; i < pixels.Length; i += 4) (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
+            OriginalShadowPixels.RestoreAlpha(library, pixels, width, height);
             using var decoded = Image.CreateFromData(width, height, false, Image.Format.Rgba8, pixels);
             image = new SpriteImage(ImageTexture.CreateFromImage(decoded),
                 new Vector2(BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(4)), BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(6))), new Vector2(width, height));

@@ -1,0 +1,48 @@
+@if (ReadOnly)
+{
+    <MudSimpleTable Dense="true" Hover="true" Class="settings-summary my-3">
+        <thead><tr><th>参数</th><th>当前值</th><th>默认值</th><th>说明</th></tr></thead>
+        <tbody>
+            <tr><td>升级自动学习</td><td>@(Settings.AutoLearnSkills?"开启":"关闭")</td><td>关闭</td><td>升级后学习已勾选且符合条件的技能，不消耗技能书</td></tr>
+            @foreach (var role in Enum.GetValues<MirClass>())
+            {
+                <tr><td>@role.ToLocalizedString()技能</td><td>@Selection(role)</td><td>未选择</td><td>已学技能保持等级、熟练度和快捷键</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+}
+else
+{
+    <MudCheckBox T="bool" Dense="true" Label="升级自动学习" @bind-Value="Settings.AutoLearnSkills" @bind-Value:after="Notify" />
+    <MudText Typo="Typo.caption" Class="mb-3">下次升级时按职业、学习等级及其他学习条件检查；可多选，不消耗技能书，不重复学习或提升已学技能。</MudText>
+    <MudTabs>
+        @foreach (var role in Enum.GetValues<MirClass>())
+        {
+            <MudTabPanel Text="@role.ToLocalizedString()">
+                <MudGrid Spacing="1" Class="my-2">
+                    @foreach (var skill in Options.Where(skill=>skill.Class==role))
+                    {
+                        <MudItem xs="12" sm="6"><MudCheckBox T="bool" Dense="true" Label="@($"{skill.Name}（{skill.Level}级）")"
+                            Value="@Settings.SkillsFor(role).Contains(skill.Spell)" ValueChanged="@((bool value)=>Toggle(role,skill.Spell,value))" /></MudItem>
+                    }
+                    @if (!Options.Any(skill=>skill.Class==role)) { <MudItem xs="12"><MudText Color="Color.Secondary">当前版本没有此职业可选的技能。</MudText></MudItem> }
+                </MudGrid>
+            </MudTabPanel>
+        }
+    </MudTabs>
+}
+@code {
+    [Parameter,EditorRequired] public ServerSettings Settings { get; set; } = null!;
+    [Parameter] public AutoLearnSkillOption[] Options { get; set; } = [];
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    private Task Notify()=>Changed.InvokeAsync();
+    private Task Toggle(MirClass role,Spell spell,bool value)
+    {
+        // 替换数组，不修改已读对象共享的内容，取消编辑不会泄漏草稿。
+        Settings.SetSkills(role,value?Settings.SkillsFor(role).Append(spell).Distinct().Order().ToArray():Settings.SkillsFor(role).Where(selected=>selected!=spell).ToArray());
+        return Notify();
+    }
+    private string Selection(MirClass role)=>Settings.SkillsFor(role).Length==0?"未选择":string.Join("、",Settings.SkillsFor(role)
+        .Select(spell=>Options.FirstOrDefault(skill=>skill.Class==role&&skill.Spell==spell)?.Name??$"{spell}（已不可用）"));
+}

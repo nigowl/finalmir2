@@ -18,15 +18,25 @@ public sealed record CompanionRecord
     public string Desired { get; set; } = "off";
     public DateTimeOffset? SuppressedUntil { get; set; }
     public DateTimeOffset? RestUntil { get; set; }
+    public DateTimeOffset? QueueSince { get; set; }
+    public DateTimeOffset? SessionUntil { get; set; }
+    public DateTimeOffset? SessionStarted { get; set; }
+    public int SessionRestMinutes { get; set; }
+    public int SessionNumber { get; set; }
+    public string LastSessionReason { get; set; } = "";
     public Dictionary<long, int> OnlineSeconds { get; set; } = [];
     public string Error { get; set; } = "";
+    public DateTimeOffset? RecoveryAt { get; set; }
+    public int RecoveryAttempts { get; set; }
+    public bool RecoveryDisabled { get; set; }
+    public int SessionDeaths { get; set; }
 }
 public sealed record CompanionConfiguration(CompanionSettings Settings, string LlmKey, string Instance, DateTimeOffset LlmDay, int LlmCalls,
-    Dictionary<Guid,string>? ModelKeys = null);
+    Dictionary<Guid,string>? ModelKeys = null, CompanionArrivalState? Arrivals = null);
 public sealed record CompanionEnvelope<T>(int Schema, T Value);
 
 // 所有调用都在游戏线程，工作进程不打开 SQLite。
-public sealed class CompanionStore
+public sealed partial class CompanionStore
 {
     private readonly SqliteDatabaseStorage storage;
     private readonly AdminChanges changes;
@@ -55,6 +65,8 @@ public sealed class CompanionStore
                 var record = Read<CompanionRecord>(key, null!);
                 if (record?.Profile == null || record.Profile.Id == Guid.Empty || record.OnlineSeconds == null || record.Password == null || record.Account == null || record.Error==null || record.Profile.Name==null || record.Profile.Traits==null || record.Profile.Schedule==null || !Records.TryAdd(record.Profile.Id, record)) throw new InvalidDataException("陪玩档案编号或内容无效。");
                 CompanionScheduling.Validate(record.Profile.Schedule);
+                CompanionValidation.Guilds(record.Profile.Guilds);
+                if(record.RecoveryAttempts is <0 or >1000 || record.SessionDeaths is <0 or >1000)throw new InvalidDataException("陪玩托管恢复或死亡计数无效。");
             }
         }
         catch (Exception e) when (e is JsonException or InvalidDataException or EndOfStreamException)
@@ -64,7 +76,7 @@ public sealed class CompanionStore
     public CompanionSettings Settings => Configuration.Settings with { HasLlmKey = false,
         Models=Configuration.Settings.Models.Select(m=>m with{HasKey=Configuration.ModelKeys?.GetValueOrDefault(m.Id)?.Length>0}).ToArray(),
         Enabled = Configuration.Settings.Enabled && Configuration.Instance == paths.VersionId,
-        Version = AdminChanges.Version(Configuration with { LlmDay = default, LlmCalls = 0 }) };
+        Version = AdminChanges.Version(Configuration with { LlmDay = default, LlmCalls = 0, Arrivals = null }) };
     public void Ready() { if (LoadError != null) throw new InvalidOperationException(LoadError); }
     private T Read<T>(string key, T fallback)
     {
@@ -91,7 +103,8 @@ public sealed class CompanionStore
         if (existing != null) AdminChanges.Match(Public(existing).Version, profile.Version);
         var value = existing == null ? new CompanionRecord { Seed = RandomNumberGenerator.GetInt32(int.MaxValue), Account = account, Password = password } : existing with { };
         value.Profile = profile with { Version = "" };
-        if (!profile.Enabled) value.Desired = "off";
+        value.RecoveryDisabled=!profile.Enabled;
+        if (!profile.Enabled) { value.Desired = "off"; value.RecoveryDisabled = true; value.RecoveryAt = null; }
         changes.Commit(() => { Write(Key(profile.Id), value); Records[profile.Id] = value; }, () =>
         { if (existing == null) Records.Remove(profile.Id); else Records[profile.Id] = existing; });
     }
@@ -102,6 +115,11 @@ public sealed class CompanionStore
             throw new InvalidOperationException("模型仍被开启增强的陪玩引用，请先为这些角色更换模型或关闭增强。");
         var old = Configuration;
         var next=CompanionModels.Apply(old,edit,paths.VersionId);
+        var a=next.Settings.Arrivals;
+        var reset=old.Instance!=paths.VersionId||!old.Settings.Enabled||!old.Settings.Arrivals.Enabled||
+            a.MinMinutes!=old.Settings.Arrivals.MinMinutes||a.MaxMinutes!=old.Settings.Arrivals.MaxMinutes;
+        next=next with{Arrivals=(old.Arrivals??new()) with{NextAt=next.Settings.Enabled&&a.Enabled?
+            reset?CompanionScheduling.NextArrival(a,DateTimeOffset.UtcNow):old.Arrivals?.NextAt:null}};
         changes.Commit(() => { Write("companions/settings.json", next); Configuration = next; }, () => Configuration = old);
     }
     public string StartAllVersion => AdminChanges.Version(new { Settings.Version, Profiles=Records.Values.OrderBy(r=>r.Profile.Id).Select(r=>Public(r).Version).ToArray() });
@@ -112,12 +130,14 @@ public sealed class CompanionStore
         if(old.Length==0)throw new InvalidOperationException("没有已启用的陪玩，请先新增或启用角色。");
         var configuration=Configuration;
         var next=configuration with{Settings=configuration.Settings with{Enabled=true},Instance=paths.VersionId};
+        if(next.Settings.Arrivals.Enabled&&(!Settings.Enabled||configuration.Arrivals?.NextAt==null))
+            next=next with{Arrivals=(configuration.Arrivals??new()) with{NextAt=CompanionScheduling.NextArrival(next.Settings.Arrivals,DateTimeOffset.UtcNow)}};
         // 档案意愿与总开关一次提交；保留人格、作息、用量、凭据和模型密钥。
         changes.Commit(()=>
         {
             foreach(var r in old)
             {
-                var value=r with{Desired="run",Error="",SuppressedUntil=null,RestUntil=null};
+                var value=r with{Desired="run",Error="",SuppressedUntil=null,RestUntil=null,QueueSince=null,RecoveryAt=null,RecoveryAttempts=0,RecoveryDisabled=false,SessionDeaths=0};
                 Write(Key(value.Profile.Id),value);Records[value.Profile.Id]=value;
             }
             Write("companions/settings.json",next);Configuration=next;
@@ -149,12 +169,12 @@ public sealed class CompanionStore
         PrepareWrite(); var old = Get(id);
         changes.Commit(() => { storage.Remove(Key(id)); Records.Remove(id); }, () => Records[id] = old);
     }
-    public void SaveBatch(CompanionProfile[] profiles,string[] nicknames)
+    public void SaveBatch(CompanionProfile[] profiles,string[] nicknames,CompanionArrivalState? arrivals=null)
     {
         PrepareWrite();var old=Configuration;
         var records=profiles.Select(p=>new CompanionRecord{Profile=p with{Version=""},Seed=RandomNumberGenerator.GetInt32(int.MaxValue),
             Account="c"+Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant(),Password=Convert.ToHexString(RandomNumberGenerator.GetBytes(7))}).ToArray();
-        var next=old with{Settings=old.Settings with{Nicknames=nicknames.Select(n=>n.Trim()).Where(n=>n.Length>0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()}};
+        var next=old with{Settings=old.Settings with{Nicknames=nicknames.Select(n=>n.Trim()).Where(n=>n.Length>0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()},Arrivals=arrivals??old.Arrivals};
         changes.Commit(()=>
         {
             foreach(var r in records){Write(Key(r.Profile.Id),r);Records.Add(r.Profile.Id,r);}

@@ -12,6 +12,8 @@ public sealed partial class CompanionSession
     private string mapName = "";
     private bool moving;
     private long moveSent;
+    private long lastMoved;
+    private Point moveDestination;
     private readonly Random random;
     private readonly Dictionary<Point, long> unreachable = [];
     private readonly CompanionPath navigation = new();
@@ -25,8 +27,8 @@ public sealed partial class CompanionSession
         var exit=Knowledge.Exits.Where(e=>exploredMaps.GetValueOrDefault(e.DestinationMapId)<now)
             .OrderBy(e=>Distance(state.User!.Location,new(e.X,e.Y))).FirstOrDefault();
         if(exit==null)return false;
-        await Status("跨图中","步行前往当前版本公开入口");
-        return await MoveTo(new(exit.X,exit.Y));
+        await Status("跨图中","沿当前版本公开入口赶路");
+        return await MoveTo(new(exit.X,exit.Y),run:true);
     }
     private static int Distance(Point a, Point b) => Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
     private static MirDirection Direction(Point a, Point b) => (Math.Sign(b.X - a.X), Math.Sign(b.Y - a.Y)) switch
@@ -63,27 +65,31 @@ public sealed partial class CompanionSession
     }
     private bool Walkable(Point p) => map != null && p.X >= 0 && p.Y >= 0 && p.X < map.Width && p.Y < map.Height &&
         (map.MapCells[p.X,p.Y].BackImage & 0x20000000) == 0 && (map.MapCells[p.X,p.Y].FrontImage & 0x8000) == 0;
-    private Point? Step(Point destination, int near)
+    private Point? Step(Point destination, int near, string goal, bool run)
     {
         if (state.User == null) return null;
         var origin = state.User.Location;
         var occupied = state.Actors.Values.Where(a => a.Id != state.User.ObjectID && !a.Dead && !a.Hidden && a.Kind is not (ObjectType.Item or ObjectType.Spell)).Select(a => a.Location).ToHashSet();
         foreach(var exit in Knowledge?.Exits ?? [])
             if(near > 0 || new Point(exit.X,exit.Y)!=destination)occupied.Add(new(exit.X,exit.Y));
-        return navigation.Next(origin, destination, near, Walkable, occupied);
+        return navigation.Next(origin, destination, near, Walkable, occupied, goal, run);
     }
-    private async Task<bool> MoveTo(Point destination, int near = 0)
+    private async Task<bool> MoveTo(Point destination, int near = 0, string goal = "", bool run = false)
     {
         if (state.User == null || Distance(state.User.Location, destination) <= near) return false;
         var now = Environment.TickCount64;
         if (unreachable.GetValueOrDefault(destination) > now) return false;
-        var step = Step(destination, near);
+        var step = Step(destination, near, goal, run && CompanionSafety.CanRun(state,now,lastMoved));
         if (step != null)
         {
-            var door=map!.MapCells[step.Value.X,step.Value.Y].DoorIndex;
-            if(door!=0)await connection.Send(new C.Opendoor{DoorIndex=door});
-            await connection.Send(new C.Walk { Direction = Direction(state.User.Location, step.Value) });
-            moving = true; moveSent = now; nextAction = now + 650; return true;
+            var direction=Direction(state.User.Location,step.Value);var distance=Distance(state.User.Location,step.Value);
+            for(var i=1;i<=distance;i++)
+            {
+                var point=Functions.PointMove(state.User.Location,direction,i);var door=map!.MapCells[point.X,point.Y].DoorIndex;
+                if(door!=0)await connection.Send(new C.Opendoor{DoorIndex=door});
+            }
+            await connection.Send(distance==2?new C.Run { Direction=direction }:new C.Walk { Direction=direction });
+            moveDestination=step.Value;moving = true; moveSent = now; nextAction = now + 650; return true;
         }
         unreachable[destination] = now + 15000;
         if (unreachable.Count > 128) unreachable.Clear();

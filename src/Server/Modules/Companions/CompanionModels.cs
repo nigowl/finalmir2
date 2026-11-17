@@ -28,7 +28,7 @@ public static class CompanionModels
             keys[model.Id]=replacement?.Clear==true?"":replacement?.Key??old.ModelKeys?.GetValueOrDefault(model.Id)??"";
         }
         return new(edit.Settings with{Version="",LlmEndpoint="",LlmModel="",HasLlmKey=false,Models=edit.Settings.Models.Select(m=>m with{HasKey=false}).ToArray()},
-            "",instance,old.LlmDay,old.LlmCalls,keys);
+            "",instance,old.LlmDay,old.LlmCalls,keys,old.Arrivals);
     }
     public static CompanionModelConnection? Select(CompanionConfiguration configuration,Guid modelId)
     {

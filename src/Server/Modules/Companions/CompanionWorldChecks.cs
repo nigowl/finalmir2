@@ -22,7 +22,13 @@ public static class CompanionWorldChecks
             if (finish.Length == 0) warnings.Add("没有已加载的交付 NPC");
             warnings.AddRange(PrerequisiteWarnings(quest, quests));
             if (quest.RequiredMinLevel > quest.RequiredMaxLevel) warnings.Add("最低等级大于最高等级");
-            if (quest.FlagTasks.Count > 0) warnings.Add("包含脚本标记目标，陪玩尚不能自动完成");
+            foreach (var task in quest.FlagTasks)
+            {
+                var sources = world.NPCs.Where(npc => CompanionQuestFlags.Source(npc) == (quest.Index, task.Number)).Select(npc => $"{npc.Name}#{npc.Info.Index}").ToArray();
+                targets.Add($"标记 {task.Number}；主对话来源 {string.Join(',', sources)}");
+                if (sources.Length == 0) warnings.Add($"标记 {task.Number} 未识别受支持的主对话来源，需核实复杂脚本");
+            }
+            if (quest.FlagTasks.Count > 0) warnings.Add("标记来源仍须核对本人可见性及公开路线；不支持任意条件剧情");
             foreach (var task in quest.KillTasks)
             {
                 var sources = CompanionPlanning.KillSources(task.Monster).Where(spawns.Contains).ToArray();

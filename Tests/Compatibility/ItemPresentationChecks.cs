@@ -21,6 +21,17 @@ internal static class ItemPresentationChecks
             "登录自动合堆丢失数量/编号或混合了品质、绑定和装备");
         check(meat.StackSize == 999 && gearInfo.StackSize == 1 && !gear.CanStackWith(gear.Clone()), "普通肉合堆或装备单件上限错误");
         check(ItemPresentation.Name(first) == "鲜鹿肉×101" && ItemPresentation.Name(gear) == "测试武器", "堆叠名称或装备×1显示错误");
+        foreach (var type in new[] { ItemType.Potion, ItemType.Scroll, ItemType.Book, ItemType.Food, ItemType.Script, ItemType.Transform, ItemType.Pets, ItemType.MonsterSpawn })
+            check(ItemPresentation.CanQuickUse(new UserItem(new ItemInfo { Type = type })), $"{type} 使用类道具不能进入快捷栏");
+        foreach (var type in Enum.GetValues<ItemType>().Where(type => new ItemInfo { Type = type }.IsEquipment)
+            .Concat(new[] { ItemType.Amulet, ItemType.Quest, ItemType.Meat, ItemType.CraftingMaterial, ItemType.Ore, ItemType.Bait }))
+            check(!ItemPresentation.CanQuickUse(new UserItem(new ItemInfo { Type = type })), $"{type} 非使用类道具进入快捷栏");
+        check(!ItemPresentation.CanQuickUse(null) && !ItemPresentation.CanQuickUse(new UserItem(new ItemInfo()) { Info = null! }), "空物品被视为可使用");
+        check(!ItemPresentation.Details(gear).Contains("耐久"), "0/0耐久没有隐藏");
+        gear.MaxDura = 8000;
+        check(ItemPresentation.Details(gear).Contains("耐久 0/8"), "破损0/8装备被误隐藏");
+        check(ItemPresentation.Category(new UserItem(new ItemInfo { Type = ItemType.Quest })).Contains("专用任务栏") &&
+            !ItemPresentation.Category(first).Contains("任务物品"), "专用任务物品与普通任务材料混淆");
         check(ItemPresentation.Stats(gear).Contains("攻击 3–9") && ItemPresentation.Stats(gear).Contains("魔法 2–5"), "属性区间没有合并或漏了附加属性");
         var state = new GameState();
         var worn = new UserItem(new ItemInfo { Type = ItemType.Weapon, Stats = new Stats { [Stat.MaxDC] = 5 } }) { Count = 1 };

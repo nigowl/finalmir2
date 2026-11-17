@@ -10,24 +10,41 @@ using Mir2.Management;
 
 if (args.Contains("--fixture"))
 {
-    Fixture.Create(args[Array.IndexOf(args, "--fixture") + 1], args.Contains("--trade-fixture"), args.Contains("--guild-fixture"), args.Contains("--catalog-fixture"), args.Contains("--guided-companions"), args.Contains("--gm-fixture"), args.Contains("--skill-fixture"));
+    Fixture.Create(args[Array.IndexOf(args, "--fixture") + 1], args.Contains("--trade-fixture"), args.Contains("--guild-fixture"), args.Contains("--catalog-fixture"), args.Contains("--guided-companions"), args.Contains("--gm-fixture"), args.Contains("--skill-fixture"), args.Contains("--companion-fixture"));
     return;
 }
 if (args.Contains("--admin-session")) { await AdminSession.Run(args); return; }
+if (args.Contains("--storage-pages-saved")) { StoragePagesScenario.Verify(new ProjectPaths(), int.Parse(args[Array.IndexOf(args, "--storage-pages-saved") + 1])); return; }
 if (args.Contains("--skill-assets")) { SkillAssetChecks.Run(); return; }
 if (args.Contains("--gm-checks")) { await GmCommandSession.Run(args); return; }
+if (args.Contains("--auto-learn-session")) { await AutoLearnSession.Run(args); return; }
 if (args.Contains("--companion-supplies")) { CompanionScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-supplies")+1])); return; }
 if (args.Contains("--companion-stocked-sale")) { CompanionScenario.PrepareStockedSale(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-stocked-sale")+1])); return; }
 if (args.Contains("--companion-meat")) { CompanionMeatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-meat")+1])); return; }
 if (args.Contains("--companion-exit")) { CompanionExitScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-exit")+1])); return; }
-if (args.Contains("--companion-healing")) { CompanionScenario.PrepareHealing(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-healing")+1])); return; }
+if (args.Contains("--companion-running")) { CompanionMovementScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-running")+1]),args.Contains("--heavy"),args.Contains("--classic-map")); return; }
+if (args.Contains("--companion-repair")) { CompanionRepairScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-repair")+1])); return; }
+if (args.Contains("--companion-quests")) { CompanionQuestScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-quests")+1]),args.Contains("--travel-threat"),args.Contains("--full-bag"),args.Contains("--blocked-reward"),args.Contains("--reward-room")); return; }
+if (args.Contains("--companion-progression")) { CompanionProgressionScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-progression")+1])); return; }
+if (args.Contains("--companion-funding")) { CompanionFundingScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-funding")+1]),args.Contains("--no-source"),args.Contains("--harvest-source"),args.Contains("--evasive-source"),args.Contains("--harvest-ground"),args.Contains("--remote-delivery"),args.Contains("--unarmed"),args.Contains("--crowded-source")); return; }
+if (args.Contains("--companion-supply-priority")) { CompanionSupplyPriorityScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-supply-priority")+1]),args.Contains("--emergency-gold")?uint.Parse(args[Array.IndexOf(args,"--emergency-gold")+1]):null,args.Contains("--vendor-routes")); return; }
+if (args.Contains("--companion-harvest")) { CompanionHarvestScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-harvest")+1]),args.Contains("--needed")); return; }
+if (args.Contains("--companion-storage")) { CompanionStorageScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-storage")+1]),args[^1]); return; }
+if (args.Contains("--companion-dispatch")) { CompanionDispatchScenario.Prepare(new ProjectPaths()); return; }
+if (args.Contains("--companion-healing")) { CompanionScenario.PrepareHealing(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-healing")+1]),args.Contains("--retirement-healing")); return; }
 if (args.Contains("--companion-town")) { CompanionScenario.PrepareTown(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-town")+1]), args.Contains("--deny-town")); return; }
+if (args.Contains("--companion-protection")) { var i=Array.IndexOf(args,"--companion-protection");CompanionProtectionScenario.Prepare(new ProjectPaths(),int.Parse(args[i+1]),args[i+2]);return; }
 if (args.Contains("--companion-tree")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-tree")+1]),true); return; }
-if (args.Contains("--companion-ranged")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-ranged")+1]),false,args.Contains("--empty-mana")); return; }
+if (args.Contains("--companion-guild")) { var i=Array.IndexOf(args,"--companion-guild"); CompanionGuildScenario.Run(new ProjectPaths(),int.Parse(args[i+1]),int.Parse(args[i+2]),args[i+3]); return; }
+if (args.Contains("--companion-ranged")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-ranged")+1]),false,args.Contains("--empty-mana"),args.Contains("--retire-threat"),args.Contains("--persistent-threat"),args.Contains("--penalty-mana"),args.Contains("--amulet-case")?args[Array.IndexOf(args,"--amulet-case")+1]:""); return; }
 if (args.Contains("--companion-variant")) { CompanionScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-variant")+1]),true); return; }
 if (args.Contains("--companion-social")) { await CompanionSocialSession.Run(args); return; }
+if (args.Contains("--companion-development")) { CompanionDevelopmentScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-development")+1]));return; }
+if (args.Contains("--companion-classes")) { CompanionClassScenario.Prepare(new ProjectPaths(),args[(Array.IndexOf(args,"--companion-classes")+1)..].Select(int.Parse).ToArray());return; }
+if (args.Contains("--companion-party")) { CompanionPartyScenario.Prepare(new ProjectPaths(),args[(Array.IndexOf(args,"--companion-party")+1)..].Select(int.Parse).ToArray());return; }
 if (args.Contains("--trade-recovery")) { await TradeRecoverySession.Run(args); return; }
 if (args.Contains("--chinese-checks")) { ChineseTranslationChecks.Run(new ProjectPaths()); return; }
+if(args.Contains("--companion-supervision-setup")){CompanionSupervisionChecks.Prepare(new ProjectPaths());return;}
 
 var checks = 0;
 void Check(bool result, string message)
@@ -35,6 +52,66 @@ void Check(bool result, string message)
     if (!result) throw new Exception(message);
     checks++;
 }
+if (args.Contains("--client-checks"))
+{
+    ClientAnimationChecks.Run(Check); ClientMovementChecks.Run(Check); ActorFrameChecks.Run(Check); ShadowPixelChecks.Run(Check); ClientAutomationChecks.Run(Check); ClientPickupChecks.Run(Check); ClientNoticeChecks.Run(Check);
+    ClientSkillChecks.Run(Check); ClassSkillChecks.Run(Check); ClassCombatChecks.Run(Check); BuffDataChecks.Run(Check); CombatPresentationChecks.Run(Check); SkillEffectChecks.Run(Check); SkillDamageChecks.Run(Check);
+    Console.WriteLine($"PASS {checks} focused client animation/class/combat checks."); return;
+}
+if (args.Contains("--movement-checks"))
+{ ClientMovementChecks.Run(Check); Console.WriteLine($"PASS {checks} client movement/run checks."); return; }
+if (args.Contains("--supplies-storage-checks"))
+{ SuppliesStorageChecks.Run(Check); BasicDropBalanceChecks.Run(Check); Console.WriteLine($"PASS {checks} supplies/storage/equipment checks."); return; }
+if (args.Contains("--item-ui-checks"))
+{ ItemPresentationChecks.Run(Check); ClientNoticeChecks.Run(Check); ClientItemChecks.Run(Check); ItemWeightChecks.Run(Check); DamageIndicatorChecks.Run(Check); QuestInventoryChecks.Run(Check); ClassSelectionChecks.Run(Check); Console.WriteLine($"PASS {checks} item, weight, quest inventory, damage and class selection checks."); return; }
+if (args.Contains("--settings-checks"))
+{
+    SystemDefaultsChecks.Run(Check);
+    var folder = Path.Combine(Path.GetTempPath(), "mir2-settings-checks-" + Guid.NewGuid().ToString("N"));
+    try { SystemSettingsChecks.Run(Check, folder); ClassSelectionChecks.Run(Check); }
+    finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+    Console.WriteLine($"PASS {checks} system defaults, class permissions and settings safety checks."); return;
+}
+if (args.Contains("--npc-template-checks"))
+{ NpcTemplateChecks.Run(Check); NpcSessionChecks.Run(Check); Console.WriteLine($"PASS {checks} NPC template/session checks."); return; }
+if(args.Contains("--auto-learn-checks"))
+{AutoLearnSkillChecks.Run(Check);Console.WriteLine($"PASS {checks} automatic skill learning/settings checks.");return;}
+if (args.Contains("--shadow-checks"))
+{ ShadowPixelChecks.Run(Check); ShadowPixelChecks.RunAssets(new ProjectPaths(), Check); Console.WriteLine($"PASS {checks} shadow pixel checks."); return; }
+if(args.Contains("--companion-logout-checks"))
+{await CompanionLogoutChecks.Run(Check);Console.WriteLine($"PASS {checks} companion logout acknowledgement checks.");return;}
+if(args.Contains("--companion-protection-checks"))
+{BindLocationChecks.Run(Check);await CompanionProtectionChecks.Run(Check);Console.WriteLine($"PASS {checks} companion protection checks.");return;}
+if(args.Contains("--companion-party-checks"))
+{CompanionPartyChecks.Run(Check);CompanionFundingChecks.Run(Check);Console.WriteLine($"PASS {checks} companion party/funding checks.");return;}
+if(args.Contains("--companion-knowledge-checks"))
+{await CompanionKnowledgeChecks.Run(Check);Console.WriteLine($"PASS {checks} companion map knowledge ordering checks.");return;}
+if(args.Contains("--companion-movement-checks"))
+{CompanionMovementChecks.Run(Check);Console.WriteLine($"PASS {checks} companion movement and travel checks.");return;}
+if(args.Contains("--companion-path-checks"))
+{CompanionPathChecks.Run(Check);Console.WriteLine($"PASS {checks} companion bounded path planning checks.");return;}
+if(args.Contains("--quest-parsing-checks"))
+{QuestParsingChecks.Run(Check);Console.WriteLine($"PASS {checks} quest whitespace parsing checks.");return;}
+if(args.Contains("--companion-guild-checks"))
+{CompanionGuildChecks.Run(Check);CompanionGuildSiegeChecks.Run(Check);Console.WriteLine($"PASS {checks} companion guild checks.");return;}
+if(args.Contains("--companion-funding-checks"))
+{CompanionFundingChecks.Run(Check);Console.WriteLine($"PASS {checks} companion funding checks.");return;}
+if(args.Contains("--companion-supply-checks"))
+{CompanionSupplyChecks.Run(Check);Console.WriteLine($"PASS {checks} companion supply and vendor route checks.");return;}
+if(args.Contains("--companion-accuracy-checks"))
+{CompanionAccuracyChecks.Run(Check);Console.WriteLine($"PASS {checks} companion physical hit chance planning checks.");return;}
+if(args.Contains("--companion-development-checks"))
+{CompanionDevelopmentChecks.Run(Check);Console.WriteLine($"PASS {checks} companion development and survival planning checks.");return;}
+if(args.Contains("--companion-combat-reader-checks"))
+{CompanionCombatReaderChecks.Run(Check);Console.WriteLine($"PASS {checks} companion combat snapshot checks.");return;}
+if(args.Contains("--companion-quest-checks"))
+{CompanionQuestChecks.Run(Check);Console.WriteLine($"PASS {checks} companion quest progression checks.");return;}
+if(args.Contains("--monster-drop-checks"))
+{MonsterDropChecks.Run(Check);Console.WriteLine($"PASS {checks} monster drop checks.");return;}
+if(args.Contains("--drop-composition-checks"))
+{DropCompositionChecks.Run(Check);Console.WriteLine($"PASS {checks} drop composition migration checks.");return;}
+if(args.Contains("--drop-organization-checks"))
+{DropScriptOrganizationChecks.Run(Check);DropScriptNameChecks.Run(Check);DataBootstrapChecks.Run(Check);Console.WriteLine($"PASS {checks} shared drop organization/naming/bootstrap checks.");return;}
 void Reject(Action action, string message)
 {
     try { action(); }
@@ -46,6 +123,9 @@ var temporary = Path.Combine(Path.GetTempPath(), "mir2-test-" + Guid.NewGuid());
 Directory.CreateDirectory(temporary);
 try
 {
+    if(args.Contains("--companion-supervision-checks")){CompanionSupervisionChecks.Run(Check,temporary);CompanionRecoveryChecks.Run(Check,temporary);Console.WriteLine($"PASS {checks} companion supervision checks.");return;}
+    CompanionSupervisionChecks.Run(Check,temporary);
+    CompanionRecoveryChecks.Run(Check,temporary);
     var iniPath = Path.Combine(temporary, "ini-read", "Configs", "test.ini");
     var ini = new InIReader(iniPath);
     Check(!Directory.Exists(Path.GetDirectoryName(iniPath)), "Reading INI created an empty configuration directory");
@@ -102,9 +182,12 @@ try
     }
 
     AdministrationChecks.Run(Check, temporary);
+    DataBootstrapChecks.Run(Check);
+    DropScriptNameChecks.Run(Check);
     CompanionChecks.Run(Check, temporary);
     SystemSettingsChecks.Run(Check, temporary);
     CompanionAllChecks.Run(Check, temporary);
+    CompanionDispatchChecks.Run(Check, temporary);
     await CompanionLlmChecks.Run(Check);
     Check(DisplaySizing.Fit(1920, 1080, 1) == (1280, 960), "Normal DPI window changed unexpectedly");
     Check(DisplaySizing.Fit(3840, 2160, 2) == (2560, 1920), "Retina window did not follow the display scale");
@@ -114,29 +197,56 @@ try
         Check(fit.Width <= width * .9 && fit.Height <= height * .9 && fit.Width * 3 == fit.Height * 4, "Scaled window exceeds its usable screen or loses the logical canvas ratio");
     }
     RespawnLocationChecks.Run(Check);
+    BindLocationChecks.Run(Check);
+    CompanionPartyChecks.Run(Check);
+    MapDoorChecks.Run(Check,temporary);
     ClientAnimationChecks.Run(Check);
+    ClientMovementChecks.Run(Check);
+    ActorFrameChecks.Run(Check);
     ClientAutomationChecks.Run(Check);
+    ClientPickupChecks.Run(Check);
     ClientSkillChecks.Run(Check);
     ClassSkillChecks.Run(Check);
+    ClassCombatChecks.Run(Check);
+    BuffDataChecks.Run(Check);
     SkillEffectChecks.Run(Check);
     SkillDamageChecks.Run(Check);
     GameBalanceChecks.Run(Check, temporary);
     AttackModeChecks.Run(Check);
     CompanionPlanningChecks.Run(Check);
+    CompanionQuestChecks.Run(Check);
+    QuestParsingChecks.Run(Check);
+    CompanionFundingChecks.Run(Check);
+    CompanionAccuracyChecks.Run(Check);
+    CompanionDevelopmentChecks.Run(Check);
+    CompanionCombatReaderChecks.Run(Check);
     CompanionPathChecks.Run(Check);
+    CompanionMovementChecks.Run(Check);
     CompanionSupplyChecks.Run(Check);
+    CompanionRepairChecks.Run(Check);
     CompanionHealingChecks.Run(Check);
     CompanionInventoryChecks.Run(Check);
     CompanionLootChecks.Run(Check);
+    CompanionStorageChecks.Run(Check);
+    SuppliesStorageChecks.Run(Check);
     ClientItemChecks.Run(Check);
+    ItemWeightChecks.Run(Check);
+    AutoLearnSkillChecks.Run(Check);
     ItemPresentationChecks.Run(Check);
     CommandChecks.Run(Check);
+    MonsterDropChecks.Run(Check);
+    NpcTemplateChecks.Run(Check);
+    ShadowPixelChecks.Run(Check);
     NpcSessionChecks.Run(Check);
     await ConnectionChecks.Run(Check);
+    await CompanionLogoutChecks.Run(Check);
+    await CompanionKnowledgeChecks.Run(Check);
     await ServerConnectionChecks.Run(Check);
     GroupChecks.Run(Check);
     TradeChecks.Run(Check);
     GuildChecks.Run(Check);
+    CompanionGuildChecks.Run(Check);
+    CompanionGuildSiegeChecks.Run(Check);
     GuildStorageChecks.Run(Check, temporary);
     using (var storage = new SqliteDatabaseStorage(path))
     using (var saved = storage.Read("Server.MirDB"))

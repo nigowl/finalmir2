@@ -7,6 +7,20 @@ public static class AdministrationModule
     public static void MapAdministration(this RouteGroupBuilder management)
     {
         var group = management.MapGroup("/admin");
+        group.MapGet("/monsters/{id:int}", (GameRuntime runtime, MonsterDefinitions definitions, int id, CancellationToken token) =>
+            runtime.Invoke(() => definitions.Read(id), token));
+        group.MapPut("/monsters/{id:int}", async (GameRuntime runtime, MonsterDefinitions definitions, int id, MonsterDefinition edit, CancellationToken token) =>
+        {
+            await runtime.Invoke(() => { definitions.Save(id, edit); return true; }, token);
+            await runtime.Restart(CancellationToken.None);
+            return new ActionResult("怪物属性已保存，游戏引擎已正常重启。");
+        });
+        group.MapGet("/monsters/{id:int}/drops", (GameRuntime runtime, MonsterDrops drops, int id, CancellationToken token) =>
+            runtime.Invoke(() => drops.Read(id), token));
+        group.MapPost("/monsters/{id:int}/drops/preview", (GameRuntime runtime, MonsterDrops drops, int id, MonsterDropEdit edit, CancellationToken token) =>
+            runtime.Invoke(() => drops.Preview(id, edit), token));
+        group.MapPut("/monsters/{id:int}/drops", (GameRuntime runtime, MonsterDrops drops, int id, MonsterDropEdit edit, CancellationToken token) =>
+            runtime.Invoke(() => drops.Save(id, edit), token));
         group.MapGet("/gm-commands", (GameRuntime runtime, CancellationToken token) => runtime.Invoke(() =>
             Mir2.Commands.GameCommands.All.Concat(Server.MirEnvir.Envir.Main.CustomCommands
                 .Where(name => Mir2.Commands.GameCommands.All.All(command => !command.Original.Equals(name, StringComparison.OrdinalIgnoreCase)))

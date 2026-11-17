@@ -1,4 +1,5 @@
 using Godot;
+using Crystal.Native;
 using C = ClientPackets;
 
 public partial class Main
@@ -10,10 +11,11 @@ public partial class Main
     private void BuildGameMenu()
     {
         gameMenu = new PopupMenu { Name = "GameMenu" }; game.AddChild(gameMenu);
-        gameMenu.AddChild(new Label { Text = "游戏菜单", Position = new Vector2(28, 5), Size = new Vector2(150, 24), MouseFilter = MouseFilterEnum.Ignore });
+        var title = new Label { Text = "游戏菜单", Position = new Vector2(28, 4), Size = new Vector2(180, 24), VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore };
+        title.AddThemeFontSizeOverride("font_size", ClientUi.Title); gameMenu.AddChild(title);
         gameMenu.AddSeparator("战斗", 100);
         AddMenuItem("开始挂机", 7, ControlKey | Key.Z);
-        BuildAttackModes(); gameMenu.SetItemAccelerator(gameMenu.GetItemIndex(8), ControlKey | Key.H);
+        BuildAttackModes();
         AddMenuItem("拾取", 0, Key.G);
         gameMenu.AddSeparator("界面", 101);
         AddMenuItem("背包", 9, Key.I); AddMenuItem("角色属性", 10, Key.C); AddMenuItem("技能", 11, Key.K);

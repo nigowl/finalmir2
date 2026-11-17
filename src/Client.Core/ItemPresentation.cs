@@ -4,6 +4,26 @@ public sealed record ItemRequirement(string Text, bool Met);
 
 public static class ItemPresentation
 {
+    // DNItems已逐帧核对；高额金币只换外观，仍按ObjectGold数量拾取。
+    public static int GroundGoldImage(uint amount) => amount switch
+    {
+        < 100 => 112,
+        < 1_000 => 114,
+        < 1_000_000 => 116,
+        < 5_000_000 => 117,
+        < 10_000_000 => 121,
+        _ => 122
+    };
+
+    public static bool CanQuickUse(UserItem? item) => item?.Info is { } info &&
+        (info.IsConsumable || info.Type is ItemType.Book or ItemType.Pets or ItemType.Deco or ItemType.MonsterSpawn);
+
+    public static string Details(UserItem item) =>
+        (item.CurrentDura != 0 || item.MaxDura != 0 ? $"耐久 {item.CurrentDura / 1000f:0.###}/{item.MaxDura / 1000f:0.###} · " : "") +
+        (item.Count > 1 && item.Info.Type is not (ItemType.Amulet or ItemType.Bait) ? $"单重 {item.Info.UnitWeight:0.##} · 总重 {item.Weight:0.##}" : $"重量 {item.Weight:0.##}");
+
+    public static string Category(UserItem item) => item.Info?.Type == ItemType.Quest ? "任务物品 · 专用任务栏" : $"类型 {item.Info?.Type.ToLocalizedString()}";
+
     private static readonly (Stat min, Stat max, string name)[] Ranges =
     [(Stat.MinAC, Stat.MaxAC, "防御"), (Stat.MinMAC, Stat.MaxMAC, "魔御"), (Stat.MinDC, Stat.MaxDC, "攻击"),
      (Stat.MinMC, Stat.MaxMC, "魔法"), (Stat.MinSC, Stat.MaxSC, "道术")];
@@ -54,7 +74,7 @@ public static class ItemPresentation
         if (info.RequiredAmount > 0 || info.RequiredType == RequiredType.MaxLevel)
             yield return new($"要求{info.RequiredType.ToLocalizedString()} {info.RequiredAmount}", info.RequiredType == RequiredType.MaxLevel ? user.Level <= info.RequiredAmount :
                 (requiredStat.HasValue ? stats[requiredStat.Value] : user.Level) >= info.RequiredAmount);
-        if (info.RequiredClass != RequiredClass.None)
+        if (info.RequiredClass != RequiredClass.None && (int)info.RequiredClass != 31)
             yield return new($"职业 {info.RequiredClass.ToLocalizedString()}", info.RequiredClass.HasFlag((RequiredClass)(1 << (int)user.Class)));
         if (info.RequiredGender != RequiredGender.None)
             yield return new($"性别 {info.RequiredGender.ToLocalizedString()}", info.RequiredGender.HasFlag(user.Gender == MirGender.Male ? RequiredGender.Male : RequiredGender.Female));
@@ -64,7 +84,7 @@ public static class ItemPresentation
         var slot = slots.FirstOrDefault(slot => user.Equipment.ElementAtOrDefault(slot) == null, slots[^1]);
         var hand = info.Type is ItemType.Weapon or ItemType.Torch;
         var weight = item.Weight - (user.Equipment.ElementAtOrDefault(slot)?.Weight ?? 0) + (hand ? state.HandWeight : state.WearWeight);
-        yield return new($"{(hand ? "手持" : "穿戴")}负重 {weight}/{stats[hand ? Stat.HandWeight : Stat.WearWeight]}", weight <= stats[hand ? Stat.HandWeight : Stat.WearWeight]);
+        yield return new($"{(hand ? "手持" : "穿戴")}负重 {weight:0.##}/{stats[hand ? Stat.HandWeight : Stat.WearWeight]}", weight <= stats[hand ? Stat.HandWeight : Stat.WearWeight]);
         if (item.RentalInformation?.BindingFlags != null && item.RentalInformation.BindingFlags != BindMode.None) yield return new("租赁物品当前不可使用", false);
     }
 }

@@ -164,7 +164,7 @@ namespace Server.MirObjects
         public short Looks_Armour = 0, Looks_Weapon = -1, Looks_WeaponEffect = 0;
         public byte Looks_Wings = 0;
 
-        public int CurrentHandWeight,
+        public decimal CurrentHandWeight,
                    CurrentWearWeight,
                    CurrentBagWeight;
 
@@ -1783,6 +1783,7 @@ namespace Server.MirObjects
         }
         public void RefreshBagWeight()
         {
+            if (this is PlayerObject player) player.QuestInventoryDirty = true;
             CurrentBagWeight = 0;
 
             for (int i = 0; i < Info.Inventory.Length; i++)
@@ -1831,9 +1832,9 @@ namespace Server.MirObjects
                 ItemInfo realItem = Functions.GetRealItem(temp.Info, Info.Level, Info.Class, Envir.ItemInfoList);
 
                 if (realItem.Type == ItemType.Weapon || realItem.Type == ItemType.Torch)
-                    CurrentHandWeight = (int)Math.Min(int.MaxValue, CurrentHandWeight + temp.Weight);
+                    CurrentHandWeight = Math.Min(int.MaxValue, CurrentHandWeight + temp.Weight);
                 else
-                    CurrentWearWeight = (int)Math.Min(int.MaxValue, CurrentWearWeight + temp.Weight);
+                    CurrentWearWeight = Math.Min(int.MaxValue, CurrentWearWeight + temp.Weight);
 
                 if (temp.CurrentDura == 0 && temp.Info.Durability > 0) continue;
 
@@ -1958,9 +1959,9 @@ namespace Server.MirObjects
                 ItemInfo RealItem = Functions.GetRealItem(temp.Info, Info.Level, Info.Class, Envir.ItemInfoList);
 
                 if (RealItem.Type == ItemType.Weapon || RealItem.Type == ItemType.Torch)
-                    CurrentHandWeight = (int)Math.Min(int.MaxValue, CurrentHandWeight + temp.Weight);
+                    CurrentHandWeight = Math.Min(int.MaxValue, CurrentHandWeight + temp.Weight);
                 else
-                    CurrentWearWeight = (int)Math.Min(int.MaxValue, CurrentWearWeight + temp.Weight);
+                    CurrentWearWeight = Math.Min(int.MaxValue, CurrentWearWeight + temp.Weight);
 
                 if (temp.CurrentDura == 0 && temp.Info.Durability > 0) continue;
 
@@ -2854,6 +2855,7 @@ namespace Server.MirObjects
             bool Mined = false;
             bool MoonLightAttack = false;
             bool DarkBodyAttack = false;
+            bool thrustingTrained = false;
 
             if (!CanAttack)
             {
@@ -3165,6 +3167,7 @@ namespace Server.MirObjects
                     case Spell.Thrusting:
                         magic = GetMagic(Spell.Thrusting);
                         LevelMagic(magic);
+                        thrustingTrained = true;
                         break;
                     case Spell.HalfMoon:
                         magic = GetMagic(Spell.HalfMoon);
@@ -3227,6 +3230,8 @@ namespace Server.MirObjects
                     ob.Attacked(this, damageFinal,
                         ob is MonsterObject monster && (monster.Info.AI == 49) ? DefenceType.Repulsion : DefenceType.Agility, 
                         false);
+                    // 隔位命中也须练功；前后两格同时命中时，一次出刀只结算一次熟练度。
+                    if (!thrustingTrained) LevelMagic(magic);
                     break;
                 }
 
@@ -7590,6 +7595,7 @@ namespace Server.MirObjects
         }
         public bool CanGainItem(UserItem item)
         {
+            if (this is PlayerObject player && item.Info.Type == ItemType.Quest) return player.CanGainQuestItem(item);
             if (FreeSpace(Info.Inventory) > 0)
             {
                 return true;
@@ -7633,6 +7639,11 @@ namespace Server.MirObjects
         }
         public bool CanGainItems(UserItem[] items)
         {
+            if (this is PlayerObject player && items.Any(item => item?.Info.Type == ItemType.Quest))
+            {
+                if (!Helpers.InventoryStacks.CanAdd(Info.QuestInventory, items.Where(item => item?.Info.Type == ItemType.Quest))) return false;
+                items = items.Where(item => item?.Info.Type != ItemType.Quest).ToArray();
+            }
             int itemCount = items.Count(e => e != null);
             ushort stackOffset = 0;
 
@@ -7828,6 +7839,7 @@ namespace Server.MirObjects
         }
         public void GainItem(UserItem item)
         {
+            if (this is PlayerObject player && item.Info.Type == ItemType.Quest) { player.GainQuestItem(item); return; }
             //CheckItemInfo(item.Info);
             CheckItem(item);
 

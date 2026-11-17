@@ -7,7 +7,7 @@ using Server.MirEnvir;
 internal static class Fixture
 {
     // Keep deterministic gameplay changes in disposable data, never in the reference world.
-    public static void Create(string destination, bool tradeAccounts = false, bool guildAccount = false, bool catalog = false, bool guidedCompanions = false, bool gmAccount = false, bool skillEffects = false)
+    public static void Create(string destination, bool tradeAccounts = false, bool guildAccount = false, bool catalog = false, bool guidedCompanions = false, bool gmAccount = false, bool skillEffects = false, bool companionRespawns = false)
     {
         var reference = new Mir2.Hosting.ProjectPaths().Data;
         var root = Path.GetFullPath(destination);
@@ -32,7 +32,7 @@ internal static class Fixture
             Directory.SetCurrentDirectory(database);
             var world = Envir.Main;
             if (!world.LoadDB()) throw new InvalidDataException("Cannot load reference world.");
-            var skillSummons = skillEffects ? new[] { Server.Settings.SkeletonName, Server.Settings.ShinsuName, Server.Settings.AngelName }
+            var skillSummons = skillEffects ? new[] { Server.Settings.SkeletonName, Server.Settings.ShinsuName, Server.Settings.AngelName, Server.Settings.CloneName }
                 .Select(name => world.GetMonsterInfo(name) ?? throw new InvalidDataException($"原版本缺少召唤兽：{name}")).Distinct().ToArray() : [];
             var map = new MapReader(Path.Combine(reference, "assets", "maps", "0.map"));
             bool Clear(int x, int y) => x >= 0 && y >= 0 && x < map.Width && y < map.Height &&
@@ -99,6 +99,8 @@ internal static class Fixture
             }
             first.Respawns.Add(new RespawnInfo { MonsterIndex = 1, RespawnIndex = 1, Location = new Point(start.X + 1, start.Y + 1), Count = 1, Delay = 600 });
             first.Respawns.Add(new RespawnInfo { MonsterIndex = 1, RespawnIndex = 2, Location = new Point(start.X + 3, start.Y + 2), Count = 1, Delay = 600 });
+            // 陪玩可能先击杀升级再满足接取预检，不能让仅有的两只任务怪600分钟都不刷新。
+            if(companionRespawns)foreach(var spawn in first.Respawns.Where(spawn=>spawn.MonsterIndex==1))spawn.Delay=1;
             second.Respawns.Add(new RespawnInfo { MonsterIndex = 2, RespawnIndex = 3, Location = new Point(start.X + 2, start.Y + 2), Count = 1, Delay = 600 });
             world.NPCInfoList.Clear();
             world.NPCInfoList.Add(new NPCInfo { Index = 1, MapIndex = 1, FileName = "NativeShop", Name = "Native Shop", Image = 0,
@@ -128,7 +130,7 @@ internal static class Fixture
             File.WriteAllText(Path.Combine("Envir", "NPCs", "00Default.txt"), "[@_CustomCommand(UiCommand)]\n#SAY\n自定义命令检查。\n");
             File.WriteAllText(Path.Combine("Envir", "Drops", "NativeTarget.txt"), $"1/1 Gold 1000\n1/1 {potion.Name}\n");
             File.WriteAllText(Path.Combine("Envir", "NPCs", "NativeShop.txt"),
-                $"[@MAIN]\n#SAY\nNative integration shop.\n<Buy/@BUY> <Sell/@SELL> <Storage/@STORAGE> <Repair/@REPAIR>\n\n[@SELL]\n#SAY\nSell supplies.\n<Back/@MAIN>\n\n[@REPAIR]\n#SAY\nRepair supplies.\n<Back/@MAIN>\n\n[@STORAGE]\n#SAY\nAccount storage.\n<Back/@MAIN>\n\n[Quests]\n1\n2\n3\n\n[Types]\n{(int)ItemType.Potion}\n{(int)ItemType.Weapon}\n{(int)ItemType.Armour}\n\n[Trade]\n{potion.Name} 1\n" +
+                $"[@MAIN]\n#ACT\nMOV A10 7\nMOV A11 \"\"\n#SAY\n{{<$USERNAME>/KHAKI}}，来啦！我就是{{<$NPCNAME>/KHAKI}}。\n生命：{{<$HP>/<$MAXHP>/RED}}　魔力：{{<$MP>/<$MAXMP>/ROYALBLUE}}\n当前佩戴：{{左：<$RING_L>　右：<$RING_R>/CORAL}}\n变量：<$OUTPUT(A10)>|<$OUTPUT(A11)>|<$OUTPUT(a10)>\n<购买/@BUY> <出售/@SELL> <仓库/@STORAGE> <修理/@REPAIR>\n\n[@SELL]\n#SAY\nSell supplies.\n<Back/@MAIN>\n\n[@REPAIR]\n#SAY\nRepair supplies.\n<Back/@MAIN>\n\n[@STORAGE]\n#SAY\nAccount storage.\n<Back/@MAIN>\n\n[Quests]\n1\n2\n3\n\n[Types]\n{(int)ItemType.Potion}\n{(int)ItemType.Weapon}\n{(int)ItemType.Armour}\n\n[Trade]\n{potion.Name} 1\n" +
                 string.Join("\n", world.ItemInfoList.Where(item => item.Type == ItemType.Weapon).Take(20).Select(item => $"{item.Name} 1")) + "\n");
             File.WriteAllText(Path.Combine("Configs", "WorldMap.ini"), "[Setup]\nEnabled=False\n\n[Layout]\n");
             if (catalog)
@@ -145,6 +147,8 @@ internal static class Fixture
             if (guidedCompanions) CompanionGuidanceFixture.Configure(world, start, point => Clear(point.X, point.Y), potion);
             if (gmAccount)
             {
+                world.ItemInfoList.Add(new ItemInfo { Index = ++world.ItemIndex, Name = "NativeTeleportRing", Type = ItemType.Ring, Image = potion.Image,
+                    Unique = SpecialItemMode.Teleport, Durability = 10000, Weight = 0, StartItem = true, RequiredClass = RequiredClass.Warrior, RequiredGender = RequiredGender.Male });
                 world.ItemInfoList.Add(new ItemInfo { Index = ++world.ItemIndex, Name = "NativeStackMeat", Type = ItemType.Meat, Image = potion.Image, Weight = 0 });
                 world.ItemInfoList.Add(new ItemInfo { Index = ++world.ItemIndex, Name = "NativeEquipFixture", Type = ItemType.Weapon, Image = sword.Image, Weight = 0, StackSize = 999 });
                 var account = new AccountInfo { Index = ++world.NextAccountID, AccountID = "NativeGM", Password = "Native123", AdminAccount = true, CreationIP = "127.0.0.1", CreationDate = DateTime.UtcNow };

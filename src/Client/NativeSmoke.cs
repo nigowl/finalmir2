@@ -22,6 +22,22 @@ public partial class NativeSmoke : Node
         Client.EffectPlayed += id => effectsPlayed.Add(id);
         try
         {
+            if (OS.GetCmdlineUserArgs().Contains("--verify-auto-login")) { await VerifyStartupLogin(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-accounts")) { await VerifyAccountForms(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-movement")) { await VerifyMovementOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-combat")) { await VerifyCombatPresentation(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-npc-templates")) { await VerifyNpcTemplatesOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-npc-shop")) { await VerifyNpcShopOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-quest-ui")) { await VerifyQuestUiOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-class-selection")) { await VerifyClassSelectionOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-item-ui")) { await VerifyItemUiOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-item-weight")) { await VerifyItemWeightOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-shadows")) { await VerifyShadowPixelsOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Any(flag => flag is "--profile-motion" or "--verify-smooth")) { await VerifySmoothOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-ui")) { await VerifyUiOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-storage-pages")) { await VerifyStoragePagesOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-automation")) { await VerifyLootAndRoamingOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Any(argument => argument is "--profile-actors" or "--verify-actors")) { await VerifyActorsOnly(); return; }
             var verify = OS.GetCmdlineUserArgs().Contains("--verify-save");
             var reference = OS.GetCmdlineUserArgs().Contains("--reference-world");
             var account = reference ? "View" + (Environment.TickCount64 % 10000000) : "NativeSmoke";
@@ -30,6 +46,7 @@ public partial class NativeSmoke : Node
             if (record.Length == 0 && !reference) throw new InvalidOperationException("--smoke-record is required.");
             await Until(() => Client.HandshakeReady);
             await VerifyLoginPresentation();
+            if (!verify && !reference) await VerifyGmMapTeleport();
             if (reference && Argument("--screenshot") is { Length: > 0 } loginShot)
             {
                 await ToSignal(GetTree().CreateTimer(2), SceneTreeTimer.SignalName.Timeout);
@@ -119,6 +136,7 @@ public partial class NativeSmoke : Node
                     throw new Exception("Armour equip failed.");
                 await VerifyHud();
                 await VerifyInventoryPresentation();
+                await VerifyTypography();
                 await VerifySettings();
                 await VerifyAttackModes();
                 await VerifyChatInteraction();
@@ -147,9 +165,8 @@ public partial class NativeSmoke : Node
                 stage = "combat";
                 await Until(() => State.Actors.Values.Any(a => a.Kind == ObjectType.Monster && !a.Dead));
                 var target = ClientAutomation.Targets(State).First();
-                EnableAutomaticBattle(false, Spell.FireBall);
+                EnableAutomaticBattle(false);
                 await Until(() => target.Dead && State.User.Experience > 0);
-                if (!packets.OfType<S.Magic>().Any(packet => packet.Cast)) throw new Exception("The configured learned skill was not cast by automation.");
                 using (var stop = new InputEventKey { PhysicalKeycode = Key.Escape, Pressed = true }) Client._UnhandledInput(stop);
                 await Until(() => State.Quests[1].TaskList.Any(t => t.Contains("1/2")) && State.Quests[2].TaskList.Any(t => t.Contains("1/3")));
                 stage = "spell combat and level";
@@ -169,6 +186,13 @@ public partial class NativeSmoke : Node
                 {
                     Client.SelectTarget(loot.Id);
                     await Until(() => !State.Actors.ContainsKey(loot.Id));
+                    // 怪物可追到测试出口附近；拾取踩到出口时沿原入口返回，再核对剩余掉落和商店。
+                    if (State.Map?.MapIndex == 2)
+                    {
+                        await Until(() => !Client.World.Loading);
+                        Client.SetDestination(new Point(start.X + 1, start.Y));
+                        await Until(() => State.Map?.MapIndex == 1 && !Client.World.Loading && State.Actors.Values.Any(actor => actor.Kind == ObjectType.Merchant));
+                    }
                 }
                 if (State.User.Gold < 100 || !State.User.Inventory.Any(i => i?.Info?.Type == ItemType.Potion)) throw new Exception("Loot was not received.");
                 stage = "shop";

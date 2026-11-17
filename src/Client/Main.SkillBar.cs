@@ -26,7 +26,7 @@ public partial class Main
             var button = skillBar[i]; var key = SkillKeys.FunctionKey(i + 1);
             var magic = i < Assets.FunctionKeys ? State.User?.Magics.FirstOrDefault(magic => magic.Key == key) : null;
             button.Magic = magic;
-            button.TooltipText = i >= Assets.FunctionKeys ? "当前服务端未启用 F9–F12" : magic == null ? $"{SkillKeys.Label(key)} · 在技能页分配技能" : $"{magic.Name} · {SkillKeys.Label(key)}\n{ClientSkillRules.ExperienceText(magic)}";
+            button.TooltipText = i >= Assets.FunctionKeys ? "当前服务端未启用 F9–F12" : magic == null ? $"{SkillKeys.Label(key)} · 在技能页分配技能" : $"{ClientSkillRules.Tooltip(magic, State.ActiveSkills.Contains(magic.Spell))}\n快捷键：{SkillKeys.Label(key)}";
             button.Disabled = magic == null || !ClientSkillRules.IsImplemented(magic.Spell) || ClientSkillRules.IsPassive(magic.Spell) || State.Me?.Dead != false ||
                 !ClientSkillRules.IsToggle(magic.Spell) && State.DisabledSkills.Contains(magic.Spell);
         }

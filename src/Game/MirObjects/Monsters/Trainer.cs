@@ -219,6 +219,7 @@ namespace Server.MirObjects.Monsters
 
         private void ReportDamage(int damage, DefenceType type, bool Pet)
         {
+            BroadcastDamageIndicator(DamageType.Hit, -damage);
             string output = "";
             switch (type)
             {

@@ -258,9 +258,8 @@ namespace Server.MirDatabase
 
         public void ParseReward(List<QuestItemReward> list, string line)
         {
-            if (line.Length < 1) return;
-
-            string[] split = line.Split(' ');
+            string[] split = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (split.Length == 0) return;
             ushort count = 1;
 
             if (split.Length > 1) ushort.TryParse(split[1], out count);
@@ -283,9 +282,8 @@ namespace Server.MirDatabase
 
         public QuestKillTask ParseKill(string line)
         {
-            if (line.Length < 1) return null;
-
-            string[] split = line.Split(' ');
+            string[] split = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (split.Length == 0) return null;
             int count = 1;
             string message = "";
 
@@ -303,9 +301,8 @@ namespace Server.MirDatabase
 
         public QuestItemTask ParseItem(string line)
         {
-            if (line.Length < 1) return null;
-
-            string[] split = line.Split(' ');
+            string[] split = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (split.Length == 0) return null;
             ushort count = 1;
             string message = "";
 

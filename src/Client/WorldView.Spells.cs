@@ -52,6 +52,7 @@ public partial class WorldView
 
     internal void SpellPacket(Packet packet)
     {
+        CombatTextPacket(packet);
         var now = Environment.TickCount64;
         switch (packet)
         {
@@ -59,6 +60,11 @@ public partial class WorldView
             case S.RangeAttack p when State.User != null: ShowSpell(p.Spell, State.User.ObjectID, p.TargetID, p.Target); break;
             case S.ObjectRangeAttack p when p.ObjectID != State.User?.ObjectID && State.Actors.GetValueOrDefault(p.ObjectID)?.Kind == ObjectType.Player:
                 ShowSpell(p.Spell, p.ObjectID, p.TargetID, p.Target, level: p.Level); break;
+            case S.ObjectRangeAttack p when State.Actors.TryGetValue(p.ObjectID, out var guard) && guard.Kind == ObjectType.Monster &&
+                OriginalSpellEffects.GuardMissile((Monster)guard.Image) is { } arrow:
+                var frames = Assets.Frames(ActorLibrary(guard))?.Frames;
+                var frame = frames?.GetValueOrDefault(OriginalActorFrames.Resolve(frames, guard.Action));
+                AddMissile(Spell.None, guard.Id, p.TargetID, guard.Location, p.Target, now + (frame?.Interval ?? 100) * 4, arrow); break;
             case S.UserInformation: WarmSkills(); break;
             case S.NewMagic when State.User != null: WarmSkills(); break;
             case S.ObjectProjectile p when State.Actors.TryGetValue(p.Source, out var source) && State.Actors.TryGetValue(p.Destination, out var target):
@@ -103,6 +109,7 @@ public partial class WorldView
         {
             var clips = OriginalSpellEffects.Casting(magic.Spell, direction).AsEnumerable();
             if (OriginalSpellEffects.Melee(magic.Spell, magic.Level, direction) is { } melee) clips = clips.Append(melee);
+            if (magic.Spell == Spell.Fencing) clips = clips.Append(OriginalSpellEffects.BasicSword(direction));
             if (OriginalSpellEffects.Impact(magic.Spell, direction) is { } impact) clips = clips.Append(impact);
             if (OriginalSpellEffects.Missile(magic.Spell) is { Impact: { } hit }) clips = clips.Append(hit);
             foreach (var clip in clips)

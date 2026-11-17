@@ -14,7 +14,8 @@ public sealed partial class CompanionSession
     private long assetSent;
     private readonly HashSet<ulong> refused = [];
     private static string AssetName(string kind) => kind switch
-    {"buy"=>"购买", "sell"=>"出售", "equip"=>"装备", "remove"=>"卸下", "repair"=>"修理", "use"=>"使用", "quest"=>"任务操作", _=>"资产操作"};
+    {"buy"=>"购买", "sell"=>"出售", "equip"=>"装备", "remove"=>"卸下", "repair"=>"修理", "use"=>"使用", "quest"=>"任务操作",
+        "storage-store"=>"存仓", "storage-take"=>"取回", "storage-split"=>"仓库拆分", "storage-password" or "storage-unlock"=>"仓库认证", "guild-create"=>"建会", "guild-join"=>"入会", _=>"资产操作"};
     private async Task Asset(Packet packet, string kind, ulong id)
     {
         pendingAsset=kind; assetId=id; assetSent=Environment.TickCount64; receivedPurchase=false;purchasePaid=false;
@@ -23,6 +24,7 @@ public sealed partial class CompanionSession
     private async Task ApplyAssetResult(Packet packet)
     {
         if (pendingAsset == null) return;
+        if(await StorageResult(packet))return;
         bool? success = packet switch
         {
             S.EquipItem p when pendingAsset=="equip" && p.UniqueID==assetId => p.Success,
@@ -31,6 +33,7 @@ public sealed partial class CompanionSession
             S.SellItem p when pendingAsset=="sell" && p.UniqueID==assetId => p.Success,
             S.ItemRepaired p when pendingAsset=="repair" && p.UniqueID==assetId => true,
             S.ChangeQuest p when pendingAsset=="quest" && p.Quest.Id==(int)assetId => true,
+            S.GuildStatus p when pendingAsset is "guild-create" or "guild-join" && p.GuildName.Equals(pendingGuildName,StringComparison.OrdinalIgnoreCase) => true,
             _ => null
         };
         if (pendingAsset=="buy")
@@ -43,9 +46,12 @@ public sealed partial class CompanionSession
         if (success == null) return;
         // RepairItem 是原服先发的解锁包，成功还会跟随 ItemRepaired，不能提前当成拒绝。
         if (!success.Value) refused.Add(assetId);
-        if (pendingAsset=="repair" || pendingAsset=="remove" && !success.Value) repairItem=0;
+        var restoreSlot=pendingAsset=="repair" && success.Value?repairSlot:-1;
+        if (pendingAsset=="repair" || pendingAsset=="remove" && !success.Value) {repairItem=0;repairSlot=-1;}
         await report(new("asset",Profile.Id,Text:pendingAsset+":"+(success.Value?"成功":"拒绝")));
         pendingAsset=null;
+        if(restoreSlot>=0)
+            await Asset(new C.EquipItem{Grid=MirGridType.Inventory,UniqueID=assetId,To=restoreSlot},"equip",assetId);
     }
     private static int Slot(ItemType type) => type switch
     { ItemType.Weapon=>0, ItemType.Armour=>1, ItemType.Helmet=>2, ItemType.Torch=>3, ItemType.Necklace=>4,
@@ -58,22 +64,21 @@ public sealed partial class CompanionSession
     private bool Usable(ItemInfo info) => Mir2.Companions.CompanionSupplyRules.Usable(info,state.User!.Class,state.User.Gender,state.User.Level);
     private int EquipmentValue(UserItem item)
     {
-        var caster=state.User!.Magics.Any(m=>ClientAutomation.IsSingleSkill(m.Spell)&&m.Spell!=Spell.None&&!ClientAutomation.IsAttackSkill(m.Spell));
-        var attack = caster && state.User.Class is MirClass.Wizard ? Stat.MaxMC : caster && state.User.Class is MirClass.Taoist ? Stat.MaxSC : Stat.MaxDC;
-        return item.Info.Stats[attack]*5 + item.AddedStats[attack]*5 + item.Info.Stats[Stat.MaxAC]*2 + item.Info.Stats[Stat.MaxMAC]*2 + item.Info.Stats[Stat.HP]/5;
+        var caster=Mir2.Companions.CompanionInventoryRules.Caster(state.User!.Magics.Select(m=>m.Spell));
+        return Mir2.Companions.CompanionInventoryRules.EquipmentValue(item,state.User.Class,caster);
     }
     private async Task<bool> ImproveEquipment()
     {
+        // 卸装到修理回执之间不能穿上备装，否则会顺修备装并丢失原装备槽位。
+        if(repairItem!=0)return false;
         var user=state.User!;
         foreach (var item in user.Inventory.Where(i=>i?.Info!=null && i.UniqueID!=repairItem && !refused.Contains(i.UniqueID)))
         {
             if (!Usable(item.Info)) continue;
-            var slot=Slot(item.Info.Type);
+            var slot=Mir2.Companions.CompanionInventoryRules.UpgradeSlot(item,user.Equipment,user.Class,
+                Mir2.Companions.CompanionInventoryRules.Caster(user.Magics.Select(m=>m.Spell)));
             if (slot>=0 && slot<user.Equipment.Length)
             {
-                if (slot==5 && user.Equipment[5]!=null && user.Equipment[6]==null) slot=6;
-                if (slot==7 && user.Equipment[7]!=null && user.Equipment[8]==null) slot=8;
-                if (user.Equipment[slot]!=null && EquipmentValue(item)<=EquipmentValue(user.Equipment[slot])) continue;
                 await Asset(new C.EquipItem{Grid=MirGridType.Inventory,UniqueID=item.UniqueID,To=slot},"equip",item.UniqueID); return true;
             }
             if (item.Info.Type==ItemType.Book && !user.Magics.Any(m=>(int)m.Spell==item.Info.Shape))

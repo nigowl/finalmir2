@@ -25,24 +25,52 @@ public partial class NativeSmoke
         var path = Environment.GetEnvironmentVariable("MIR2_CLIENT_SETTINGS") ?? throw new InvalidOperationException("Native settings checks require an isolated MIR2_CLIENT_SETTINGS path.");
         var panel = SettingsPanel();
         if (panel.GetThemeStylebox("panel") is not StyleBoxTexture || Client.Theme.GetStylebox("panel", "PopupMenu") is not StyleBoxTexture menuFrame ||
-            Client.Theme.GetStylebox("panel", "GameMiniMap") is not StyleBoxTexture mapFrame || mapFrame.DrawCenter || mapFrame.Texture.GetSize() != new Vector2(32, 32) || menuFrame.Texture.GetSize() != new Vector2(64, 64))
+            Client.Theme.GetStylebox("panel", "GameMiniMap") is not StyleBoxTexture mapFrame || mapFrame.DrawCenter || mapFrame.Texture.GetSize() != new Vector2(64, 64) || menuFrame.Texture.GetSize() != new Vector2(64, 64) ||
+            mapFrame.TextureMarginLeft != 24 || mapFrame.TextureMarginTop != 24 || mapFrame.TextureMarginRight != 24 || mapFrame.TextureMarginBottom != 24)
             throw new Exception("Settings/menu/maps did not reuse the processed original window frame.");
         using (var frame = menuFrame.Texture.GetImage())
         using (var source = Client.Assets.Sprite("Prguse", 995)!.Texture.GetImage())
             if (frame.GetPixel(12, 52) != source.GetPixel(12, source.GetHeight() - 12))
                 throw new Exception("The full original lower corner ornament was cropped away.");
+        using (var frame = menuFrame.Texture.GetImage())
+        using (var map = mapFrame.Texture.GetImage())
+        {
+            if (frame.GetData().Where((_, index) => index % 4 == 3).Any(alpha => alpha != 255))
+                throw new Exception("通用面板边框包含原图的透明空列或角区空洞。");
+            if (Argument("--screenshot") is { Length: > 0 } screenshot) map.SavePng(Path.ChangeExtension(screenshot, "map-frame-skin.png"));
+            foreach (var x in new[] { 0, 40 })
+            foreach (var y in new[] { 0, 40 })
+            for (var dx = 0; dx < 24; dx++)
+            for (var dy = 0; dy < 24; dy++)
+            {
+                var original = frame.GetPixel(x + dx, y + dy); var actual = map.GetPixel(x + dx, y + dy);
+                if (actual.A != 0 && actual != original)
+                    throw new Exception("地图去除角饰底纹时损坏了原金饰。");
+                if (actual.A == 0 && original != frame.GetPixel(32, 32))
+                    throw new Exception("通用角饰内侧没有填入一致的面板底色。");
+                if (actual.A != 0 && actual.R + actual.G + actual.B < .9f) throw new Exception("地图角饰仍有暗底残点。");
+            }
+            foreach (var x in new[] { 0, 40 })
+            foreach (var y in new[] { 0, 40 })
+                if (Enumerable.Range(0,24).Sum(dx => Enumerable.Range(0,24).Count(dy => map.GetPixel(x + dx, y + dy).A > 0)) < 64)
+                    throw new Exception("地图抠底误删了角饰主体。");
+            if (map.GetPixel(32, 12).A != 0 || map.GetPixel(12, 32).A != 0 || map.GetPixel(32, 52).A != 0 || map.GetPixel(52, 32).A != 0)
+                throw new Exception("地图直边内侧仍有遮挡地图的多余填色。");
+            foreach (var point in new[] { new Vector2I(20,20), new Vector2I(44,20), new Vector2I(20,44), new Vector2I(44,44) })
+                if (map.GetPixelv(point).A != 0) throw new Exception("地图角饰内侧仍残留方形黑色底纹。");
+        }
         if (!GetViewport().GuiEmbedSubwindows || Client.Theme.GetStylebox("embedded_border", "Window") is not StyleBoxTexture || Client.Theme.GetStylebox("panel", "AcceptDialog") is not StyleBoxEmpty ||
             Client.FindChildren("*", "AcceptDialog", true, false).OfType<AcceptDialog>().Any(dialog => !dialog.TransparentBg) ||
             Client.Theme.GetIcon("close", "Window").GetInstanceId() != Client.Assets.Sprite("Prguse2", 360)?.Texture.GetInstanceId())
             throw new Exception("Confirmation windows retained duplicate/platform borders or stale close art after reconnect.");
         var tabs = panel.FindChildren("*", "TabContainer", true, false).Cast<TabContainer>().Single();
-        if (!panel.Visible || Client.Theme.DefaultFontSize != 12 || tabs.GetTabCount() != 4 || !Enumerable.Range(0, 4).Select(tabs.GetTabTitle).SequenceEqual(new[] { "基础", "保护", "挂机", "职业" }))
+        if (!panel.Visible || Client.Theme.DefaultFontSize != ClientUi.Body || tabs.GetTabCount() != 4 || !Enumerable.Range(0, 4).Select(tabs.GetTabTitle).SequenceEqual(new[] { "基础", "保护", "挂机", "职业" }))
             throw new Exception("The hammer did not open four settings tabs with the smaller font.");
         if (panel.FindChildren("*", "Button", true, false).Cast<Button>().Any(button => button.Text is "取消" or "应用") || Setting(panel, "自动喝红").ButtonPressed || Setting(panel, "自动随机").ButtonPressed || Setting(panel, "自动回城").ButtonPressed)
             throw new Exception("Settings retained confirmation buttons or enabled protection without consent.");
         tabs.CurrentTab = 3;
         var classTitles = tabs.GetChild<Control>(3).FindChildren("*", "CheckBox", true, false).Cast<CheckBox>().Select(option => option.Text).ToArray();
-        if (classTitles.Length != 4 || !classTitles.Any(title => title.StartsWith("智能半月")) || !classTitles.Any(title => title.StartsWith("智能刺杀")) ||
+        if (classTitles.Length != 10 || !classTitles.Any(title => title.StartsWith("智能半月")) || !classTitles.Any(title => title.StartsWith("智能刺杀")) ||
             !classTitles.Contains("自动烈火剑法") || !classTitles.Contains("自动双龙斩")) throw new Exception("战士职业页混入其他职业或缺少辅助选项。");
         await Screenshot("settings-Warrior"); tabs.CurrentTab = 0;
         var slider = panel.FindChildren("*", "HSlider", true, false).Cast<HSlider>().Single();
@@ -70,7 +98,8 @@ public partial class NativeSmoke
         SelectSetting(strength, 0); CloseSettingsPanel(panel);
         if ((int)((ShaderMaterial)crt.Material).GetShaderParameter("strength") != 1) throw new Exception("The lowest CRT level did not apply.");
         panel = SettingsPanel(); SelectSetting(strength, 4); CloseSettingsPanel(panel); panel = SettingsPanel();
-        tabs.CurrentTab = 1; await Screenshot("settings-protection"); tabs.CurrentTab = 2; await Screenshot("settings-battle");
+        tabs.CurrentTab = 1; await VerifyProtectionAlignment(tabs.GetChild<Control>(1));
+        await Screenshot("settings-protection"); tabs.CurrentTab = 2; await Screenshot("settings-battle");
         CloseSettingsPanel(panel); panel = SettingsPanel();
         if (slider.Value != 40 || movement.Selected != 1 || strength.Selected != 4 || Setting(panel, "显示 NPC").ButtonPressed || !Setting(panel, "显示怪物").ButtonPressed || !Setting(panel, "显示物品").ButtonPressed || !Setting(panel, "CRT").ButtonPressed)
             throw new Exception("Reopening settings lost automatically saved values.");
@@ -95,7 +124,7 @@ public partial class NativeSmoke
             throw new Exception("Close art is not aligned with the original dialog borders.");
         var chat = Client.FindChildren("*", "LineEdit", true, false).Cast<LineEdit>().Single(edit => edit.MaxLength == Globals.MaxChatLength);
         var messages = (RichTextLabel)Client.FindChild("ChatMessages", true, false);
-        if (chat.GetThemeFontSize("font_size") != 10 || messages.GetThemeFontSize("normal_font_size") != 11 || !Client.FindChildren("*", "Panel", true, false).Cast<Panel>().Any(frame => frame.GetRect().Encloses(chat.GetRect()) && frame.Position == new Vector2(230, 668) && frame.Size == new Vector2(629, 68)))
+        if (chat.GetThemeFontSize("font_size") != ClientUi.Small || messages.GetThemeFontSize("normal_font_size") != ClientUi.Small || !Client.FindChildren("*", "Panel", true, false).Cast<Panel>().Any(frame => frame.GetRect().Encloses(chat.GetRect()) && frame.Position == new Vector2(230, 668) && frame.Size == new Vector2(629, 68)))
             throw new Exception("Chat font/frame did not shrink inside the original HUD.");
         ToggleBattleMenu();
         var menuButton = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "游戏菜单 Ctrl+E");
@@ -124,11 +153,9 @@ public partial class NativeSmoke
         menu.EmitSignal(PopupMenu.SignalName.IdPressed, 7L); menu.Hide();
     }
 
-    private void EnableAutomaticBattle(bool roam, Spell spell = Spell.None)
+    private void EnableAutomaticBattle(bool roam)
     {
         var panel = SettingsPanel(); Setting(panel, "无怪跑图").ButtonPressed = roam;
-        var choice = (OptionButton)panel.FindChild("SingleSkill", true, false);
-        SelectSetting(choice, Math.Max(0, choice.GetItemIndex((int)spell)));
         CloseSettingsPanel(panel); ToggleBattleMenu();
     }
 

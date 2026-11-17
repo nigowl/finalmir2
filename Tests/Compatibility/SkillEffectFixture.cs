@@ -32,9 +32,9 @@ internal static class SkillEffectFixture
         character.Equipment[0] = world.CreateFreshItem(weapon);
         character.Equipment[(int)EquipmentSlot.Amulet] = world.CreateFreshItem(amulet); character.Equipment[(int)EquipmentSlot.Amulet].Count = 1000;
         character.Magics = world.MagicInfoList.Where(info => (byte)info.Spell is > 0 and < 200).GroupBy(info => info.Spell)
-            .Select(group => new UserMagic(group.Key) { Level = 3, CastTime = -100000 }).ToList();
+            .Select(group => new UserMagic(group.Key) { Level = group.Key is Spell.Slaying or Spell.Thrusting ? (byte)2 : (byte)3, CastTime = -100000 }).ToList();
         account.Characters.Add(character); world.AccountList.Add(account); world.CharacterList.Add(character); world.SaveAccounts();
-        foreach (var job in new[] { MirClass.Taoist, MirClass.Wizard })
+        foreach (var job in new[] { MirClass.Taoist, MirClass.Wizard, MirClass.Assassin, MirClass.Archer })
         {
             var jobAccount = new AccountInfo { Index = ++world.NextAccountID, AccountID = $"Native{job}", Password = "Native123", CreationDate = DateTime.UtcNow, CreationIP = "127.0.0.1" };
             var actor = new CharacterInfo { Index = ++world.NextCharacterID, Name = $"{job.ToLocalizedString()}检查", Class = job, Gender = MirGender.Male, Level = 50,
@@ -49,6 +49,12 @@ internal static class SkillEffectFixture
                 actor.Inventory[shape] = world.CreateFreshItem(poison); actor.Inventory[shape].Count = 100;
             }
             actor.Magics = character.Magics.Select(magic => new UserMagic(magic.Spell) { Level = 3, CastTime = -100000 }).ToList();
+            if(job is MirClass.Assassin or MirClass.Archer)
+            {
+                var allowed=job==MirClass.Assassin?new[]{Spell.Haste,Spell.LightBody,Spell.DoubleSlash,Spell.CrescentSlash,Spell.HeavenlySword}:
+                    [Spell.ElementalBarrier,Spell.Concentration,Spell.Meditation,Spell.StraightShot,Spell.DoubleShot,Spell.NapalmShot,Spell.VampireShot];
+                actor.Magics.RemoveAll(magic=>!allowed.Contains(magic.Spell));
+            }
             jobAccount.Characters.Add(actor); world.AccountList.Add(jobAccount); world.CharacterList.Add(actor);
         }
         world.SaveAccounts();

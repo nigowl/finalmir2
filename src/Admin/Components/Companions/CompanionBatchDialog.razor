@@ -1,5 +1,5 @@
 @using System.Text.Json
-<AdminDialog Visible="true" Title="批量新增陪玩" OnClose="OnClose" OnSave="Save" Busy="busy" CanSave="@(preview!=null&&previewInput==Current)" Dirty="@(original!=Current||preview!=null)" SaveConfirmation="确认保存预览中的全部陪玩档案及昵称池？实际注册与建角按原服限制排队执行。">
+<AdminDialog Visible="true" Title="批量新增陪玩" OnClose="OnClose" OnSave="Save" Busy="busy" CanSave="@(preview!=null&&previewInput==Current)" Dirty="@(original!=Current||preview!=null)" SaveConfirmation="确认保存预览中的全部陪玩档案及昵称池？注册与建角按频率限制排队执行。">
 <DialogContent>
     @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
     <MudGrid Spacing="2">
@@ -9,13 +9,14 @@
     <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="昵称候选池（每行一个，生成时随机选取且不重复）" Lines="7" Immediate="true" @bind-Value="names" />
     <MudButton OnClick="RestoreNames" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">恢复内置100个昵称</MudButton>
     <MudCheckBox T="bool" Label="随机职业" @bind-Value="randomClass" />
-    @if(!randomClass){<MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="固定职业" @bind-Value="template.Class">@foreach(var c in Overview.AvailableClasses??[0,1,2]){<MudSelectItem Value="c">@ChineseText.Name(((MirClass)c).ToString())</MudSelectItem>}</MudSelect>}
+    @if(!randomClass){<MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="固定职业" @bind-Value="template.Class">@foreach(var c in Overview.AvailableClasses??[0,1,2,3,4]){<MudSelectItem Value="c">@ChineseText.Name(((MirClass)c).ToString())</MudSelectItem>}</MudSelect>}
     <MudText Typo="Typo.caption">职业仅从本版本已开放的职业中选择。</MudText>
     <MudCheckBox T="bool" Label="随机性别" @bind-Value="randomGender" />
     @if(!randomGender){<MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="固定性别" @bind-Value="template.Gender"><MudSelectItem Value="0">男</MudSelectItem><MudSelectItem Value="1">女</MudSelectItem></MudSelect>}
     <MudCheckBox T="bool" Label="随机人格预制" @bind-Value="randomPersonality" />
     @if(!randomPersonality){<PersonalityFields Profile="template" Presets="Overview.Presets" />}
     <MudCheckBox T="bool" Label="允许本批陪玩运行" @bind-Value="template.Enabled" />
+    <CompanionGuildFields Preferences="template.Guilds" />
     <MudCheckBox T="bool" Label="按日程自动上线" @bind-Value="template.Scheduled" />
     @if(template.Scheduled){<ScheduleFields Schedule="template.Schedule" />}
     <MudAlert Severity="Severity.Info">默认创建离线档案、LLM关闭。自动过滤当前版本角色/陪玩重名及不合法昵称；昵称不足会拒绝，不会自动添加编号冒充自定义昵称。取消不保存昵称池。</MudAlert>

@@ -7,13 +7,15 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions { ContentRo
 var paths = new ProjectPaths(versionDirectory: builder.Configuration["Mir2:VersionDirectory"]);
 Directory.CreateDirectory(paths.Data);
 using var instanceLock = new FileStream(Path.Combine(paths.Data, ".server.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-if (args.Contains("--translate-chinese"))
+if (args.Contains("--translate-chinese") || args.Contains("--organize-drop-scripts") || args.Contains("--compose-drop-scripts") || args.Contains("--balance-supplies"))
 {
     if (!File.Exists(paths.Database)) throw new FileNotFoundException("请先导入默认世界，再执行中文迁移。", paths.Database);
     Directory.SetCurrentDirectory(paths.World);
     using var database = new SqliteDatabaseStorage(paths.Database);
     DatabaseStorage.Current = database;
-    try { Console.WriteLine(ChineseWorldTranslation.Apply(paths, database, args.Contains("--check"))); }
+    try { Console.WriteLine((args.Contains("--organize-drop-scripts") || args.Contains("--compose-drop-scripts") || args.Contains("--balance-supplies"))
+        ? DropScriptOrganization.Apply(paths, database, args.Contains("--check"), args.Contains("--compose-drop-scripts") || args.Contains("--balance-supplies"), args.Contains("--balance-supplies"))
+        : ChineseWorldTranslation.Apply(paths, database, args.Contains("--check"))); }
     finally { DatabaseStorage.Current = null; }
     return;
 }

@@ -6,6 +6,19 @@ internal static class ClientItemChecks
     public static void Run(Action<bool, string> check)
     {
         var state = new GameState();
+        foreach (var (amount, image) in new (uint, int)[] { (0,112),(1,112),(99,112),(100,114),(999,114),(1000,116),
+            (999999,116),(1000000,117),(4999999,117),(5000000,121),(9999999,121),(10000000,122),(uint.MaxValue,122) })
+        {
+            state.Apply(new S.ObjectGold { ObjectID = 90, Gold = amount, Location = new(2,3) });
+            var gold = state.Actors[90];
+            check(gold.Image == image && gold.Gold == amount && gold.Name == $"{amount} 金币" && gold.Location == new System.Drawing.Point(2,3),
+                $"地面金币数量分档或真实数量错误：{amount}");
+        }
+        foreach (var image in new ushort[] { 117, 121, 122 })
+        {
+            state.Apply(new S.ObjectItem { ObjectID = 91, Image = image, Name = "兑换物品" });
+            check(state.Actors[91].Image == image && state.Actors[91].Gold == 0, "金币外观规则错误转换了真实金条/金砖/金盒物品");
+        }
         var messages = new List<string>(); state.Message += messages.Add;
         var typed = new List<(string, ChatType)>(); state.ChatMessage += (text, type) => typed.Add((text, type));
         state.Apply(new S.Chat { Message = "组队", Type = ChatType.Group });

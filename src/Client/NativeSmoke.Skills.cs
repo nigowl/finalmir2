@@ -20,12 +20,18 @@ public partial class NativeSmoke
             await Packet<S.NewMagic>();
         }
         OpenSkills();
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        await VerifySkillRowAlignment();
         var row = SkillRow(Spell.FireBall);
         var cast = row.GetChildren().OfType<SkillIconButton>().Single();
         var skill = State.User.Magics.Single(magic => magic.Spell == Spell.FireBall);
         if (!row.GetChildren().OfType<Label>().Any(label => label.TooltipText == ClientSkillRules.ExperienceText(skill) && !label.Text.Contains('\n') && label.Text.Contains("0/200")))
             throw new Exception("技能等级/熟练度没有在同一行显示当前经验和升级要求。");
         await Until(() => Client.Assets.Sprite("MagIcon2", skill.Icon * 2) != null);
+        if (cast.TooltipText != row.GetNode<Label>("SkillName").TooltipText || !cast.TooltipText.Contains("发射火球") || !cast.TooltipText.Contains("冷却：") ||
+            row.GetNode<Label>("SkillName").MouseFilter == Control.MouseFilterEnum.Ignore)
+            throw new Exception("技能图标/名称没有共用可悬停的效果与冷却介绍。");
+        await MoveMouse(cast.GetGlobalRect().GetCenter()); await Screenshot("skill-description");
         if (cast.Position.X != 0 || row.GetChildren().OfType<Label>().First().Position.X < cast.GetRect().End.X || row.Size.Y > 70)
             throw new Exception("技能图标/名称/熟练度没有按紧凑两行布局。");
         if (row.GetParent().FindChildren("*", "CheckBox", true, false).Count > 0)
@@ -88,5 +94,21 @@ public partial class NativeSmoke
         await Screenshot("skills-shortcuts");
         Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "关闭角色").EmitSignal(BaseButton.SignalName.Pressed);
         GD.Print("PASS native skills: no auto-cast checkboxes, passive skills have no key selector, original icons/two-line rows, 12 skill cells, actual F12/icon casting and TCP shortcut/toggle persistence.");
+    }
+
+    private async Task VerifySkillRowAlignment()
+    {
+        foreach (var magic in State.User!.Magics)
+        {
+            var row = SkillRow(magic.Spell); var name = row.GetNode<Label>("SkillName"); var experience = row.GetNode<Label>("SkillExperience");
+            var icon = row.GetNode<SkillIconButton>("SkillIcon");
+            if (name.VerticalAlignment != VerticalAlignment.Center || name.Size.Y != 24 || name.GetRect().End.Y > experience.Position.Y ||
+                icon.Size != new Vector2(40, 40) || name.Position.X != experience.Position.X || name.Position.X - icon.GetRect().End.X != 6)
+                throw new Exception($"{magic.Name}图标、名称和熟练度没有对齐：{icon.GetRect()} / {name.GetRect()} / {experience.GetRect()}。");
+            foreach (var key in row.GetChildren().OfType<OptionButton>())
+                if (key.Size.Y != 24 || key.GetRect().GetCenter().Y != experience.GetRect().GetCenter().Y || key.GetRect().End.Y > row.Size.Y)
+                    throw new Exception($"{magic.Name}快捷键没有与熟练度同高居中：{key.GetRect()} / {experience.GetRect()}。");
+        }
+        await Screenshot("skills-row-alignment");
     }
 }

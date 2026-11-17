@@ -47,6 +47,21 @@ run_client() {
 }
 start_backend
 MIR2_SERVER="http://127.0.0.1:$MIR2_RESOURCE_PORT" python3 "$ROOT/tests/Management/verify.py" "$MIR2_DATA_ROOT"
+for startup_account in NativeGuild NativeMissing; do
+  startup_args=(--max-fps 60)
+  if [ "${MIR2_NATIVE_VISIBLE:-}" != 1 ]; then startup_args+=(--headless); fi
+  startup_args+=(-- "--server=http://127.0.0.1:$MIR2_RESOURCE_PORT" --verify-auto-login)
+  if [ "$startup_account" = NativeMissing ]; then startup_args+=(--expect-login-failure); fi
+  if [ "${MIR2_TEST_SCREENSHOTS:-}" = 1 ]; then startup_args+=("--screenshot=$TEST_RUNTIME/$startup_account-startup.png"); fi
+  if ! "$ROOT/start-client.sh" "$startup_account" Native123 "${startup_args[@]}" > "$TEST_RUNTIME/$startup_account-startup.log" 2>&1; then
+    cat "$TEST_RUNTIME/$startup_account-startup.log"; exit 1
+  fi
+  cat "$TEST_RUNTIME/$startup_account-startup.log"
+  grep -q 'PASS native startup login' "$TEST_RUNTIME/$startup_account-startup.log"
+  # 原服有连接IP冷却；正常重启隔离服分开用例，不靠任意延时或放宽保护。
+  kill -TERM "$BACKEND_PID"; wait "$BACKEND_PID"; BACKEND_PID=""
+  start_backend
+done
 run_client --smoke
 dotnet "$ROOT/tests/Compatibility/bin/Debug/net8.0/Compatibility.dll" --gm-checks "$MIR2_GAME_PORT" "$TEST_RUNTIME/gm-save.json"
 kill -TERM "$BACKEND_PID"

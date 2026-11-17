@@ -19,7 +19,8 @@ public partial class Main
 
     private void BuildGuildStorage()
     {
-        guildTabs.Add(ArtButton(guild, "Title", 105, 162, 38, "行会仓库与资金（仅安全区）", () => SelectGuildPage(3)));
+        guildTabs.Add(ArtButton(guild, "Title", 105, 233, 34, "行会仓库与资金（仅安全区）", () => SelectGuildPage(3), "仓库"));
+        foreach (var tab in guildTabs) TabStyle(tab, 68);
         guildStoragePage = new Control { Position = new Vector2(0, 60), Size = new Vector2(352, 342) }; guild.AddChild(guildStoragePage);
         Picture(guildStoragePage, "Prguse", 1851, 30, 19);
         for (var i = 0; i < 64; i++)
@@ -133,7 +134,7 @@ public partial class Main
         else if (draggedGuildItem != 0)
         {
             var from = Array.FindIndex(State.GuildStorage, entry => entry?.Item.UniqueID == draggedGuildItem);
-            var bag = inventorySlots.FirstOrDefault(pair => pair.button.IsVisibleInTree() && pair.button.GetGlobalRect().HasPoint(GetGlobalMousePosition()));
+            var bag = InventoryDropAt(GetGlobalMousePosition(), State.GuildStorage.ElementAtOrDefault(from)?.Item);
             if (bag.button != null) RetrieveGuildItem(from, bag.slot);
             else if (GuildCellAtMouse() is >= 0 and var to) MoveGuildItem(from, guildStorageRow * 8 + to);
             draggedGuildItem = 0;

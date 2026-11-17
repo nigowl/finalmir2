@@ -22,7 +22,7 @@ public partial class Main
         if (skillPreparationPaused) { if (!automatic) Log("毒符换装已暂停，请检查物品后重新保存职业设置。"); return; }
         var missing = SkillMaterials.Missing(State, materials);
         if (missing.Length > 0) { SkillPreparationFailed(missing, automatic); return; }
-        if (!preferences.AutoSwapAmulet) { SkillPreparationFailed("技能需要的毒粉/护符未装备；可在职业设置开启自动毒符切换。", automatic); return; }
+        if (!preferences.AutoSwapAmulet && !preferences.SmartBattle) { SkillPreparationFailed("技能需要的毒粉/护符未装备；可在职业设置开启自动毒符切换。", automatic); return; }
         preparedSkill = new(magic.Spell, target, point, automatic, profession, State.Map?.MapIndex ?? 0, State.User!.ObjectID, materials, Environment.TickCount64);
     }
 

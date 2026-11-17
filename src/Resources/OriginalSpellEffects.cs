@@ -16,6 +16,9 @@ public readonly record struct SpellMissile(SpellEffectClip Flight, SpellEffectCl
 // 编号、帧数和时长来自原 PlayerObject/SpellObject，不从技能名称猜测素材。
 public static partial class OriginalSpellEffects
 {
+    // 按要求给基础剑术普攻增加淡剑气，只复用原低阶剑光，不改变技能编号和伤害。
+    public static SpellEffectClip BasicSword(MirDirection direction) => Melee(Spell.Slaying, 0, direction)!.Value with { Opacity = .38f };
+
     public static SpellEffectClip? Melee(Spell spell, int level, MirDirection direction, bool second = false)
     {
         SpellEffectClip? clip = spell switch

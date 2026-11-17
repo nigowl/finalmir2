@@ -79,9 +79,7 @@ public partial class NativeSmoke
         var start = State.User!.Location;
         var item = State.User!.Inventory.First(item => item?.Info?.Type == ItemType.Potion && item.Info.Stats[Stat.HP] > 0);
         using var key = new InputEventKey { PhysicalKeycode = Key.I, Pressed = true }; Client._UnhandledInput(key);
-        // 按原格位位置定位，避免依赖翻译后的物品提示文本。
-        OriginalItemButton Cell(int slot) => Client.FindChildren("*", "Button", true, false).OfType<OriginalItemButton>().Single(button =>
-            button.Position == (slot < 6 ? OriginalArt.QuickSlotPosition(slot) : new Vector2(9 + (slot - 6) % 8 * 37, 37 + (slot - 6) / 8 * 33)));
+        OriginalItemButton Cell(int slot) => (OriginalItemButton)Client.FindChild(slot < 6 ? $"ItemShortcut{slot + 1}" : $"InventorySlot{slot}", true, false);
         var from = Array.IndexOf(State.User.Inventory, item); var source = Cell(from).GetGlobalRect().GetCenter();
         var to = Enumerable.Range(6, 40).First(slot => State.User.Inventory[slot] == null); var target = Cell(to).GetGlobalRect().GetCenter();
         await MoveMouse(source); MouseButtonAt(source, true); await MoveMouse(target, true);

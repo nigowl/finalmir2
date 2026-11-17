@@ -1,0 +1,22 @@
+@if(Value is { } combat)
+{
+    <MudDivider Class="my-3" /><MudText Typo="Typo.subtitle1">战斗属性与技能</MudText>
+    <MudText>物攻 @Range(Stat.MinDC,Stat.MaxDC) · 魔攻 @Range(Stat.MinMC,Stat.MaxMC) · 道术 @Range(Stat.MinSC,Stat.MaxSC)</MudText>
+    <MudText>防御 @Range(Stat.MinAC,Stat.MaxAC) · 魔防 @Range(Stat.MinMAC,Stat.MaxMAC) · 准确 @combat.Stats[Stat.Accuracy] · 敏捷 @combat.Stats[Stat.Agility] · 攻速 @combat.Stats[Stat.AttackSpeed]</MudText>
+    <MudText Typo="Typo.caption" Color="Color.Secondary">包含装备、技能和增益加成；技能等级为 0–3 级。</MudText>
+    <MudTable T="CompanionSkillState" Items="combat.Skills" Dense="true" aria-label="已学技能与熟练度" Class="my-2">
+        <HeaderContent><MudTh>技能</MudTh><MudTh>等级</MudTh><MudTh>熟练度</MudTh></HeaderContent>
+        <RowTemplate><MudTd>@context.Name @(context.Temporary?"（临时）":"")</MudTd><MudTd>@context.Level</MudTd><MudTd>@context.Experience@if(context.RequiredExperience>0){<span> / @context.RequiredExperience</span>}</MudTd></RowTemplate>
+        <NoRecordsContent><MudText>尚未学会技能。</MudText></NoRecordsContent>
+    </MudTable>
+    <MudExpansionPanels Elevation="0"><MudExpansionPanel Text="全部非零属性">
+        <MudTable T="KeyValuePair<Stat,int>" Items="combat.Stats.Values" Dense="true" aria-label="当前非零属性">
+            <HeaderContent><MudTh>属性</MudTh><MudTh>当前值</MudTh></HeaderContent>
+            <RowTemplate><MudTd>@ChineseText.Name(context.Key.ToString())</MudTd><MudTd>@context.Value</MudTd></RowTemplate>
+        </MudTable>
+    </MudExpansionPanel></MudExpansionPanels>
+}
+@code {
+    [Parameter] public CompanionCombatState? Value { get; set; }
+    private string Range(Stat minimum,Stat maximum) => $"{Value!.Stats[minimum]}–{Value.Stats[maximum]}";
+}

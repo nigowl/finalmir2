@@ -9,6 +9,7 @@ public partial class NativeSpellSmoke
 {
     private async Task LeaveCharacter()
     {
+        if (State.User != null) Client.SetDestination(State.User.Location);
         for (var attempt = 0; attempt < 20 && State.User != null; attempt++)
         {
             Client.Send(new C.LogOut()); await Pause(1100);
@@ -38,6 +39,7 @@ public partial class NativeSpellSmoke
             Client.Send(new C.StartGame { CharacterIndex = State.Characters.Single(character => character.Class == job).Index });
             await Until(() => State.User?.Class == job && !Client.World.Loading);
             var panel = ClassPanel();
+            ClassOption(panel, "智能组合").ButtonPressed = false;
             var expected = ClassSkillRules.Maintained(job).Select(spell => "自动" + spell.ToLocalizedString()).ToArray();
             foreach (var title in expected)
             {
@@ -77,7 +79,7 @@ public partial class NativeSpellSmoke
         await Pause(2400);
         if (packets.OfType<S.Magic>().Count(packet => packet.Spell == Spell.SummonSkeleton) != summonCount) throw new Exception("有宠物仍重复召唤。");
         var target = ClientAutomation.Targets(State).First();
-        panel = ClassPanel(); ClassOption(panel, "挂机自动施毒").ButtonPressed = true; CloseClassPanel();
+        panel = ClassPanel(); ClassOption(panel, "自动施毒").ButtonPressed = true; CloseClassPanel();
         var menu = (PopupMenu)Client.FindChild("GameMenu", true, false);
         menu.EmitSignal(PopupMenu.SignalName.IdPressed, 7L); Client.SelectTarget(target.Id);
         foreach (short shape in new short[] { 2, 1 })
@@ -115,9 +117,10 @@ public partial class NativeSpellSmoke
     {
         stage = "道士自动幽灵盾/神圣战甲术真实Buff";
         var panel = ClassPanel();
-        foreach (var spell in ClassSkillRules.Maintained(MirClass.Taoist)) ClassOption(panel, "自动" + spell.ToLocalizedString()).ButtonPressed = true;
+        var buffs = ClassSkillRules.Maintained(MirClass.Taoist).Where(spell => ClassSkillRules.Buff(spell) != BuffType.None && spell != Spell.PetEnhancer).ToArray();
+        foreach (var spell in buffs) ClassOption(panel, "自动" + spell.ToLocalizedString()).ButtonPressed = true;
         CloseClassPanel();
-        await Until(() => ClassSkillRules.Maintained(MirClass.Taoist).All(spell => ClassSkillRules.Active(State, spell)));
+        await Until(() => buffs.All(spell => ClassSkillRules.Active(State, spell)));
         panel = ClassPanel(); ClassOption(panel, "自动治愈").ButtonPressed = true; CloseClassPanel();
         var injury = State.User!.Inventory.Single(item => item?.Info?.Name == "隔离自疗测试药");
         var mp = State.User.MP;

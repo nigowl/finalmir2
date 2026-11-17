@@ -1,0 +1,47 @@
+<MudGrid Spacing="2">
+    <MudItem xs="12" sm="6"><MudTextField T="string" Label="怪物名称" @bind-Value="Value.Name" @bind-Value:after="Mark" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Label="等级" @bind-Value="Value.Level" @bind-Value:after="Mark" Min="0" Max="65535" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="uint" Label="基础经验" @bind-Value="Value.Experience" @bind-Value:after="Mark" Min="0" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Label="外观编号" @bind-Value="Value.Image" @bind-Value:after="Mark" Min="0" Max="65535" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Label="行为编号" @bind-Value="Value.Ai" @bind-Value:after="Mark" Min="0" Max="255" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Label="特效编号" @bind-Value="Value.Effect" @bind-Value:after="Mark" Min="0" Max="255" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Label="光照" @bind-Value="Value.Light" @bind-Value:after="Mark" Min="0" Max="255" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Label="视野" @bind-Value="Value.ViewRange" @bind-Value:after="Mark" Min="0" Max="255" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Label="识破隐身" @bind-Value="Value.CoolEye" @bind-Value:after="Mark" Min="0" Max="255" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Label="攻击间隔（毫秒）" @bind-Value="Value.AttackSpeed" @bind-Value:after="Mark" Min="1" Max="65535" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" Label="移动间隔（毫秒）" @bind-Value="Value.MoveSpeed" @bind-Value:after="Mark" Min="1" Max="65535" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+</MudGrid>
+<MudDivider Class="my-3" /><MudText Typo="Typo.subtitle2">战斗属性</MudText>
+<MudGrid Spacing="2" Class="my-2">
+    @foreach (var stat in VisibleStats)
+    {
+        <MudItem xs="6" sm="3" @key="stat"><MudNumericField T="int" Label="@stat.ToLocalizedString()" Value="Value.Stats[stat]" ValueChanged="@((int v) => SetStat(stat,v))" Min="-1000000" Max="100000000" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" /></MudItem>
+    }
+</MudGrid>
+<MudSelect T="Stat?" Label="添加其他属性" Value="extra" ValueChanged="AddStat" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+    @foreach (var stat in Enum.GetValues<Stat>().Where(s => !VisibleStats.Contains(s)))
+    { <MudSelectItem T="Stat?" Value="@((Stat?)stat)">@stat.ToLocalizedString()</MudSelectItem> }
+</MudSelect>
+<MudDivider Class="my-3" /><MudText Typo="Typo.subtitle2">行为与脚本</MudText>
+<MudGrid Spacing="0">
+    <MudItem xs="6" sm="3"><MudCheckBox T="bool" Label="首领" Dense="true" @bind-Value="Value.IsBoss" @bind-Value:after="Mark" /></MudItem>
+    <MudItem xs="6" sm="3"><MudCheckBox T="bool" Label="不死系" Dense="true" @bind-Value="Value.Undead" @bind-Value:after="Mark" /></MudItem>
+    <MudItem xs="6" sm="3"><MudCheckBox T="bool" Label="可诱惑" Dense="true" @bind-Value="Value.CanTame" @bind-Value:after="Mark" /></MudItem>
+    <MudItem xs="6" sm="3"><MudCheckBox T="bool" Label="可推动" Dense="true" @bind-Value="Value.CanPush" @bind-Value:after="Mark" /></MudItem>
+    <MudItem xs="6" sm="3"><MudCheckBox T="bool" Label="可召回" Dense="true" @bind-Value="Value.CanRecall" @bind-Value:after="Mark" /></MudItem>
+    <MudItem xs="6" sm="3"><MudCheckBox T="bool" Label="自动显血" Dense="true" @bind-Value="Value.AutoRev" @bind-Value:after="Mark" /></MudItem>
+    <MudItem xs="6" sm="3"><MudCheckBox T="bool" Label="出生脚本" Dense="true" @bind-Value="Value.HasSpawnScript" @bind-Value:after="Mark" /></MudItem>
+    <MudItem xs="6" sm="3"><MudCheckBox T="bool" Label="死亡脚本" Dense="true" @bind-Value="Value.HasDieScript" @bind-Value:after="Mark" /></MudItem>
+</MudGrid>
+<MudText Typo="Typo.caption" Class="mt-3">编号固定为 #@Value.Id。基础经验受系统倍率和等级差影响；行为编号与脚本开关须对应当前版本已有实现，改名需同步核对按名称引用的任务/NPC脚本。保存属性将正常保存并重启游戏引擎，使外观、行为及已有怪物同步生效。</MudText>
+@code {
+    [Parameter, EditorRequired] public MonsterDefinition Value { get; set; } = null!;
+    [Parameter] public EventCallback Changed { get; set; }
+    private Stat? extra;
+    private readonly HashSet<Stat> added = [];
+    private static readonly Stat[] Core = [Stat.HP,Stat.MinDC,Stat.MaxDC,Stat.MinMC,Stat.MaxMC,Stat.MinSC,Stat.MaxSC,Stat.MinAC,Stat.MaxAC,Stat.MinMAC,Stat.MaxMAC,Stat.Accuracy,Stat.Agility];
+    private Stat[] VisibleStats => Core.Concat(Value.Stats.Values.Select(p => p.Key)).Concat(added).Distinct().ToArray();
+    private Task Mark() => Changed.InvokeAsync();
+    private Task SetStat(Stat key,int value) { Value.Stats[key] = value; return Mark(); }
+    private Task AddStat(Stat? value) { if (value is {} stat) added.Add(stat); extra = null; return Mark(); }
+}

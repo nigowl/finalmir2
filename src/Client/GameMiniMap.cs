@@ -18,6 +18,7 @@ public partial class GameMiniMap : Control
     public bool Expanded { get; private set; }
     public IReadOnlyList<Point> Route = [];
     public event Action<Point>? DestinationSelected;
+    public event Action<Point>? TeleportRequested;
     public override void _Ready()
     {
         caption = new Label { Name = "MapCaption", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, ClipText = true, MouseFilter = MouseFilterEnum.Ignore };
@@ -30,7 +31,7 @@ public partial class GameMiniMap : Control
         {
             if (texture == null) return new Rect2();
             var top = Expanded ? 23 : 3;
-            var available = Size - new Vector2(6, Expanded ? 42 : 22);
+            var available = Size - new Vector2(6, Expanded ? 42 : 6);
             var size = texture.GetSize() * Math.Min(available.X / texture.GetWidth(), available.Y / texture.GetHeight());
             return new Rect2(new Vector2((Size.X - size.X) / 2, top + (available.Y - size.Y) / 2), size);
         }
@@ -50,14 +51,15 @@ public partial class GameMiniMap : Control
     private void Layout()
     {
         var imageSize = texture?.GetSize() ?? new Vector2(3, 2);
-        var padding = new Vector2(6, Expanded ? 42 : 22);
+        var padding = new Vector2(6, Expanded ? 42 : 6);
         var available = (Expanded ? new Vector2(820, 560) : new Vector2(180, 140)) - padding;
         Size = imageSize * Math.Min(available.X / imageSize.X, available.Y / imageSize.Y) + padding;
         Position = Expanded ? (new Vector2(1024, 616) - Size) / 2 : new Vector2(1016 - Size.X, 8);
         if (caption == null) return;
+        caption.Visible = Expanded;
         caption.HorizontalAlignment = Expanded ? HorizontalAlignment.Left : HorizontalAlignment.Center;
-        caption.Position = Expanded ? new Vector2(16, 2) : new Vector2(12, Size.Y - 19);
-        caption.Size = Expanded ? new Vector2(Size.X - 46, 20) : new Vector2(Size.X - 24, 16);
+        caption.Position = Expanded ? new Vector2(24, 2) : new Vector2(24, Size.Y - 19);
+        caption.Size = Expanded ? new Vector2(Size.X - 54, 20) : new Vector2(Size.X - 48, 16);
     }
 
     internal Point? CellAt(Vector2 local)
@@ -70,9 +72,14 @@ public partial class GameMiniMap : Control
 
     public override void _GuiInput(InputEvent input)
     {
-        if (input is not InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } mouse) return;
+        if (input is not InputEventMouseButton { Pressed: true } mouse || mouse.ButtonIndex is not (MouseButton.Left or MouseButton.Right)) return;
         AcceptEvent();
-        if (!Expanded) { SetExpanded(true); return; }
+        if (!Expanded) { if (mouse.ButtonIndex == MouseButton.Left) SetExpanded(true); return; }
+        if (mouse.ButtonIndex == MouseButton.Right)
+        {
+            if (CellAt(mouse.Position) is { } destination) TeleportRequested?.Invoke(destination);
+            return;
+        }
         var point = new Rect2(Size.X - 26, 0, 26, 22).HasPoint(mouse.Position) ? null : CellAt(mouse.Position);
         SetExpanded(false);
         if (point.HasValue) DestinationSelected?.Invoke(point.Value);
@@ -80,7 +87,7 @@ public partial class GameMiniMap : Control
 
     public override void _Process(double delta)
     {
-        caption.Text = Expanded ? $"{State.Map?.Title} [{State.Map?.FileName}] · 点击寻路并收起 · M / Esc 关闭" : State.Map?.Title ?? "地图加载中…";
+        caption.Text = $"{State.Map?.Title} [{State.Map?.FileName}] · 左键寻路 / 右键传送（需权限） · M / Esc 关闭";
         var name = State.Map?.FileName ?? "";
         if (name != file || assetVersion != Assets.Version)
         {
@@ -118,7 +125,8 @@ public partial class GameMiniMap : Control
     }
     public override void _Draw()
     {
-        DrawRect(new Rect2(Vector2.Zero, Size), new Color(0, 0, 0, .8f));
+        // 角饰抠底后由地图或原面板底色填满，不能透出后面的场景。
+        DrawRect(new Rect2(Vector2.Zero, Size), new Color("0e0c0b"));
         if (texture != null)
         {
             var rect = ImageRect;
@@ -137,7 +145,7 @@ public partial class GameMiniMap : Control
             if (close != null) DrawTexture(close.Texture, new Vector2(Size.X - 23, 2));
             var point = CellAt(GetLocalMousePosition());
             var text = error.Length > 0 ? "地图加载失败，将自动重试" : texture == null ? "地图加载中…" : point.HasValue ? $"目标坐标 {point.Value.X},{point.Value.Y}" : "黄色标记为当前位置";
-            DrawString(ThemeDB.FallbackFont, new Vector2(16, Size.Y - 5), text, fontSize: 12, modulate: Colors.Wheat);
+            DrawString(ThemeDB.FallbackFont, new Vector2(24, Size.Y - 5), text, fontSize: 12, modulate: Colors.Wheat);
         }
     }
 

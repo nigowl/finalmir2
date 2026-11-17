@@ -18,13 +18,21 @@ public sealed partial class CompanionSession
     private long nextAction, nextReport;
     private string lastState = "", lastReason = "";
     private int deaths;
+    private bool serverDisconnect;
     private long lastControl=Environment.TickCount64;
     public CompanionProfile Profile { get; set; }
-    public CompanionKnowledge? Knowledge { get; set; }
+    private CompanionKnowledge? latestKnowledge;
+    public CompanionKnowledge? Knowledge
+    {
+        // 私有管道与游戏TCP独立到达；保留提前送达的快照，仅在原地图编号匹配后启用。
+        get => state.Map!=null && latestKnowledge?.MapId==state.Map.MapIndex ? latestKnowledge : null;
+        set => latestKnowledge=value;
+    }
     public bool Paused { get; set; }
+    private bool retiring;
     public bool Finished=>run?.IsCompleted==true;
     public CompanionSession(WorkerStart start, Func<WorkerEvent, Task> report)
-    { this.start = start; this.report = e=>report(e with{Session=start.Run}); Profile = start.Profile; random = new(start.Seed); }
+    { this.start = start; this.report = e=>report(e with{Session=start.Run}); Profile = start.Profile; random = new(start.Seed); deaths=start.Deaths; }
     public void Begin() => run = Run();
     public void Control(WorkerCommand command)=>controls.Enqueue(command);
     public async Task Stop()
@@ -85,21 +93,26 @@ public sealed partial class CompanionSession
                     else if(control.Kind=="knowledge")Knowledge=control.Knowledge;
                     else if(control.Kind=="pause")Paused=true;
                     else if(control.Kind=="resume")Paused=false;
+                    else if(control.Kind=="retire")retiring=true;
                     else if(control.Kind=="llm")LlmResult(control.Context,control.Text);
                     else if(control.Kind=="goal")GoalResult(control.Context,control.Text);
                 }
                 while (connection.Received.TryDequeue(out var packet)) await Apply(packet);
+                if(logoutConfirmed)return;
                 if (connection.Errors.TryDequeue(out var error)) throw new IOException(error);
                 if (!connection.Connected) throw new IOException("连接已断开。");
                 var now = Environment.TickCount64;
                 if(now-lastControl>20000)throw new TimeoutException("宿主监管租约超时，已主动下线。");
                 await PendingSpeech(now);
                 if (now >= nextReport) { nextReport = now + 5000; await report(new("heartbeat", Profile.Id, lastState, lastReason)); }
+                // 保命独立于走路、施法及任务等待；不重置发展动作的原冷却。
+                if (await ProtectItems(now)) continue;
                 if (now >= nextAction && state.User != null) await Think(now);
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
-        catch (Exception e) { await report(new("failed", Profile.Id, "已停止", e.Message)); }
+        catch (Exception e) { await report(new("failed", Profile.Id, "已停止", e.Message, Recoverable:CompanionSafety.CanReconnect(state,e,deaths,Profile.DeathLimit,
+            pendingAsset!=null||protection.PendingItem!=0||protection.Paused||repairItem!=0||guildNameRequested||logoutSent!=0,serverDisconnect))); }
         finally
         {
             connection.Dispose();cancellation.Cancel();
@@ -132,9 +145,18 @@ public sealed partial class CompanionSession
     }
     private async Task Apply(Packet packet)
     {
-        if (packet is S.Disconnect d) throw new IOException(d.Reason == 1 ? "账户被其他连接占用，已停止自动登录。" : $"原服断开连接（{d.Reason}）。");
+        if (packet is S.Disconnect d) {serverDisconnect=true;throw new IOException(d.Reason == 1 ? "账户被其他连接占用，已停止自动登录。" : $"原服断开连接（{d.Reason}）。");}
         var townResult=packet is S.UseItem {Grid:MirGridType.Inventory} itemResult && itemResult.UniqueID==protection.PendingItem && protection.PendingScrollShape==1;
+        var protectionResult=packet is S.UseItem {Grid:MirGridType.Inventory} used && used.UniqueID==protection.PendingItem && protection.PendingItem!=0;
+        var protectedItem=protectionResult?state.User?.Inventory.FirstOrDefault(item=>item?.UniqueID==protection.PendingItem):null;
         state.Apply(packet); protection.Apply(packet, Environment.TickCount64);
+        if(protectionResult && packet is S.UseItem {Success:false})
+            await report(new("protection-rejected",Profile.Id,Reason:protection.Notice,
+                Text:$"物品 {protectedItem?.ItemIndex}/{protectedItem?.Info?.Name}，唯一编号 {protectedItem?.UniqueID}，生命 {state.User?.HP}/{state.CalculateStats()[Stat.HP]}，魔法 {state.User?.MP}，地图 {state.Map?.MapIndex}，坐标 {state.User?.Location}，已死亡 {state.Me?.Dead}，禁药 {Knowledge?.NoDrug}，禁回城 {Knowledge?.NoTownTeleport}"));
+        await SkillPacket(packet);
+        if(await RetirementPacket(packet))return;
+        StoragePacket(packet);
+        GuildPacket(packet);
         if(townResult && packet is S.UseItem town)
             await report(new("escape",Profile.Id,Text:town.Success?"原服确认使用回城卷轴；按新地图重新规划":"原服拒绝回城卷轴，已停止自动保护，不会重发"));
         if (packet is S.Magic { Spell:Spell.Healing, Cast:true } healing && healing.TargetID==state.User?.ObjectID)
@@ -146,11 +168,23 @@ public sealed partial class CompanionSession
         {
             deaths++; nextAction = Environment.TickCount64 + 3000;InvalidateSuggestions();
             await report(new("death",Profile.Id,Reason:$"本次会话死亡 {deaths}/{Profile.DeathLimit}",
-                Text:$"地图 {Knowledge?.MapId}，坐标 {state.User?.Location}，红药 {PotionCount(true)}，蓝药 {PotionCount(false)}，目标 {Knowledge?.Goal?.Key}"));
+                Text:$"地图 {Knowledge?.MapId}，坐标 {state.User?.Location}，金币 {state.User?.Gold}，红药 {PotionCount(true)}，蓝药 {PotionCount(false)}，目标 {Knowledge?.Goal?.Key}，"+
+                    $"近期攻击者 {string.Join('、',monsterAttackers.Where(p=>Environment.TickCount64-p.Value<10000).Select(p=>state.Actors.GetValueOrDefault(p.Key)?.Name??p.Key.ToString()))}，"+
+                    $"武器 {state.User?.Equipment[0]?.ItemIndex}，技能 {string.Join(',',state.User!.Magics.Select(m=>m.Spell))}"));
         }
-        if (packet is S.MapInformation or S.MapChanged) { map = null; mapName = "";Knowledge=null; moving = false; pendingNpc = npcId = 0; goods = null;repairItem=0;repairPage=sellPage=false;page=[];InvalidateSuggestions(); }
+        if (packet is S.MapInformation or S.MapChanged) { CloseStorage();map = null; mapName = ""; moving = false;lastMoved=0; pendingNpc = npcId = 0; goods = null;repairItem=0;repairSlot=-1;repairPage=sellPage=false;page=[];monsterAttackers.Clear();combatTarget=monsterAttacker=0;InvalidateSuggestions(); }
         if (packet is S.AddMember or S.DeleteMember or S.DeleteGroup or S.GroupInvite) InvalidateSuggestions();
-        if (packet is S.UserLocation or S.UserInformation) moving = false;
+        if(packet is S.AddMember or S.DeleteMember or S.DeleteGroup)
+            await report(new("party",Profile.Id,Text:"原服确认当前队伍："+string.Join('、',state.GroupMembers)));
+        if(packet is S.AddMember joined && joined.Name!=state.User?.Name && state.GroupMembers.FirstOrDefault()==state.User?.Name)
+            nextInvite=Math.Min(nextInvite,Environment.TickCount64+5000);
+        if (packet is S.UserLocation location)
+        {
+            lastMoved=moving&&location.Location==moveDestination?moveSent:0;
+            if(moving&&lastMoved==0)navigation.Clear();
+            moving=false;
+        }
+        if (packet is S.UserInformation) { moving=false;lastMoved=0; }
         if (packet is S.NPCResponse npc) { page = npc.Page; pendingNpc = 0; }
         if (packet is S.NPCGoods shop) { goods = shop; pendingNpc = 0; foreach (var item in shop.List) state.Bind(item); }
         if (packet is S.NPCRepair repair) { repairPage = true; repairRate=repair.Rate; pendingNpc = 0; }
@@ -158,7 +192,11 @@ public sealed partial class CompanionSession
         await Social(packet);
         var attacker=packet is S.Struck struck?struck.AttackerID:packet is S.ObjectStruck hit&&hit.ObjectID==state.User?.ObjectID?hit.AttackerID:0;
         if(attacker!=0&&state.Actors.GetValueOrDefault(attacker) is {Kind:ObjectType.Monster,MasterObjectId:0})
-        {monsterAttacker=attacker;monsterAttackedAt=Environment.TickCount64;}
+        {
+            monsterAttacker=attacker;monsterAttackedAt=Environment.TickCount64;
+            if(monsterAttackers.Count>=8&&!monsterAttackers.ContainsKey(attacker))monsterAttackers.Remove(monsterAttackers.MinBy(p=>p.Value).Key);
+            monsterAttackers[attacker]=monsterAttackedAt;
+        }
         if(attacker!=0&&state.Actors.GetValueOrDefault(attacker)?.Kind==ObjectType.Player)
         {aggressor=attacker;aggressorUntil=Environment.TickCount64+15000;}
         if(packet is S.ChangeAMode mode)attackMode=mode.Mode;

@@ -30,7 +30,7 @@ public sealed class ClientAutomation
             if (now - pendingSince >= 3000) { Paused = true; Notice = "自动保护回执超时，已暂停；不会自动重发，请检查连接。"; }
             return null;
         }
-        if (Paused || now < nextItem || state.User == null || state.Me?.Dead != false || state.Trading || state.StorageActive) return null;
+        if (Paused || state.User == null || state.Me?.Dead != false || state.Trading || state.StorageActive) return null;
         var user = state.User; var stats = state.CalculateStats();
         bool Low(Stat stat, int value, int threshold) => value * 100L <= (long)Math.Max(value, stats[stat]) * threshold;
         var lowTown = preferences.AutoTown && Low(Stat.HP, user.HP, preferences.TownPercent);
@@ -42,8 +42,10 @@ public sealed class ClientAutomation
         UserItem? item = null;
         if (lowTown && !townTriggered) { item = Scroll(user.Inventory, 1); if (item != null) townTriggered = true; else Notice = "自动回城：背包没有回城卷。"; }
         if (item == null && lowRandom && !randomTriggered && !(lowTown && townTriggered)) { item = Scroll(user.Inventory, 2); if (item != null) randomTriggered = true; else Notice = "自动随机：背包没有随机卷。"; }
-        if (item == null && preferences.AutoHp && user.HP > 0 && Low(Stat.HP, user.HP, preferences.HpPercent)) item = Potion(user.Inventory, Stat.HP);
-        if (item == null && preferences.AutoMp && stats[Stat.MP] > 0 && Low(Stat.MP, user.MP, preferences.MpPercent)) item = Potion(user.Inventory, Stat.MP);
+        // 药品间隔不能挡住刚刚发生的紧急逃生；仍须等上一请求明确回执。
+        if (item == null && now < nextItem) return null;
+        if (item == null && preferences.AutoHp && user.HP > 0 && Low(Stat.HP, user.HP, preferences.HpPercent)) item = Potion(user.Inventory, Stat.HP, stats[Stat.HP] - user.HP);
+        if (item == null && preferences.AutoMp && stats[Stat.MP] > 0 && Low(Stat.MP, user.MP, preferences.MpPercent)) item = Potion(user.Inventory, Stat.MP, stats[Stat.MP] - user.MP);
         if (item == null && idleRandom && now >= nextRandom)
         {
             nextRandom = now + 5000; item = Scroll(user.Inventory, 2);
@@ -56,8 +58,10 @@ public sealed class ClientAutomation
         return item;
     }
 
-    private static UserItem? Potion(IEnumerable<UserItem> items, Stat stat) => items.FirstOrDefault(item =>
-        item?.Info is { Type: ItemType.Potion, Shape: 0 or 1 } info && item.Count > 0 && info.Stats[stat] > 0);
+    private static UserItem? Potion(IEnumerable<UserItem> items, Stat stat, int missing) => items.Where(item =>
+        item?.Info is { Type: ItemType.Potion, Shape: 0 or 1 } info && item.Count > 0 && info.Stats[stat] > 0)
+        // 缺血较多时不能因小药排在前面而一直吃小药；足以补齐时选浪费最少的一瓶。
+        .OrderByDescending(item => Math.Min(item.Info.Stats[stat], missing)).ThenBy(item => item.Info.Stats[stat]).FirstOrDefault();
     private static UserItem? Scroll(IEnumerable<UserItem> items, short shape) => items.FirstOrDefault(item =>
         item?.Info is { Type: ItemType.Scroll } info && info.Shape == shape && item.Count > 0);
 
@@ -78,17 +82,7 @@ public sealed class ClientAutomation
     public static bool RequiresPhysicalAttack(Actor target) => target.Kind==ObjectType.Monster && target.AI==3;
 
     public static ClientMagic? SkillFor(GameState state, ClientPreferences preferences, Actor target, long now)
-    {
-        if (state.User == null || RequiresPhysicalAttack(target)) return null;
-        var crowded = Targets(state).Count(actor => Functions.MaxDistance(actor.Location, target.Location) <= 2) >= 2;
-        foreach (var spell in crowded ? new[] { preferences.AreaSkill, preferences.SingleSkill } : new[] { preferences.SingleSkill })
-        {
-            if (spell == Spell.None || state.DisabledSkills.Contains(spell)) continue;
-            var skill = state.User.Magics.FirstOrDefault(magic => magic.Spell == spell);
-            if (skill != null && skill.BaseCost + skill.LevelCost * skill.Level <= state.User.MP && now >= skill.CastTime + skill.Delay) return skill;
-        }
-        return null;
-    }
+        => ClassSkillRules.AttackMagic(state, preferences, target, now);
 
     public static IEnumerable<Actor> Targets(GameState state) => state.User == null ? [] : state.Actors.Values
         .Where(actor => actor.Kind == ObjectType.Monster && !actor.Dead && !actor.Hidden && actor.MasterObjectId == 0 && actor.AI is not (6 or 56 or 57 or 58 or 64 or 113))

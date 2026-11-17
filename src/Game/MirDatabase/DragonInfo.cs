@@ -88,7 +88,7 @@ namespace Server.MirDatabase
         public void LoadDrops()
         {
             for (int i = 0; i < Globals.MaxDragonLevel; i++) Drops[i].Clear();
-            string path = Path.Combine(Settings.DropPath, "DragonItem.txt");
+            string path = Path.Combine(Settings.DropPath, Settings.DragonDropFilename + ".txt").Replace('\\', Path.DirectorySeparatorChar);
             if (!File.Exists(path))
             {
                 string[] contents = new[]

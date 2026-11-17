@@ -12,12 +12,13 @@ public partial class NativeSmoke
         // PNG截图会阻塞主线程；先排空期间积压的包，再开始测量完整收包间隔。
         await Until(() => Client.Connection.Received.IsEmpty);
         var guard = State.Actors.Values.Single(actor => actor.Name == "NativePatrol");
-        var intervals = new List<long>(); long previousPacket = 0;
+        var intervals = new List<long>(); long previousPacket = 0; var warmupPackets = 0;
         void Observe(Packet packet)
         {
             if (packet is not S.ObjectWalk walk || walk.ObjectID != guard.Id) return;
             var now = Environment.TickCount64;
-            if (previousPacket > 0) intervals.Add(now - previousPacket);
+            // 首包可能在截图期间已到达TCP缓冲；用两次真实步进对齐采样，再检查完整间隔。
+            if (++warmupPackets > 2) intervals.Add(now - previousPacket);
             previousPacket = now;
         }
         Client.PacketReceived += Observe;
