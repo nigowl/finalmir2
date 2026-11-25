@@ -10,7 +10,7 @@ internal static class CompanionProtectionScenario
 {
     public static void Prepare(ProjectPaths paths,int id,string mode)
     {
-        if(!paths.Data.Contains("mir2-companions-",StringComparison.Ordinal)||mode is not ("town" or "denied" or "revive" or "crowd" or "budget"))
+        if(!paths.Data.Contains("mir2-companions-",StringComparison.Ordinal)||mode is not ("town" or "denied" or "revive" or "crowd" or "budget" or "random" or "random-denied"))
             throw new InvalidOperationException("只允许已知场景及隔离世界。");
         using var ownership=new FileStream(Path.Combine(paths.Data,".server.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
         Directory.SetCurrentDirectory(paths.World);
@@ -18,28 +18,30 @@ internal static class CompanionProtectionScenario
         var world=Envir.Main;if(!world.LoadDB())throw new InvalidDataException("隔离世界读取失败");
         world.BuffInfoList.AddRange(BuffInfo.Load());world.LoadAccounts();var c=world.CharacterList.Single(c=>c.Index==id);
         var town=world.MapInfoList[0];var field=world.MapInfoList[1];
+        var random = mode is "random" or "random-denied";
         foreach(var map in world.MapInfoList)
         {
             map.Respawns.Clear();map.Movements.Clear();map.SafeZones.Clear();map.NPCs.Clear();
-            map.FileName="NativeProtection";map.NoDrug=false;map.NoTownTeleport=mode=="denied";map.NoDropPlayer=true;map.NoFight=false;
+            map.FileName="NativeProtection";map.NoDrug=false;map.NoTownTeleport=mode=="denied"||random;map.NoRandom=mode=="random-denied";map.NoDropPlayer=true;map.NoFight=false;
         }
         world.NPCInfoList.Clear();world.QuestInfoList.Clear();
         town.SafeZones.Add(new SafeZoneInfo{Info=town,Location=new(10,10),Size=2,StartPoint=true});
         c.CurrentMapIndex=field.Index;c.CurrentLocation=new(20,20);c.BindMapIndex=town.Index;c.BindLocation=new(10,10);
         c.Level=18;c.HP=mode=="revive"?0:mode=="crowd"?68:20;c.MP=200;c.Experience=0;c.AccountInfo.Gold=1234;
         c.Inventory=new UserItem[46];c.Equipment=new UserItem[14];c.QuestInventory=new UserItem[40];c.Magics.Clear();c.CurrentQuests.Clear();c.CompletedQuests.Clear();
-        var scroll=new ItemInfo{Index=++world.ItemIndex,Name="隔离回城卷",Type=ItemType.Scroll,Shape=1,StackSize=20};
+        var scroll=new ItemInfo{Index=++world.ItemIndex,Name=random?"隔离随机卷":"隔离回城卷",Type=ItemType.Scroll,Shape=(short)(random?2:1),StackSize=20};
         world.ItemInfoList.Add(scroll);c.Inventory[0]=world.CreateFreshItem(scroll);c.Inventory[0].Count=2;
         if(mode=="budget")c.Inventory[0]=null;
-        if(mode is "crowd" or "budget")
+        if(mode is "crowd" or "budget" || random)
         {
             var red=new ItemInfo{Index=++world.ItemIndex,Name="隔离普通红药",Type=ItemType.Potion,Shape=0,StackSize=100,Stats=new Stats{[Stat.HP]=30}};
             world.ItemInfoList.Add(red);
             if(mode=="crowd"){c.Inventory[1]=world.CreateFreshItem(red);c.Inventory[1].Count=20;}
+            var damage=mode=="budget"?1000:random?2:8;
             var mob=new MonsterInfo{Index=++world.MonsterIndex,Name="隔离围攻僵尸",Image=Monster.ClZombie,AI=0,Level=18,Experience=100,
-                Stats=new Stats{[Stat.HP]=1000,[Stat.MinDC]=mode=="budget"?1000:8,[Stat.MaxDC]=mode=="budget"?1000:8,[Stat.Accuracy]=100},ViewRange=16,MoveSpeed=500,AttackSpeed=500};
+                Stats=new Stats{[Stat.HP]=1000,[Stat.MinDC]=damage,[Stat.MaxDC]=damage,[Stat.Accuracy]=100},ViewRange=16,MoveSpeed=500,AttackSpeed=500};
             world.MonsterInfoList.Add(mob);
-            foreach(var p in new[]{new Point(18,20),new Point(22,20),new Point(20,18),new Point(20,22)})
+            foreach(var p in random ? [new Point(19,20)] : new[]{new Point(18,20),new Point(22,20),new Point(20,18),new Point(20,22)})
                 field.Respawns.Add(new RespawnInfo{RespawnIndex=++world.RespawnIndex,MonsterIndex=mob.Index,Location=p,Count=1,Delay=600});
         }
         var header=new byte[52];BitConverter.GetBytes((short)32).CopyTo(header,0);BitConverter.GetBytes((short)32).CopyTo(header,2);

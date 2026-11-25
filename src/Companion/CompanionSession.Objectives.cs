@@ -29,7 +29,8 @@ public sealed partial class CompanionSession
         await Status(travelOnly ? "撤离中" : remote ? "跨图中" : goal.Kind == "hunt" ? "寻怪中" : "任务中",
             travelOnly ? goal.Kind=="service" && goal.QuestId==0 ? "补给途中遭受攻击，优先沿可通行路线撤离" : "赶路途中遭受攻击，优先沿当前目标路线前进" : goal.Reason);
         var atExit=remote && distance==0;
-        if (distance > near && await MoveTo(point, near, !remote && goal.Kind=="hunt" ? goal.Key : "",run:true)) {reportedBlockedGoal="";arrivedAt=0;return true;}
+        // 接交和跨图赶路也须绕开已知强怪，不能先穿过包围圈耗光药品才避险返店。
+        if (distance > near && await MoveTo(point, near, !remote && goal.Kind=="hunt" ? goal.Key : "",run:true,avoidThreats:CompanionSafety.TravelBeforeCombat(Knowledge,0,false))) {reportedBlockedGoal="";arrivedAt=0;return true;}
         if (travelOnly && !atExit) return false;
         if(goal.Kind=="party"&&!remote&&distance<=near)
         {await Status("跟队中","与队长会合，等待合适的协同战斗目标");nextAction=now+500;return true;}

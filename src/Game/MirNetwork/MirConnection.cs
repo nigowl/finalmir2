@@ -322,8 +322,32 @@ namespace Server.MirNetwork
                 case (short)ClientPacketIds.RemoveStoragePassword:
                     RemoveStoragePassword((C.RemoveStoragePassword)p);
                     break;
+                case (short)ClientPacketIds.RecycleItem:
+                    if (Stage == GameStage.Game) Player.RecycleItem((C.RecycleItem)p);
+                    break;
+                case (short)ClientPacketIds.PublicShopRequest:
+                    if (Stage == GameStage.Game) Player.ReadPublicShop();
+                    break;
+                case (short)ClientPacketIds.PublicShopCatalogRequest:
+                    if (Stage == GameStage.Game) Player.ReadPublicShop(true);
+                    break;
+                case (short)ClientPacketIds.PublicShopBuy:
+                    if (Stage == GameStage.Game) Player.BuyPublicShop((C.PublicShopBuy)p);
+                    break;
+                case (short)ClientPacketIds.QuestNavigationRequest:
+                    if (Stage == GameStage.Game) Player.ReadQuestNavigation((C.QuestNavigationRequest)p);
+                    break;
                 case (short)ClientPacketIds.CharacterLocationRequest:
                     CharacterLocation((C.CharacterLocationRequest)p);
+                    break;
+                case (short)ClientPacketIds.HeroRecoveryRequest:
+                    if (Stage == GameStage.Game) Player.ReadHeroRecovery();
+                    break;
+                case (short)ClientPacketIds.DeleteHeroRequest:
+                    if (Stage == GameStage.Game) Player.DeleteManagedHero((C.DeleteHeroRequest)p);
+                    break;
+                case (short)ClientPacketIds.HealthDisplayRequest:
+                    if (Stage == GameStage.Game) Player.EnableHealthDisplay();
                     break;
                 case (short)ClientPacketIds.Login:
                     Login((C.Login) p);
@@ -1462,7 +1486,7 @@ namespace Server.MirNetwork
         }
         private void ChangePMode(C.ChangePMode p)
         {
-            if (Stage != GameStage.Game) return;
+            if (Stage != GameStage.Game || !Enum.IsDefined(p.Mode)) return;
 
             Player.PMode = p.Mode;
 
@@ -2174,17 +2198,17 @@ namespace Server.MirNetwork
 
         private void NPCConfirmInput(C.NPCConfirmInput p)
         {
-            if (Stage != GameStage.Game) return;
+            if (Stage != GameStage.Game || Player.Dead || p.NPCID == 0 || p.NPCID != Player.NPCObjectID || p.Value.Length > 50 ||
+                !p.PageName.StartsWith("[@@", StringComparison.Ordinal)) return;
 
             Player.NPCData["NPCInputStr"] = p.Value;
-
-            if (p.NPCID == Envir.DefaultNPC.LoadedObjectID && Player.NPCObjectID == Envir.DefaultNPC.LoadedObjectID)
+            try
             {
-                Player.CallDefaultNPC(p.PageName);
-                return;
+                if (p.NPCID == Envir.DefaultNPC.LoadedObjectID) Player.CallDefaultNPC(p.PageName);
+                else Player.CallNPC(p.NPCID, p.PageName);
             }
-
-            Player.CallNPC(Player.NPCObjectID, p.PageName);
+            // 被原链接/距离检查拒绝时也清除输入，避免下次直接执行旧值。
+            finally { Player.NPCData.Remove("NPCInputStr"); }
         }
 
         public List<byte[]> Image = new List<byte[]>();

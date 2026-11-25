@@ -10,6 +10,11 @@ public partial class NativeSmoke
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         var point = control.GetGlobalRect().GetCenter();
+        if (control.GetWindow() is { } window && window != GetWindow())
+        {
+            // 子窗口控件坐标以窗口为原点，鼠标输入仍由根窗口分发。
+            point += window.Position;
+        }
         await MoveMouse(point);
         MouseButtonAt(point, true); MouseButtonAt(point, false);
     }

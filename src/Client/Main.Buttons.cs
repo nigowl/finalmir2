@@ -9,7 +9,7 @@ public partial class Main
 
     private void PrepareButtonTheme()
     {
-        if (originalButtonThemeReady || !Assets.Ready) return;
+        if (originalButtonThemeReady) return;
         var normal = Assets.Sprite("Title", 276);
         var hover = Assets.Sprite("Title", 277);
         var pressed = Assets.Sprite("Title", 278);
@@ -37,6 +37,11 @@ public partial class Main
         Theme.SetTypeVariation("GamePercent", "LineEdit");
         Theme.SetStylebox("normal", "GamePercent", Theme.GetStylebox("normal", "OptionButton"));
         Theme.SetStylebox("focus", "GamePercent", Theme.GetStylebox("hover", "OptionButton"));
+        foreach (var state in new[] { "normal", "hover", "pressed" })
+            Theme.SetStylebox("title_button_" + state, "Tree", Theme.GetStylebox(state, "Button"));
+        var selectedCell = new StyleBoxFlat { BgColor = new Color("4c402a80") };
+        Theme.SetStylebox("selected", "Tree", selectedCell); Theme.SetStylebox("selected_focus", "Tree", selectedCell);
+        Theme.SetColor("font_color", "Tree", new Color("eadbb6"));
         PrepareWindowTheme(window, close.Texture, closePressed.Texture);
         PrepareTabTheme(rolePanel, roleTab);
         originalButtonThemeReady = true;
@@ -45,9 +50,8 @@ public partial class Main
     private void PrepareTabTheme(SpriteImage panel, SpriteImage selectedTab)
     {
         Theme.SetTypeVariation("GameTab", "Button");
-        // 两态都取真正的60px按钮，去掉选中图右侧透明区及未选中图相邻页签的边线。
-        var active = OriginalArt.TabSkin(selectedTab, new Rect2I(1, 0, 60, 20));
-        var plain = OriginalArt.TabSkin(panel, new Rect2I(9, 70, 60, 20), active);
+        var active = OriginalArt.TabSkin(selectedTab);
+        var plain = OriginalArt.TabSkin(selectedTab, panel);
         foreach (var state in new[] { "normal", "hover", "pressed", "hover_pressed", "disabled" })
         {
             var selected = state is "pressed" or "hover_pressed";
@@ -59,12 +63,17 @@ public partial class Main
         Theme.SetColor("font_color", "GameTab", new Color("b9aa89"));
         Theme.SetColor("font_pressed_color", "GameTab", new Color("ffe3a1"));
         Theme.SetColor("font_hover_pressed_color", "GameTab", new Color("ffe3a1"));
-        foreach (var state in new[] { "tab_selected", "tab_unselected", "tab_hovered", "tab_disabled" })
-            Theme.SetStylebox(state, "TabContainer", Theme.GetStylebox(state == "tab_selected" ? "pressed" : state == "tab_hovered" ? "hover" : state == "tab_disabled" ? "disabled" : "normal", "GameTab"));
-        Theme.SetColor("font_selected_color", "TabContainer", new Color("ffe3a1"));
-        Theme.SetColor("font_unselected_color", "TabContainer", new Color("b9aa89"));
-        foreach (var tab in FindChildren("*", "Button", true, false).OfType<Button>().Where(button => button.ThemeTypeVariation == "GameTab"))
-            tab.SetDeferred(Control.PropertyName.Size, new Vector2(tab.Size.X, ClientUi.TabHeight));
+        foreach (var type in new[] { "TabContainer", "TabBar" })
+        {
+            foreach (var state in new[] { "tab_selected", "tab_unselected", "tab_hovered", "tab_disabled" })
+                Theme.SetStylebox(state, type, Theme.GetStylebox(state == "tab_selected" ? "pressed" : state == "tab_hovered" ? "hover" : state == "tab_disabled" ? "disabled" : "normal", "GameTab"));
+            Theme.SetConstant("tab_separation", type, ClientUi.Gap);
+            Theme.SetColor("font_selected_color", type, new Color("ffe3a1"));
+            Theme.SetColor("font_unselected_color", type, new Color("b9aa89"));
+        }
+        // 启动时旧主题会临时撑大页签，原素材主题就绪后恢复声明的尺寸。
+        foreach (var tab in game.FindChildren("*", "Button", true, false).OfType<Button>().Where(button => button.ThemeTypeVariation == "GameTab"))
+            tab.SetDeferred(Control.PropertyName.Size, tab.CustomMinimumSize);
     }
 
     private void PrepareWindowTheme(Crystal.Native.SpriteImage window, Texture2D close, Texture2D closePressed)
@@ -82,6 +91,7 @@ public partial class Main
         foreach (var panel in skinnedPanels.Where(panel => panel != chatFrame)) panel.AddThemeStyleboxOverride("panel", originalPanelSkin);
         var dialog = WindowStyle(OriginalArt.DialogSkin(window), 24); dialog.TextureMarginTop = 33; dialog.TextureMarginBottom = 34;
         settingsDialog.AddThemeStyleboxOverride("panel", dialog);
+        publicShop.AddThemeStyleboxOverride("panel", dialog);
         var menuFrame = WindowStyle(frame, 24);
         menuFrame.ContentMarginLeft = menuFrame.ContentMarginRight = 28;
         menuFrame.ContentMarginTop = 32; menuFrame.ContentMarginBottom = 28;
@@ -91,6 +101,15 @@ public partial class Main
         Theme.SetColor("font_hover_color", "PopupMenu", new Color("fff1ad"));
         Theme.SetConstant("v_separation", "PopupMenu", 6);
         Theme.SetConstant("h_separation", "PopupMenu", 8);
+        Theme.SetTypeVariation("GameOptionPopup", "PopupMenu");
+        Theme.SetStylebox("panel", "GameOptionPopup", new StyleBoxFlat {
+            BgColor = new Color("211b14dc"), BorderColor = new Color("8b744cb8"),
+            BorderWidthLeft = 1, BorderWidthRight = 1, BorderWidthTop = 1, BorderWidthBottom = 1,
+            ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 4, ContentMarginBottom = 4 });
+        Theme.SetStylebox("hover", "GameOptionPopup", new StyleBoxFlat {
+            BgColor = new Color("806039a6"), ContentMarginLeft = 4, ContentMarginRight = 4, ContentMarginTop = 2, ContentMarginBottom = 2 });
+        Theme.SetFontSize("font_size", "GameOptionPopup", ClientUi.Body);
+        Theme.SetConstant("v_separation", "GameOptionPopup", 4);
         Theme.SetStylebox("panel", "GameMiniMap", WindowStyle(OriginalArt.FrameSkin(window, true), 24, false));
         var embedded = (StyleBoxTexture)dialog.Duplicate(); embedded.ContentMarginTop = 28;
         embedded.ExpandMarginLeft = embedded.ExpandMarginRight = 8; embedded.ExpandMarginTop = 32; embedded.ExpandMarginBottom = 8;

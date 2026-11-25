@@ -32,7 +32,17 @@
 }
 <MudTabs>
 <MudTabPanel Text="陪玩角色">
-    <MudStack Row="true" Class="my-3"><MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="昵称 / 别名 / 标签 / 人格" @bind-Value="search" /><MudButton OnClick="Search" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">查询</MudButton></MudStack>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="my-3">
+        <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="昵称 / 别名 / 标签 / 人格" @bind-Value="search" />
+        <MudSelect T="string" Label="状态" Value="status" ValueChanged="FilterStatus" Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true">
+            <MudSelectItem Value="@string.Empty">全部状态</MudSelectItem>
+            <MudSelectItem Value="@("online")">在线</MudSelectItem><MudSelectItem Value="@("offline")">离线</MudSelectItem>
+            <MudSelectItem Value="@("queued")">排队中</MudSelectItem><MudSelectItem Value="@("paused")">已暂停</MudSelectItem>
+            <MudSelectItem Value="@("resting")">休息中</MudSelectItem><MudSelectItem Value="@("error")">需处理 / 托管恢复</MudSelectItem>
+            <MudSelectItem Value="@("disabled")">已停用</MudSelectItem>
+        </MudSelect>
+        <MudButton OnClick="Search" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">查询</MudButton>
+    </MudStack>
     <MudTable T="CompanionRow" Items="rows" Dense="true" Hover="true">
     <HeaderContent><MudTh>昵称 / 人格</MudTh><MudTh>职业 / 等级 / 地图</MudTh><MudTh>状态与原因</MudTh><MudTh>今日在线 / 调度</MudTh><MudTh>操作</MudTh></HeaderContent>
     <RowTemplate>
@@ -44,7 +54,7 @@
     </RowTemplate>
     <NoRecordsContent><MudText>当前版本没有匹配的陪玩档案。</MudText></NoRecordsContent>
     </MudTable>
-    <MudStack Row="true" AlignItems="AlignItems.Center" Class="my-3"><MudButton Disabled="@(page==0)" OnClick="Previous" Size="Size.Small" Variant="Variant.Text" Color="Color.Default">上一页</MudButton><MudText>第 @(page+1) 页，共 @total 条，每页 20 条</MudText><MudButton Disabled="@((page+1)*20>=total)" OnClick="Next" Size="Size.Small" Variant="Variant.Text" Color="Color.Default">下一页</MudButton></MudStack>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="my-3"><MudButton Disabled="@(page==0)" OnClick="Previous" Size="Size.Small" Variant="Variant.Text" Color="Color.Default">上一页</MudButton><MudText>第 @(page+1) 页，共 @total 条，每页 @PageSize 条</MudText><MudButton Disabled="@((page+1)*PageSize>=total)" OnClick="Next" Size="Size.Small" Variant="Variant.Text" Color="Color.Default">下一页</MudButton></MudStack>
 </MudTabPanel>
 <MudTabPanel Text="人格预制">
     <MudTable T="PersonalityPreset" Items="overview.Presets" Dense="true" RowsPerPage="12">
@@ -94,11 +104,25 @@
 }
 @code{
     private CompanionOverview? overview;private CompanionRow[] rows=[];private CompanionProfile? draft;private CompanionSettings? settingsDraft;private PersonalityPreset? preset;private CompanionDetail? detail;
-    private string search="";private string? error,notice;private int page,total;private bool busy,bound,batch;
+    private const int PageSize=10;
+    private string search="",status="";private string? error,notice;private int page,total,loadVersion;private bool busy,bound,batch;
     private readonly CancellationTokenSource cancellation=new();private Task? polling;
     protected override async Task OnInitializedAsync(){await Load();polling=Poll();}
     private async Task Poll(){try{using var timer=new PeriodicTimer(TimeSpan.FromSeconds(5));while(await timer.WaitForNextTickAsync(cancellation.Token))if(draft==null&&settingsDraft==null&&preset==null&&!busy&&!batch)await InvokeAsync(async()=>{await Load();if(detail!=null)await RefreshDetail();StateHasChanged();});}catch(OperationCanceledException)when(cancellation.IsCancellationRequested){}}
-    private async Task Load(){try{overview=await Api.Get<CompanionOverview>("management/companions/overview",cancellation.Token);var result=await Api.Get<CompanionPage>($"management/companions?page={page}&search={Uri.EscapeDataString(search)}",cancellation.Token);rows=result.Items;total=result.Total;error=null;}catch(Exception e)when(!cancellation.IsCancellationRequested){error=e.Message;}}
+    private async Task Load()
+    {
+        var request=++loadVersion;
+        try
+        {
+            var summary=await Api.Get<CompanionOverview>("management/companions/overview",cancellation.Token);
+            var result=await Api.Get<CompanionPage>($"management/companions?page={page}&pageSize={PageSize}&status={status}&search={Uri.EscapeDataString(search)}",cancellation.Token);
+            if(request!=loadVersion)return;
+            overview=summary;rows=result.Items;total=result.Total;error=null;
+            if(page>0&&page*PageSize>=total){page=Math.Max(0,(total-1)/PageSize);await Load();}
+        }
+        catch(Exception e)when(!cancellation.IsCancellationRequested){if(request==loadVersion)error=e.Message;}
+    }
+    private Task FilterStatus(string value){status=value;return Search();}
     private Task Search(){page=0;return Load();}private Task Previous(){page--;return Load();}private Task Next(){page++;return Load();}
     private string PresetName(CompanionProfile p)=>overview?.Presets.FirstOrDefault(x=>x.Key==p.PresetKey&&x.Revision==p.PresetRevision)?.Name??p.PresetKey;
     private static string Local(DateTimeOffset? value,string zone)=>value==null?"—":TimeZoneInfo.ConvertTime(value.Value,CompanionScheduling.Zone(zone)).ToString("MM-dd HH:mm");

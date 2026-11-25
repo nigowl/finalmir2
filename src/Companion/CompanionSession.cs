@@ -31,8 +31,8 @@ public sealed partial class CompanionSession
     public bool Paused { get; set; }
     private bool retiring;
     public bool Finished=>run?.IsCompleted==true;
-    public CompanionSession(WorkerStart start, Func<WorkerEvent, Task> report)
-    { this.start = start; this.report = e=>report(e with{Session=start.Run}); Profile = start.Profile; random = new(start.Seed); deaths=start.Deaths; }
+    public CompanionSession(WorkerStart start, Func<WorkerEvent, Task> report, PlayerActionTiming? timing = null)
+    { this.start = start; this.report = e=>report(e with{Session=start.Run}); Profile = start.Profile; random = new(start.Seed); deaths=start.Deaths; state.PlayerTiming = timing ?? PlayerActionTiming.Default; }
     public void Begin() => run = Run();
     public void Control(WorkerCommand command)=>controls.Enqueue(command);
     public async Task Stop()
@@ -112,7 +112,7 @@ public sealed partial class CompanionSession
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception e) { await report(new("failed", Profile.Id, "已停止", e.Message, Recoverable:CompanionSafety.CanReconnect(state,e,deaths,Profile.DeathLimit,
-            pendingAsset!=null||protection.PendingItem!=0||protection.Paused||repairItem!=0||guildNameRequested||logoutSent!=0,serverDisconnect))); }
+            pendingAsset!=null||publicPurchases.Pending||protection.PendingItem!=0||protection.Paused||repairItem!=0||guildNameRequested||logoutSent!=0,serverDisconnect))); }
         finally
         {
             connection.Dispose();cancellation.Cancel();
@@ -149,20 +149,32 @@ public sealed partial class CompanionSession
         var townResult=packet is S.UseItem {Grid:MirGridType.Inventory} itemResult && itemResult.UniqueID==protection.PendingItem && protection.PendingScrollShape==1;
         var protectionResult=packet is S.UseItem {Grid:MirGridType.Inventory} used && used.UniqueID==protection.PendingItem && protection.PendingItem!=0;
         var protectedItem=protectionResult?state.User?.Inventory.FirstOrDefault(item=>item?.UniqueID==protection.PendingItem):null;
+        if (packet is S.CompleteQuest changed)
+            foreach (var id in state.CompletedQuests.Where(id => !changed.CompletedQuests.Contains(id)))
+                if (state.QuestDefinitions.TryGetValue(id, out var quest) && quest.Type == QuestType.Daily)
+                { acceptedQuests.Remove(id); finishedQuests.Remove(id); }
+        if (packet is S.ChangeQuest { QuestState: QuestState.Remove } removed &&
+            state.QuestDefinitions.TryGetValue(removed.Quest.Id, out var repeat) && repeat.Type == QuestType.Repeatable)
+        { acceptedQuests.Remove(repeat.Index); finishedQuests.Remove(repeat.Index); }
         state.Apply(packet); protection.Apply(packet, Environment.TickCount64);
         if(protectionResult && packet is S.UseItem {Success:false})
             await report(new("protection-rejected",Profile.Id,Reason:protection.Notice,
-                Text:$"物品 {protectedItem?.ItemIndex}/{protectedItem?.Info?.Name}，唯一编号 {protectedItem?.UniqueID}，生命 {state.User?.HP}/{state.CalculateStats()[Stat.HP]}，魔法 {state.User?.MP}，地图 {state.Map?.MapIndex}，坐标 {state.User?.Location}，已死亡 {state.Me?.Dead}，禁药 {Knowledge?.NoDrug}，禁回城 {Knowledge?.NoTownTeleport}"));
+                Text:$"物品 {protectedItem?.ItemIndex}/{protectedItem?.Info?.Name}，唯一编号 {protectedItem?.UniqueID}，生命 {state.User?.HP}/{state.CalculateStats()[Stat.HP]}，魔法 {state.User?.MP}，地图 {state.Map?.MapIndex}，坐标 {state.User?.Location}，已死亡 {state.Me?.Dead}，禁药 {Knowledge?.NoDrug}，禁回城 {Knowledge?.NoTownTeleport}，禁随机 {Knowledge?.NoRandom}"));
         await SkillPacket(packet);
         if(await RetirementPacket(packet))return;
         StoragePacket(packet);
         GuildPacket(packet);
+        await HeroPacket(packet);
         if(townResult && packet is S.UseItem town)
             await report(new("escape",Profile.Id,Text:town.Success?"原服确认使用回城卷轴；按新地图重新规划":"原服拒绝回城卷轴，已停止自动保护，不会重发"));
+        if(protectionResult && protectedItem?.Info is {Type:ItemType.Scroll,Shape:2} && packet is S.UseItem {Success:true})
+            await report(new("escape",Profile.Id,Text:"原服确认使用随机传送卷脱离危险；按实际落点重新规划"));
         if (packet is S.Magic { Spell:Spell.Healing, Cast:true } healing && healing.TargetID==state.User?.ObjectID)
             await report(new("healing",Profile.Id,Text:$"原服确认自疗，生命 {state.User.HP}，魔法 {state.User.MP}"));
         if(packet is S.GainedItem or S.GainedGold && Knowledge!=null)Knowledge=Knowledge with{LootTargets=[]};
         if(packet is S.ChangeQuest or S.CompleteQuest or S.GainedQuestItem or S.GainedItem)lastProgress=Environment.TickCount64;
+        if (packet is S.PublicShop) { publicCatalogAt = Environment.TickCount64; publicCatalogRequested = 0; }
+        publicPurchases.Observe(packet);
         await ApplyAssetResult(packet);
         if (packet is S.Death)
         {
@@ -172,7 +184,7 @@ public sealed partial class CompanionSession
                     $"近期攻击者 {string.Join('、',monsterAttackers.Where(p=>Environment.TickCount64-p.Value<10000).Select(p=>state.Actors.GetValueOrDefault(p.Key)?.Name??p.Key.ToString()))}，"+
                     $"武器 {state.User?.Equipment[0]?.ItemIndex}，技能 {string.Join(',',state.User!.Magics.Select(m=>m.Spell))}"));
         }
-        if (packet is S.MapInformation or S.MapChanged) { CloseStorage();map = null; mapName = ""; moving = false;lastMoved=0; pendingNpc = npcId = 0; goods = null;repairItem=0;repairSlot=-1;repairPage=sellPage=false;page=[];monsterAttackers.Clear();combatTarget=monsterAttacker=0;InvalidateSuggestions(); }
+        if (packet is S.MapInformation or S.MapChanged) { CloseStorage();heroClasses=null;map = null; mapName = ""; moving = false;lastMoved=0; pendingNpc = npcId = 0; goods = null;repairItem=0;repairSlot=-1;repairPage=sellPage=false;page=[];monsterAttackers.Clear();combatTarget=monsterAttacker=0;InvalidateSuggestions(); }
         if (packet is S.AddMember or S.DeleteMember or S.DeleteGroup or S.GroupInvite) InvalidateSuggestions();
         if(packet is S.AddMember or S.DeleteMember or S.DeleteGroup)
             await report(new("party",Profile.Id,Text:"原服确认当前队伍："+string.Join('、',state.GroupMembers)));
@@ -184,7 +196,7 @@ public sealed partial class CompanionSession
             if(moving&&lastMoved==0)navigation.Clear();
             moving=false;
         }
-        if (packet is S.UserInformation) { moving=false;lastMoved=0; }
+        if (packet is S.UserInformation and not S.HeroInformation) { moving=false;lastMoved=0; }
         if (packet is S.NPCResponse npc) { page = npc.Page; pendingNpc = 0; }
         if (packet is S.NPCGoods shop) { goods = shop; pendingNpc = 0; foreach (var item in shop.List) state.Bind(item); }
         if (packet is S.NPCRepair repair) { repairPage = true; repairRate=repair.Rate; pendingNpc = 0; }

@@ -28,6 +28,16 @@ if (Directory.Exists(seed)) storage.Import(seed);
 storage.BackupBeforePlayerUpgrade(Path.Combine(paths.Runtime, "backups"));
 DatabaseStorage.Current = storage; Packet.IsServer = true;
 var catalog = new AssetCatalog(paths);
+if (args.Contains("--prepare-public-shop"))
+{
+    try
+    {
+        if (!Server.MirEnvir.Envir.Main.LoadDB()) throw new InvalidDataException("世界定义读取失败，未新增补给规格。");
+        Console.WriteLine(new WorldDefinitions(paths, catalog).PreparePublicShop());
+    }
+    finally { DatabaseStorage.Current = null; }
+    return;
+}
 await using var app = ResourceService.Build(paths, catalog, builder);
 Console.WriteLine($"Game version: {paths.VersionName}\nVersion directory: {paths.Data}\nSQLite: {paths.Database}\nCanonical assets: {paths.Assets}\nManagement key: {paths.AdminKeyFile}");
 try { await app.RunAsync(); }

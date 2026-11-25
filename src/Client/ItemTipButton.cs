@@ -29,6 +29,17 @@ public partial class ItemTipButton : Button
 public partial class ItemTooltip : ScrollContainer
 {
     internal const int MaximumHeight = 360;
+    public Func<int>? ContentRevision;
+    public Action? RefreshContent;
+    private int contentRevision = -1;
+
+    public override void _Process(double delta)
+    {
+        if (ContentRevision == null) return;
+        var revision = ContentRevision();
+        if (revision == contentRevision) return;
+        contentRevision = revision; RefreshContent?.Invoke();
+    }
 
     public override void _Ready()
     {

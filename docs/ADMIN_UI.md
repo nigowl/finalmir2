@@ -41,4 +41,4 @@
 
 ## 检查
 
-`python3 tests/Management/style.py` 检查全部手写按钮声明与表格行变体；`tests/Management/ui.sh` 的最终逐页检查覆盖10个管理页面，核对按钮32/28px、无外框表格、等宽铺满页签和头部最小高度。改动弹窗还需实际浏览器检查；截图核对不得仅凭编译通过。
+`python3 tests/Management/style.py` 检查全部手写按钮声明与表格行变体；`tests/Management/ui.sh` 的最终逐页检查覆盖11个管理页面，核对按钮32/28px、无外框表格、等宽铺满页签和头部最小高度。改动弹窗还需实际浏览器检查；截图核对不得仅凭编译通过。

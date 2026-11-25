@@ -13,13 +13,15 @@
 
         MinCharacterNameLength = 3,
         MaxCharacterNameLength = 15,
-        MaxCharacterCount = 4,
+        MaxCharacterCount = 5,
 
         MaxChatLength = 80,
         MaxGuildNoticeLines = 200,
         MaxGuildNoticeLength = 20000,
 
         StorageGridSize = 80,
+        BaseInventorySize = 86, // 80格背包与6格快捷栏共用原库存数组。
+        MaxInventorySize = 86,
 
         MaxGroup = 15,
 

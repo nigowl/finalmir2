@@ -13,7 +13,7 @@ public partial class WorldView
         public Point Source, Destination;
         public long Start, Added = Environment.TickCount64;
         public int RepeatFor, Sound;
-        public bool Ready, Played;
+        public bool Ready, Played, SoundOnly;
         public SpellEffect Tag;
         public SpellMissile? Missile;
         public Action? Completed;
@@ -25,6 +25,18 @@ public partial class WorldView
     internal int EffectCount => effects.Count;
     internal int EffectFramesDrawn { get; private set; }
     private void ClearEffects() { effects.Clear(); ClearCombatText(); effectWarmup.Clear(); }
+
+    private void RequestSound(int sound, Point location)
+    {
+        if (sound > 0 && State.Me is { } me && Functions.MaxDistance(me.Location, location) <= Globals.DataRange)
+            SoundRequested?.Invoke(sound);
+    }
+
+    private void AddSound(int sound, Point location, long start)
+    {
+        if (sound > 0 && effects.Count < 512)
+            effects.Add(new VisualEffect { Ready = true, SoundOnly = true, Sound = sound, Source = location, Start = start });
+    }
 
     private bool PrepareClip(SpellEffectClip clip)
     {
@@ -49,13 +61,15 @@ public partial class WorldView
         PrepareClip(clip);
         if (missile.Impact is { } impact) PrepareClip(impact);
         var effect = new VisualEffect { Clip = clip, Target = missile.GroundImpact ? 0 : target, Source = source,
-            Destination = destination, Start = start, Missile = missile, Sound = original == null ? MissileSound(spell) : 0 };
+            Destination = destination, Start = start, Missile = missile,
+            Sound = original == null ? OriginalSoundRules.MissileSound(spell, ClientSkillRules.Animation(spell) == MirAction.AttackRange2) : 0 };
         effect.Completed = () =>
         {
             var point = State.Actors.GetValueOrDefault(effect.Target)?.Location ?? destination;
+            if (original == null) RequestSound(OriginalSoundRules.ImpactSound(spell), point);
             if (missile.Impact is { } hit && (missile.GroundImpact || State.Actors.GetValueOrDefault(target)?.Dead == false))
-                AddEffect(hit, missile.GroundImpact ? 0 : target, point, Environment.TickCount64, sound: ImpactSound(spell));
-            if (spell == Spell.VampireShot) AddEffect(new("Magic3", 2100, 8, 1000), caster, source, Environment.TickCount64);
+                AddEffect(hit, missile.GroundImpact ? 0 : target, point, Environment.TickCount64);
+            if (spell == Spell.VampireShot) AddEffect(new("Magic3", 2100, 8, 1000), caster, source, Environment.TickCount64, sound: 20452);
         };
         effects.Add(effect);
     }
@@ -69,16 +83,26 @@ public partial class WorldView
         }
         foreach (var effect in effects.ToArray())
         {
-            if (effect.Owner != 0 && (!State.Actors.TryGetValue(effect.Owner, out var owner) || owner.Hidden && owner.Id != State.User?.ObjectID || owner.Dead)) { effects.Remove(effect); continue; }
+            if (effect.Owner != 0 && (!State.Actors.TryGetValue(effect.Owner, out var owner) || owner.Hidden && owner.Id != State.User?.ObjectID || owner.Dead))
+            {
+                if (effect.Sound > 0 && !effect.Played) AddSound(effect.Sound, effect.Source, effect.Start);
+                effects.Remove(effect); continue;
+            }
+            // 声音按动作时刻触发，不能等待整段图片下载完成后再补播。
+            if (!effect.Played && now >= effect.Start)
+            {
+                effect.Played = true;
+                RequestSound(effect.Sound, State.Actors.GetValueOrDefault(effect.Owner)?.Location ?? effect.Source);
+            }
+            if (effect.SoundOnly) { if (effect.Played) effects.Remove(effect); continue; }
             if (!effect.Ready)
             {
                 effect.Ready = PrepareClip(effect.Clip);
                 if (!effect.Ready && now - effect.Added > 10000) { effects.Remove(effect); Assets.Errors.Enqueue($"技能特效加载超时：{effect.Clip.Library}/{effect.Clip.Index}"); }
-                if (!effect.Ready || now < effect.Start) continue;
-                effect.Start = Math.Max(effect.Start, now);
+                if (!effect.Ready && effect.Missile == null || now < effect.Start) continue;
+                if (effect.Missile == null) effect.Start = Math.Max(effect.Start, now);
             }
             if (now < effect.Start) continue;
-            if (!effect.Played) { effect.Played = true; if (effect.Sound > 0) SoundRequested?.Invoke(effect.Sound); }
             if (effect.Missile != null && State.Actors.TryGetValue(effect.Target, out var target)) effect.Destination = target.Location;
             var duration = effect.Missile != null ? OriginalSpellEffects.FlightDuration(effect.Source, effect.Destination) : effect.RepeatFor != 0 ? effect.RepeatFor : effect.Clip.Duration;
             if (duration < 0 || now - effect.Start < duration) continue;
@@ -91,7 +115,7 @@ public partial class WorldView
         EffectFramesDrawn = 0;
         foreach (var effect in effects)
         {
-            if (!effect.Ready || now < effect.Start) continue;
+            if (effect.SoundOnly || !effect.Ready || now < effect.Start) continue;
             var elapsed = now - effect.Start;
             var position = State.Actors.TryGetValue(effect.Owner, out var actor) ? Screen(Visual(actor, now)) : Screen(effect.Source);
             if (effect.Missile is { } missile)

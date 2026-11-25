@@ -9,197 +9,46 @@ namespace Server.MirObjects
         public int TargetSurroundedCount;
         protected override bool InAttackRange()
         {
-            if (Target.CurrentMap != CurrentMap) return false;
-
-            if (HasRangedSpell && CanCast)
-                return TargetDistance <= ViewRange;
-
-            return Target.CurrentLocation != CurrentLocation && Functions.InRange(CurrentLocation, Target.CurrentLocation, 1);
+            return Target.CurrentMap == CurrentMap && (HasRangedSpell || Target.CurrentLocation != CurrentLocation && Functions.InRange(CurrentLocation, Target.CurrentLocation, 1));
         }
         protected override void ProcessFriend()
         {
-            if (!CanCast) return;
-
-            if (Target != null)
-            {
-                UserMagic magic = GetMagic(Spell.MagicShield);
-                if (CanUseMagic(magic) && !HasBuff(BuffType.MagicShield))
-                {
-                    BeginMagic(magic.Spell, Direction, ObjectID, CurrentLocation);
-                    return;
-                }
-
-                magic = GetMagic(Spell.MagicBooster);
-                if (CanUseMagic(magic) && !HasBuff(BuffType.MagicBooster))
-                {
-                    BeginMagic(magic.Spell, Direction, ObjectID, CurrentLocation);
-                    return;
-                }
-            }
+            if (!CanCast || Target == null) return;
+            if (TryHeroBuff(Spell.MagicShield, BuffType.MagicShield)) return;
+            if (TryHeroBuff(Spell.MagicBooster, BuffType.MagicBooster)) return;
+            if (!CurrentMap.Info.NoPets && Envir.GetMonsterInfo(Server.Settings.CloneName) != null &&
+                !Pets.Any(pet => !pet.Dead && pet.Info.Name == Server.Settings.CloneName)) TryHeroMagic(Spell.Mirroring);
         }
 
         protected override void ProcessAttack()
         {
-            if (!CanCast || Target == null || Target.Dead) return;
+            if (!CanCast || Target == null || Target.Dead || PhysicalOnlyTarget) return;
             TargetDistance = Functions.MaxDistance(CurrentLocation, Target.CurrentLocation);
-            SurroundedCount = FindAllTargets(2, CurrentLocation).Count;
-            TargetSurroundedCount = FindAllTargets(1, Target.CurrentLocation).Count;
-            if (!HasRangedSpell) return;
-
-            Direction = Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
-            UserMagic magic;
-
-            if (InAttackRange())
-            {
-                if (TargetDistance == 1)
-                {
-                    if (Target.Level < Level)
-                    {
-                        magic = GetMagic(Spell.Repulsion);
-                        if (CanUseMagic(magic))
-                        {
-                            BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                            return;
-                        }
-                    }
-                }
-
-                if (TargetDistance < 3 && SurroundedCount > 1)
-                {
-                    magic = GetMagic(Spell.FlameField);
-                    if (CanUseMagic(magic))
-                    {
-                        BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                        return;
-                    }
-
-                    magic = GetMagic(Spell.ThunderStorm);
-                    if (CanUseMagic(magic))
-                    {
-                        BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                        return;
-                    }
-                }
-
-                if (TargetSurroundedCount > 1)
-                {
-                    magic = GetMagic(Spell.IceStorm);
-                    if (CanUseMagic(magic))
-                    {
-                        BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                        return;
-                    }
-
-                    magic = GetMagic(Spell.FireBang);
-                    if (CanUseMagic(magic))
-                    {
-                        BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                        return;
-                    }
-                }
-
-                if (Target.Undead == true && Target.Level < Level)
-                {
-                    magic = GetMagic(Spell.TurnUndead);
-                    if (CanUseMagic(magic))
-                    {
-                        BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                        return;
-                    }
-                }
-
-                magic = GetMagic(Spell.FlameDisruptor);
-                if (CanUseMagic(magic))
-                {
-                    BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                    return;
-                }
-
-                magic = GetMagic(Spell.Vampirism);
-                if (CanUseMagic(magic))
-                {
-                    BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                    return;
-                }
-
-                magic = GetMagic(Spell.FrostCrunch);
-                if (CanUseMagic(magic))
-                {
-                    BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                    return;
-                }
-
-                magic = GetMagic(Spell.ThunderBolt);
-                if (CanUseMagic(magic))
-                {
-                    BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                    return;
-                }
-
-                magic = GetMagic(Spell.GreatFireBall);
-                if (CanUseMagic(magic))
-                {
-                    BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                    return;
-                }
-
-                magic = GetMagic(Spell.FireBall);
-                if (CanUseMagic(magic))
-                {
-                    BeginMagic(magic.Spell, Direction, Target.ObjectID, Target.CurrentLocation);
-                    return;
-                }
-
-                magic = GetMagic(Spell.None);
-                {
-                    return;
-                }
-            }
-            
-            magic = GetMagic(Spell.None);
-            {
-                return;
-            }
+            SurroundedCount = CombatTargets(2, CurrentLocation).Count;
+            TargetSurroundedCount = CombatTargets(1, Target.CurrentLocation).Count;
+            if (PercentHealth <= 50 && TryHeroMagic(Spell.Vampirism, Target)) return;
+            if (TargetSurroundedCount >= 3 && !CurrentMap.Spells.Any(spell => spell.Node != null && spell.ExpireTime > Envir.Time &&
+                spell.Spell == Spell.FireWall && spell.Caster == this && Functions.InRange(spell.CurrentLocation, Target.CurrentLocation, 1)) && TryHeroMagic(Spell.FireWall, Target)) return;
+            if (TargetDistance <= 2 && SurroundedCount >= 2)
+                foreach (var spell in new[] { Spell.FlameField, Spell.ThunderStorm })
+                    if (TryHeroMagic(spell, Target)) return;
+            if (TargetSurroundedCount >= 2)
+                foreach (var spell in new[] { Spell.MeteorStrike, Spell.Blizzard, Spell.IceStorm, Spell.FireBang })
+                    if (TryHeroMagic(spell, Target)) return;
+            if (ForwardTargets(3, 1) >= 2 && TryHeroMagic(Spell.IceThrust, Target)) return;
+            if (ForwardTargets(5) >= 2 && TryHeroMagic(Spell.Lightning, Target)) return;
+            if (ForwardTargets(4) >= 2 && TryHeroMagic(Spell.HellFire, Target)) return;
+            foreach (var spell in new[] { Spell.FlameDisruptor, Spell.ThunderBolt, Spell.GreatFireBall, Spell.FireBall, Spell.FrostCrunch, Spell.Vampirism })
+                if (TryHeroMagic(spell, Target)) return;
         }
 
         protected override void ProcessTarget()
         {
-            if (Target != null && Owner.PMode == PetMode.FocusMasterTarget && !Target.IsAttackTarget(Owner))
-            {
-                Target = null;
-                return;
-            }
-
-            if (CanMove && ((!CanCast || NextMagicSpell == Spell.None) && Owner.Info.HeroBehaviour == HeroBehaviour.CounterAttack))
-            {
-                MoveTo(Owner.Back);
-                return;
-            }
-
-            if (Target == null || !CanAttack) return;
-
-            if (CanCast && NextMagicSpell != Spell.None)
-            {
-                Magic(NextMagicSpell, NextMagicDirection, NextMagicTargetID, NextMagicLocation);
-                NextMagicSpell = Spell.None;
-            }            
-
-            if (CanAttack && (!HasRangedSpell && InAttackRange() || NextMagicSpell == Spell.None && Owner.Info.HeroBehaviour == HeroBehaviour.Attack && TargetDistance == 1))
-            {
-                Attack();
-
-                if (Target != null && Target.Dead)
-                {
-                    FindTarget();
-                }
-
-                return;
-            }
-
-            if (CanMove && (!HasRangedSpell || NextMagicSpell == Spell.None && Owner.Info.HeroBehaviour == HeroBehaviour.Attack && TargetDistance > 1))
-                MoveTo(Target.CurrentLocation);
+            ProcessRangedTarget(HasRangedSpell);
         }
 
-        private bool HasRangedSpell => Info.Magics.Select(x => x.Spell).Intersect(Globals.RangedSpells).Any();
+        private bool HasRangedSpell => HasRangedMagic(Spell.FlameDisruptor, Spell.ThunderBolt, Spell.GreatFireBall, Spell.FireBall, Spell.FrostCrunch, Spell.Vampirism) ||
+            Target != null && CombatTargets(1, Target.CurrentLocation).Count >= 2 && HasRangedMagic(Spell.MeteorStrike, Spell.Blizzard, Spell.IceStorm, Spell.FireBang) ||
+            Target != null && CombatTargets(1, Target.CurrentLocation).Count >= 3 && HasRangedMagic(Spell.FireWall);
     }
 }

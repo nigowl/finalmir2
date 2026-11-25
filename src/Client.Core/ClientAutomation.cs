@@ -37,7 +37,7 @@ public sealed class ClientAutomation
         var lowRandom = preferences.AutoRandom && Low(Stat.HP, user.HP, preferences.RandomPercent);
         // 地图暂时屏蔽回城不能重置同一次低血保护，实际恢复生命后才重新布防。
         if (!Low(Stat.HP, user.HP, preferences.TownPercent)) townTriggered = false;
-        if (!lowRandom) randomTriggered = false;
+        if (!Low(Stat.HP, user.HP, preferences.RandomPercent)) randomTriggered = false;
         // 回城优先于随机和喝药；同一次低血量只触发一张保护卷，恢复后才重新布防。
         UserItem? item = null;
         if (lowTown && !townTriggered) { item = Scroll(user.Inventory, 1); if (item != null) townTriggered = true; else Notice = "自动回城：背包没有回城卷。"; }

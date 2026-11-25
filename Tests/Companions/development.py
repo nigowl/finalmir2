@@ -1,5 +1,7 @@
 """隔离原TCP：满药仍主动跨图购书、学习、补符、换右戒指并真实施法。"""
-import hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.error,urllib.request
+import argparse,hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.error,urllib.request
+
+parser=argparse.ArgumentParser(description=__doc__);modes=parser.add_mutually_exclusive_group();modes.add_argument('--blocked-supply',action='store_true');modes.add_argument('--switching-shops',action='store_true');modes.add_argument('--public-services',action='store_true');args=parser.parse_args()
 
 repo=pathlib.Path(__file__).resolve().parents[2]
 root=pathlib.Path(tempfile.mkdtemp(prefix='mir2-companions-development-')).resolve();data=root/'version-a'
@@ -53,10 +55,100 @@ try:
         return row if row['characterId'] and call('/management/admin/characters/'+str(row['characterId']))['online'] else False
     row=wait(entered);cid=row['characterId'];aid=row['accountId'];command('stop')
     wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
-    subprocess.run(['dotnet',str(compat),'--companion-development',str(cid)],cwd=root,env=env,check=True)
+    subprocess.run(['dotnet',str(compat),'--companion-development',str(cid)]+(['--public-companions'] if args.public_services else ['--blocked-supply'] if args.blocked_supply else ['--switching-shops'] if args.switching_shops else []),cwd=root,env=env,check=True)
     fixture=json.loads((data/'runtime/companion-development-fixture.json').read_text());start()
     assert not call('/management/settings')['values']['autoLearnSkills']
     initial=call('/management/admin/characters/'+str(cid));assert initial['spells']==[] and initial['experience']==0
+    if args.public_services:
+        assert sum(i['count'] for i in initial['inventory'] if i['grid']=='Inventory' and i['name']=='隔离任务材料')==7
+        protected=[(i['uniqueId'],i['count']) for i in initial['inventory'] if i['name']=='隔离任务材料']
+        initial_items={i['uniqueId']:i for i in initial['inventory']};command('start');samples=[]
+        def supplied():
+            c=call('/management/admin/characters/'+str(cid));d=call(base+'/'+ident)
+            samples.append({'character':c,'detail':d});(root/'public-services.json').write_text(json.dumps(samples,ensure_ascii=False))
+            assert not d['row']['lastError'],d
+            assert not any(i['name']=='隔离未达技能等级书' for i in c['inventory']),'购买了实际技能等级不足的便宜书'
+            assert c['mapId']==initial['mapId'] and c['x']==initial['x'] and c['y']==initial['y'],'商城/回收仍导致角色走路'
+            assert [(i['uniqueId'],i['count']) for i in c['inventory'] if i['name']=='隔离任务材料']==protected,'回收了未来任务材料'
+            return c if 'SoulFireBall' in c['spells'] and any(i['itemId']==fixture['amulet'] and i['count']==500 for i in c['inventory']) and any(i['itemId']==fixture['red'] and i['count']>=12 for i in c['inventory']) else False
+        c=wait(supplied,60)
+        command('pause');wait(lambda:call(base+'/'+ident)['row']['state']=='已暂停')
+        c=call('/management/admin/characters/'+str(cid));events=call(base+'/'+ident)['events']
+        assert any(e['kind']=='asset' and e['text']=='recycle:成功' for e in events)
+        assert any(e['kind']=='asset' and e['text']=='public-buy:成功' for e in events)
+        assert not any(e['kind']=='asset' and e['text']=='buy:成功' for e in events)
+        assert not any(e['kind']=='status' and e['text']=='跨图中' for e in events)
+        removed=[i for uid,i in initial_items.items() if i['name']=='隔离普通余肉' and not any(j['uniqueId']==uid for j in c['inventory'])]
+        red=sum(i['count'] for i in c['inventory'] if i['itemId']==fixture['red'])
+        town=sum(i['count'] for i in c['inventory'] if i['itemId']==fixture['town'])
+        expected=10000+len(removed)*50-red*60-town*150-150-750
+        gold=call('/management/admin/accounts/'+str(aid))['gold'];assert gold==expected,(gold,expected,removed)
+        command('stop');wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop();start()
+        restored=call('/management/admin/characters/'+str(cid))
+        assert restored['spells']==c['spells'] and {(i['uniqueId'],i['count']) for i in restored['inventory']}=={(i['uniqueId'],i['count']) for i in c['inventory']}
+        assert call('/management/admin/accounts/'+str(aid))['gold']==gold
+        stop()
+        with sqlite3.connect(data/'runtime/mir2.sqlite3') as db:assert db.execute('pragma integrity_check').fetchone()[0]=='ok'
+        print('PASS 原TCP原地回收/补红/卷轴/职业书籍学习/整包500次护符，未来任务材料保留，金币精确结算及完整重启；'+str(root),flush=True)
+        raise SystemExit(0)
+    if args.switching_shops:
+        command('start');samples=[];fallback=None;started=None
+        def purchased():
+            global fallback,started
+            c=call('/management/admin/characters/'+str(cid));d=call(base+'/'+ident);goal=(d.get('runtime') or {}).get('goal') or {}
+            samples.append({'time':time.monotonic(),'character':c,'detail':d});(root/'switching-shops.json').write_text(json.dumps(samples,ensure_ascii=False))
+            assert not d['row']['lastError'] and c['hp']>0,d
+            if goal.get('key','').startswith('develop/') and '发展书店' in goal.get('reason',''):
+                if fallback is None:fallback=goal['key'];started=time.monotonic()
+            if fallback is not None and 'SoulFireBall' not in c['spells']:
+                assert goal.get('key')==fallback,'替代商店赶路未完成，旧店排除到期后再次折返'
+            upgraded=any(i['itemId']==fixture['ring'] and i['grid']=='Equipment' and i['slot']==8 for i in c['inventory'])
+            return c if 'SoulFireBall' in c['spells'] and upgraded and any(i['itemId']==fixture['amulet'] and i['grid']=='Equipment' for i in c['inventory']) else False
+        c=wait(purchased,210);assert fallback is not None and time.monotonic()-started>90,'替代商店路线没有跨过原90秒排除期'
+        assert any(e['kind']=='goal-blocked' and e['text']!=fallback for s in samples for e in s['detail']['events'])
+        assert call('/management/admin/accounts/'+str(aid))['gold']==9750
+        assert c['experience']==0 and c['completedQuests']==initial['completedQuests']
+        assert any(int(i['uniqueId'])==fixture['right'] and i['grid']=='Inventory' for i in c['inventory'])
+        command('stop');wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop();start()
+        restored=call('/management/admin/characters/'+str(cid));assert restored['spells']==c['spells'] and {(i['uniqueId'],i['count']) for i in restored['inventory']}=={(i['uniqueId'],i['count']) for i in c['inventory']}
+        assert call('/management/admin/accounts/'+str(aid))['gold']==9750;stop()
+        with sqlite3.connect(data/'runtime/mir2.sqlite3') as db:assert db.execute('pragma integrity_check').fetchone()[0]=='ok'
+        print('PASS 原TCP隔墙近店失败后，替代商店赶路超过90秒不折返，真实购书学习/换装/补符、扣250金币及原编号完整重启保持。',flush=True)
+        raise SystemExit(0)
+    if args.blocked_supply:
+        originals={(i['uniqueId'],i['count']) for i in initial['inventory']};command('start');samples=[]
+        def waiting():
+            c=call('/management/admin/characters/'+str(cid));d=call(base+'/'+ident);r=d.get('runtime') or {};goal=r.get('goal') or {}
+            samples.append({'character':c,'detail':d});(root/'blocked-supply.json').write_text(json.dumps(samples,ensure_ascii=False))
+            assert not d['row']['lastError'] and c['hp']>0,d
+            assert c['spells']==[] and {(i['uniqueId'],i['count']) for i in c['inventory']}==originals,'缺红药期间仍采购/学习装备书籍'
+            assert call('/management/admin/accounts/'+str(aid))['gold']==10000,'药店不可达期间发生支出'
+            assert not goal.get('key','').startswith('develop/'),'药店暂不可达后缺红药仍安排发展'
+            assert not any(e['kind']=='status' and e['reason'].startswith('按补给需要查找') for e in d['events']),'保命等待仍随机访问书店'
+            return d if goal.get('kind')=='wait' and any(e['kind']=='goal-blocked' and e['text'].startswith('supply/') for e in d['events']) else False
+        wait(waiting,35)
+        for _ in range(24):time.sleep(.25);assert waiting()
+        command('stop');wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
+        subprocess.run(['dotnet',str(compat),'--open-companion-supply'],cwd=root,env=env,check=True)
+        start();command('start');purchases=[]
+        def recovered():
+            c=call('/management/admin/characters/'+str(cid));d=call(base+'/'+ident);r=d.get('runtime') or {};purchases.append({'character':c,'detail':d})
+            (root/'supply-recovered.json').write_text(json.dumps(purchases,ensure_ascii=False));assert not d['row']['lastError'],d
+            red=sum(i['count'] for i in c['inventory'] if i['itemId']==fixture['red'])
+            if 'SoulFireBall' in c['spells']:assert red>=6,'红药储备未恢复就先学书'
+            upgraded=any(i['itemId']==fixture['ring'] and i['grid']=='Equipment' and i['slot']==8 for i in c['inventory'])
+            return c if 'SoulFireBall' in c['spells'] and upgraded and any(i['itemId']==fixture['amulet'] and i['grid']=='Equipment' for i in c['inventory']) else False
+        c=wait(recovered,60);red=sum(i['count'] for i in c['inventory'] if i['itemId']==fixture['red']);assert red>=12
+        gold=call('/management/admin/accounts/'+str(aid))['gold'];assert gold==10000-red*40-250,(gold,red)
+        first=next(s['character'] for s in purchases if sum(i['count'] for i in s['character']['inventory'] if i['itemId']==fixture['red'])>0)
+        assert first['spells']==[] and not any(i['itemId']==fixture['ring'] for i in first['inventory']),'没有先原服购药再发展'
+        assert c['experience']==0
+        command('stop');wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop();start()
+        restored=call('/management/admin/characters/'+str(cid));assert restored['spells']==c['spells'] and {(i['uniqueId'],i['count']) for i in restored['inventory']}=={(i['uniqueId'],i['count']) for i in c['inventory']}
+        assert call('/management/admin/accounts/'+str(aid))['gold']==gold;stop()
+        with sqlite3.connect(data/'runtime/mir2.sqlite3') as db:assert db.execute('pragma integrity_check').fetchone()[0]=='ok'
+        print(f'PASS 原TCP药店不可达时缺红药保命等待、零支出/学习；药店恢复后先买{red}红，再购书学习/换装/补符，余额{gold}、原编号及完整重启保持。',flush=True)
+        raise SystemExit(0)
     assert sum(i['count'] for i in initial['inventory'] if i['name']=='NativeDevelopmentRed')==20
     command('start');samples=[];maps=set();assets=set()
     def developed():

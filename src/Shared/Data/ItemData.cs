@@ -27,7 +27,7 @@ public class ItemInfo
         or ItemType.Belt or ItemType.Boots or ItemType.Stone or ItemType.Torch or ItemType.Mount or ItemType.Reins or ItemType.Bells or ItemType.Saddle or ItemType.Ribbon or ItemType.Mask;
 
     // 保留Weight字节及原规格差异；非装备缩至百分之一，任务专用品较重，装备不变。
-    public decimal UnitWeight => IsEquipment ? Weight : Type == ItemType.Quest ? 1m : Math.Clamp(Weight / 100m, .01m, 1m);
+    public decimal UnitWeight => MagicBloodStone.IsStone(this) ? .1m : IsEquipment ? Weight : Type == ItemType.Quest ? 1m : Math.Clamp(Weight / 100m, .01m, 1m);
 
     public bool StartItem;
     public byte Effect;
@@ -526,6 +526,7 @@ public class UserItem
     public uint Price()
     {
         if (Info == null) return 0;
+        if (MagicBloodStone.IsStone(Info)) return (uint)Math.Clamp((double)Info.Price * MagicBloodStone.Remaining(this) / Info.Stats[Stat.MagicBlood], 0, uint.MaxValue);
 
         double p = Info.Price;
 

@@ -13,6 +13,7 @@ process=None;log=None;key='';starts=0
 healing_retire=os.environ.get('MIR2_COMPANION_RETIRE_HEALING')=='1'
 amulets=os.environ.get('MIR2_COMPANION_AMULETS')=='1'
 crowd_only=os.environ.get('MIR2_COMPANION_CROWD')=='1'
+corner_only=os.environ.get('MIR2_COMPANION_RETREAT_CORNER')=='1'
 server_dll=pathlib.Path(os.environ.get('MIR2_COMPANION_SERVER_DLL',str(repo/'src/Server/bin/Release/net8.0/Mir2.Server.dll')))
 compat=repo/'tests/Compatibility/bin'/server_dll.parent.parent.name/'net8.0/Compatibility.dll'
 def call(path,body=None,method=None):
@@ -56,7 +57,7 @@ try:
     call(base+'/'+ident+'/command',{'action':'stop','version':row['profile']['version']})
     wait(lambda:call(base+'/overview')['online']==0 and not call('/management/admin/characters/'+str(character_id))['online'],15)
     observations=[]
-    modes=["crowd"] if crowd_only else ["missing","bag","equipped","last"] if amulets else ["healing"] if healing_retire else ["penalty"] if os.environ.get("MIR2_COMPANION_MANA_PENALTY")=="1" else ["persistent"] if os.environ.get("MIR2_COMPANION_RETIRE_PERSISTENT")=="1" else ["retire"] if os.environ.get("MIR2_COMPANION_RETIRE_ONLY")=="1" else ["ranged","empty","penalty","retire","persistent"]
+    modes=["corner"] if corner_only else ["crowd"] if crowd_only else ["missing","bag","equipped","last"] if amulets else ["healing"] if healing_retire else ["penalty"] if os.environ.get("MIR2_COMPANION_MANA_PENALTY")=="1" else ["persistent"] if os.environ.get("MIR2_COMPANION_RETIRE_PERSISTENT")=="1" else ["retire"] if os.environ.get("MIR2_COMPANION_RETIRE_ONLY")=="1" else ["ranged","empty","penalty","retire","persistent"]
     for mode in modes:
         empty=mode=="empty";penalty=mode=="penalty";physical=empty or penalty or amulets and mode in ("missing","last");threat=mode in ("retire","persistent","crowd");persistent=mode in ("persistent","crowd")
         stop()
@@ -65,6 +66,7 @@ try:
         if empty:command.append('--empty-mana')
         if penalty:command.append('--penalty-mana')
         if amulets:command.extend(['--amulet-case',mode])
+        if corner_only:command.append('--retreat-corner')
         if threat:command.append('--retire-threat')
         if persistent:command.append('--persistent-threat')
         subprocess.run(command,cwd=root,env=env,check=True)
@@ -74,22 +76,23 @@ try:
             call(base+'/'+ident,row['profile']|{'traits':row['profile']['traits']|{'risk':100}},'PUT')
             row=call(base+'/'+ident)['row']
         call(base+'/'+ident+'/command',{'action':'start','version':row['profile']['version']})
-        if crowd_only:
+        if crowd_only or corner_only:
             row=call(base+'/'+ident)['row'];call(base+'/'+ident+'/command',{'action':'pause','version':row['profile']['version']})
             wait(lambda:call('/management/admin/characters/'+str(character_id))['hp']<52,20)
             row=call(base+'/'+ident)['row'];call(base+'/'+ident+'/command',{'action':'resume','version':row['profile']['version']})
             samples=[];began=time.monotonic()
             def escaped():
                 c=call('/management/admin/characters/'+str(character_id));d=call(base+'/'+ident)
-                samples.append({'character':c,'events':d['events']});(root/'crowd.json').write_text(json.dumps(samples,ensure_ascii=False))
+                samples.append({'seconds':time.monotonic()-began,'character':c,'events':d['events']});(root/'crowd.json').write_text(json.dumps(samples,ensure_ascii=False))
                 assert not d['row']['lastError'] and c['experience']==0 and c['hp']>0,(c,d)
                 retreated=any(e['state']=='撤退中' for e in d['events'])
-                return c if retreated and max(abs(c['x']-origin[0]),abs(c['y']-origin[1]))>=3 else False
+                return c if retreated and max(abs(c['x']-origin[0]),abs(c['y']-origin[1]))>=(2 if corner_only else 3) else False
             result=wait(escaped,12)
+            escaped_seconds=time.monotonic()-began
             row=call(base+'/'+ident)['row'];call(base+'/'+ident+'/command',{'action':'stop','version':row['profile']['version']})
             wait(lambda:not call('/management/admin/characters/'+str(character_id))['online'],35)
             assert not call(base+'/'+ident)['row']['lastError']
-            print(f'PASS 原TCP普通战斗遭三怪真实围攻后{time.monotonic()-began:.2f}秒内主动撤离并正常退出，未杀怪、未死亡、未解除预算。',flush=True)
+            print(f'PASS 原TCP{"转角等距首步撤离" if corner_only else "普通战斗遭三怪真实围攻"}：{escaped_seconds:.2f}秒撤离，含正常退出共{time.monotonic()-began:.2f}秒，未杀怪、未死亡、未解除预算。',flush=True)
             continue
         if healing_retire:
             row=call(base+'/'+ident)['row'];call(base+'/'+ident+'/command',{'action':'pause','version':row['profile']['version']})

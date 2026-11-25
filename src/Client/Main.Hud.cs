@@ -16,10 +16,8 @@ public partial class Main
 
     private void BuildHud()
     {
-        Picture(game, "Prguse", 1, 0, 616);
+        Picture(game, "Prguse", 1, 0, 616).Name = "HudBackground";
         game.AddChild(new OriginalArt { Assets = Assets, State = State });
-        vitals = Text(game, "", 0, 671, 101); vitals.Name = "PlayerVitals"; vitals.Size = new Vector2(101, 34);
-        vitals.HorizontalAlignment = HorizontalAlignment.Center; vitals.AddThemeFontSizeOverride("font_size", 10);
         var level = Text(game, "", 5, 724, 90); level.Name = "PlayerLevel"; level.AddThemeFontSizeOverride("font_size", 10); level.Size = new Vector2(90, 16);
         var name = Text(game, "", 6, 736, 90); name.Name = "PlayerName"; name.HorizontalAlignment = HorizontalAlignment.Center; name.Size = new Vector2(90, 16);
         name.AddThemeFontSizeOverride("font_size", 10);
@@ -39,14 +37,16 @@ public partial class Main
         foreach (var state in new[] { "normal", "focus", "read_only" }) chat.AddThemeStyleboxOverride(state, chatStyle);
         chat.AddThemeFontSizeOverride("font_size", 10); chat.Size = new Vector2(627, 19);
         chat.GuiInput += input => { if (input is InputEventKey { Pressed: true, Keycode: Key.Escape }) { chat.ReleaseFocus(); chat.AcceptEvent(); } };
-        chat.TextSubmitted += text => { if (text.Trim().Length > 0) Send(new C.Chat { Message = text.Trim() }); chat.Text = ""; chat.ReleaseFocus(); };
+        chat.TextSubmitted += SubmitChat;
+        BuildChatChannels();
         BuildChatResize();
-        quickBars = new Control { Name = "QuickBars", Size = new Vector2(1024, 768), MouseFilter = MouseFilterEnum.Ignore }; game.AddChild(quickBars);
+        quickBars = new Control { Name = "QuickBars", Position = new Vector2(0, -24), Size = new Vector2(1024, 768), MouseFilter = MouseFilterEnum.Ignore }; game.AddChild(quickBars);
         BuildSkillBar();
         ArtButton(game, "Prguse", 1903, 928, 692, "背包 I", () => inventory.Visible = !inventory.Visible);
         ArtButton(game, "Prguse", 1900, 905, 692, "角色 C", () => ToggleEquipmentPage(0));
         ArtButton(game, "Prguse", 1906, 951, 692, "技能 K", () => ToggleEquipmentPage(3));
         BuildGameMenu();
+        BuildHudShortcuts();
         MiniMap = new GameMiniMap { Assets = Assets, State = State };
         game.AddChild(MiniMap);
         MiniMap.SetExpanded(false);
@@ -58,7 +58,7 @@ public partial class Main
         };
         MiniMap.DestinationSelected += point =>
         {
-            if (World.Loading || !World.Walkable(point) || World.NextStep(point) == null) { Log("目标不可通行或无法到达，请选择其他坐标。"); return; }
+            if (World.Loading || World.PathTo(point, ignoreActors: true).Length <= 1) { Log("目标不可通行或无法到达，请选择其他坐标。"); return; }
             if (ConfirmGroundMove(point, true)) { MiniMap.SetExpanded(false); return; }
             SetDestination(point, true); MiniMap.SetExpanded(false);
             Log($"自动寻路至 {point.X},{point.Y}，Esc 取消。");
@@ -71,14 +71,14 @@ public partial class Main
         Picture(equipment, "Title", 504, 0, 0, nativeFrame: true);
         paperdoll = new OriginalArt { Assets = Assets, State = State, Page = "equipment" }; equipment.AddChild(paperdoll);
         equipmentName = WindowTitle(equipment, "", 208); equipmentName.Position = new Vector2(28, 4); equipmentName.HorizontalAlignment = HorizontalAlignment.Center;
-        ArtButton(equipment, "Prguse2", 360, 241, 3, "关闭角色", () => equipment.Hide());
+        ArtButton(equipment, "Prguse2", 360, 241, 3, "关闭角色", CloseEquipment);
         equipmentSlots = new Control { Size = new Vector2(264, 380), MouseFilter = MouseFilterEnum.Ignore }; equipment.AddChild(equipmentSlots);
         Vector2[] positions = [new(123,7),new(163,7),new(203,7),new(203,134),new(203,98),new(8,170),new(203,170),new(8,206),new(203,206),new(8,242),new(48,242),new(88,242),new(128,242),new(203,62)];
         for (var i = 0; i < positions.Length; i++)
         {
             var slot = i;
             var button = new ItemTipButton { Position = positions[i] + new Vector2(8, 90), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
-            CellStyle(button); button.Pressed += () => RemoveEquipment(slot); equipmentSlots.AddChild(button); equipmentButtons.Add(button);
+            ItemCellStyle(button); button.Pressed += () => RemoveEquipment(slot); equipmentSlots.AddChild(button); equipmentButtons.Add(button);
         }
         attributes = Text(equipment, "", 20, 102, 108); attributes.Name = "PlayerAttributes";
         attributesRight = Text(equipment, "", 138, 102, 108); attributesRight.Name = "PlayerAttributesRight";
@@ -88,8 +88,8 @@ public partial class Main
         for (var i = 0; i < 4; i++)
         {
             var page = i; var caption = new[] { "人物", "属性", "状态", "技能" }[i];
-            var tab = ArtButton(equipment, "Title", i == 0 ? 500 : -1, 11 + i * 61, 68, caption, () => ShowEquipmentPage(page), caption);
-            TabStyle(tab, 59); tab.SetPressedNoSignal(i == 0);
+            var tab = ArtButton(equipment, "Title", i == 0 ? 500 : -1, 11 + i * (58 + ClientUi.Gap), 68, caption, () => ShowEquipmentPage(page), caption);
+            TabStyle(tab, 58); tab.SetPressedNoSignal(i == 0);
             tab.HoverIndex = tab.PressedIndex = 500 + i; equipmentTabs.Add(tab);
         }
     }
@@ -97,16 +97,19 @@ public partial class Main
     private void UpdateHud()
     {
         var user = State.User!; var stats = State.CalculateStats();
-        vitals.Text = $"生命 {user.HP}/{Math.Max(user.HP, stats[Stat.HP])}\n魔力 {user.MP}/{Math.Max(user.MP, stats[Stat.MP])}";
+        RequestHealthDisplay();
         game.GetNode<Label>("PlayerLevel").Text = $"{user.Level}级";
         game.GetNode<Label>("PlayerName").Text = user.Name;
         gold.Text = user.Gold.ToString("N0");
-        if (equipment.Visible) RefreshEquipmentStats(stats);
+        if (equipment.Visible) RefreshEquipmentStats(HeroInventoryContext ? State.CalculateHeroStats() : stats);
         hudWeight.Text = (stats[Stat.BagWeight] - State.InventoryWeight).ToString("0.##"); hudWeight.TooltipText = "剩余背包负重";
-        hudFree.Text = user.Inventory.Count(item => item == null).ToString(); hudFree.TooltipText = "剩余背包格位（含快捷栏）";
-        bagGold.Text = user.Gold.ToString(); equipmentName.Text = $"{user.Name}  {user.Level}级";
+        var bagCapacity = Math.Max(0, user.Inventory.Length - 6);
+        hudFree.Text = user.Inventory.Skip(6).Count(item => item == null).ToString();
+        hudFree.TooltipText = $"背包空闲：{hudFree.Text} / {bagCapacity} 格；快捷栏空闲：{user.Inventory.Take(6).Count(item => item == null)} / {Math.Min(6, user.Inventory.Length)} 格";
+        bagGold.Text = user.Gold.ToString(); equipmentName.Text = EquipmentSubject is { } subject ? $"{(HeroInventoryContext ? "英雄 · " : "")}{subject.Name}  {subject.Level}级" : "英雄未召唤";
         bagWeight.Text = $"{State.InventoryWeight:0.##}/{stats[Stat.BagWeight]}"; bagWeight.TooltipText = "背包负重 / 上限";
-        bagFree.Text = user.Inventory.Count(item => item == null).ToString(); bagFree.TooltipText = "剩余背包格位（含快捷栏）";
+        bagFree.Text = hudFree.Text; bagFree.TooltipText = hudFree.TooltipText;
+        inventory.GetNode<Label>("WindowTitle").Text = HeroInventoryContext ? "背包·英雄" : "背包";
         var loading = World.Loading ? " · 地图加载中" : World.LoadError.Length > 0 ? " · 地图加载失败" : "";
         location.Text = $"{State.Map?.Title} [{State.Map?.FileName} #{State.Map?.MapIndex}] · 坐标 {user.Location.X},{user.Location.Y} · 缓存 {Assets.CachedFiles} / 下载 {Assets.Downloads} ({Assets.DownloadBytes / 1048576f:F1}MB) / 等待 {Assets.PendingDownloads} · {State.Ping}ms{loading}{(autoBattleEnabled ? " · 挂机中" : "")}{(lastResourceError.Length > 0 ? " · 资源异常" : "")}";
         location.TooltipText = World.LoadError.Length > 0 ? World.LoadError : lastResourceError;

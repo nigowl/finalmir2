@@ -11,16 +11,12 @@ public partial class NativeSmoke
     private async Task VerifyHud()
     {
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        var vitals = (Label)Client.FindChild("PlayerVitals", true, false);
-        if (!vitals.Text.Contains($"{State.User!.HP}/") || !vitals.Text.Contains($"{State.User.MP}/") || !vitals.Text.Contains('\n'))
-            throw new Exception("Player health/mana labels omitted their current values.");
+        if (Client.FindChild("PlayerVitals", true, false) != null) throw new Exception("左下血魔球仍显示文字。");
         var dialogs = Client.FindChildren("*", "AcceptDialog", true, false).OfType<AcceptDialog>().ToArray();
         if (dialogs.Length < 5 || dialogs.Any(dialog => dialog.Name == "DeathConfirmation"
             ? dialog.GetOkButton().Text != "回城复活" || ((ConfirmationDialog)dialog).GetCancelButton().Text != "暂不复活"
             : dialog.GetOkButton().Text != "确定" || dialog is ConfirmationDialog confirm && confirm.GetCancelButton().Text != "取消"))
             throw new Exception("系统确认弹窗仍含英文按钮。");
-        if (vitals.GetRect().End.X > 104 || vitals.GetRect().Position.Y < 646 || vitals.GetRect().End.Y > 726)
-            throw new Exception("HP/MP labels escaped the original orb.");
         var header = (Label)Client.FindChild("WorldStatus", true, false);
         var tracker = (RichTextLabel)Client.FindChild("QuestTracker", true, false);
         if (tracker.Position != new Vector2(8, 34) || tracker.MouseFilter != Control.MouseFilterEnum.Ignore || tracker.GetRect().Position.Y <= header.GetRect().End.Y)
@@ -74,7 +70,7 @@ public partial class NativeSmoke
         if (Argument("--screenshot").Length > 0)
         {
             var route = Enumerable.Range(0, 8).Select(direction => Functions.PointMove(State.User!.Location, (MirDirection)direction, 60))
-                .Where(Client.World.Walkable).Select(Client.World.PathTo).First(path => path.Length > 25);
+                .Where(Client.World.Walkable).Select(point => Client.World.PathTo(point)).First(path => path.Length > 25);
             Client.MiniMap.Route = route;
             await Screenshot("route-minimap"); Client.MiniMap.SetExpanded(true);
             await Screenshot("route-large"); Client.MiniMap.SetExpanded(false); Client.MiniMap.Route = [];

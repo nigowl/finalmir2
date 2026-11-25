@@ -8,7 +8,7 @@ using S = ServerPackets;
 
 namespace Server.MirObjects
 {
-    public class HumanObject : MapObject
+    public partial class HumanObject : MapObject
     {
         public override ObjectType Race
         {
@@ -183,7 +183,8 @@ namespace Server.MirObjects
 
         public LevelEffects LevelEffects = LevelEffects.None;
 
-        public const long LoyaltyDelay = 1000, ItemExpireDelay = 60000, DuraDelay = 10000, RegenDelay = 10000, PotDelay = 200, HealDelay = 600, VampDelay = 500, MoveDelay = 600;
+        public const long LoyaltyDelay = 1000, ItemExpireDelay = 60000, DuraDelay = 10000, RegenDelay = 10000, PotDelay = 200, HealDelay = 600, VampDelay = 500;
+        public static int MoveDelay => Settings.PlayerTiming.MoveMilliseconds;
         public long StruckTime, RunTime, ActionTime, AttackTime, RegenTime, SpellTime, StackingTime, IncreaseLoyaltyTime, ItemExpireTime, TorchTime, DuraTime, PotTime, HealTime, VampTime, LogTime, DecreaseLoyaltyTime, SearchTime;
 
         protected int _stepCounter, _runCounter;
@@ -329,7 +330,7 @@ namespace Server.MirObjects
             {
                 TorchTime = Envir.Time + 10000;
                 item = Info.Equipment[(int)EquipmentSlot.Torch];
-                if (item != null)
+                if (item != null && !MagicBloodStone.IsStone(item.Info))
                 {
                     DamageItem(item, 5);
 
@@ -634,8 +635,9 @@ namespace Server.MirObjects
 
             if (healthRegen > 0)
             {
+                var healthBeforeChange = Health;
                 ChangeHP(healthRegen);
-                BroadcastDamageIndicator(DamageType.Hit, healthRegen);
+                BroadcastHealthDelta(healthBeforeChange);
             }
 
             if (HP == Stats[Stat.HP])
@@ -685,8 +687,9 @@ namespace Server.MirObjects
                             Broadcast(new S.ObjectEffect { ObjectID = ObjectID, Effect = SpellEffect.Bleeding, EffectType = 0 });
                         }
 
+                        var healthBeforeChange = Health;
                         PoisonDamage(-poison.Value, poison.Owner);
-                        BroadcastDamageIndicator(DamageType.Hit, -poison.Value);
+                        BroadcastHealthDelta(healthBeforeChange);
 
                         if (Dead) break;
                         RegenTime = Envir.Time + RegenDelay;
@@ -1765,9 +1768,8 @@ namespace Server.MirObjects
             if (HP > Stats[Stat.HP]) SetHP(Stats[Stat.HP]);
             if (MP > Stats[Stat.MP]) SetMP(Stats[Stat.MP]);
 
-            AttackSpeed = 1400 - ((Stats[Stat.AttackSpeed] * 60) + Math.Min(370, (Level * 14)));
-
-            if (AttackSpeed < 550) AttackSpeed = 550;
+            AttackSpeed = Settings.PlayerTiming.AttackDelay(Stats[Stat.AttackSpeed], Level);
+            BroadcastExactHealth();
         }
         public virtual void RefreshGuildBuffs() { }
 
@@ -1860,6 +1862,7 @@ namespace Server.MirObjects
 
                 Stats.Add(realItem.Stats);
                 Stats.Add(temp.AddedStats);
+                Stats[Stat.MagicBlood] = 0;
 
                 Stats[Stat.MinAC] += temp.Awake.GetAC();
                 Stats[Stat.MaxAC] += temp.Awake.GetAC();
@@ -1967,6 +1970,7 @@ namespace Server.MirObjects
 
                 Stats.Add(RealItem.Stats);
                 Stats.Add(temp.AddedStats);
+                Stats[Stat.MagicBlood] = 0;
 
                 if (RealItem.Light > Light) Light = RealItem.Light;
                 if (RealItem.Unique != SpecialItemMode.None)
@@ -2493,8 +2497,7 @@ namespace Server.MirObjects
             if (RidingMount) DecreaseMountLoyalty(1);
             Moved();
 
-            CellTime = Envir.Time + 500;
-            ActionTime = Envir.Time + GetDelayTime(MoveDelay);          
+            CellTime = ActionTime = Envir.Time + GetDelayTime(MoveDelay);
             
             Enqueue(new S.UserLocation { Direction = Direction, Location = CurrentLocation });
             Broadcast(new S.ObjectWalk { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation });
@@ -2518,7 +2521,7 @@ namespace Server.MirObjects
         {
             if (CurrentBagWeight > Stats[Stat.BagWeight])
             {
-                Walk(dir);
+                return Walk(dir);
             }
 
             var steps = RidingMount || ActiveSwiftFeet && !Sneaking ? 3 : 2;
@@ -2615,8 +2618,7 @@ namespace Server.MirObjects
             else
                 InSafeZone = false;            
 
-            CellTime = Envir.Time + 500;
-            ActionTime = Envir.Time + GetDelayTime(MoveDelay);
+            CellTime = ActionTime = Envir.Time + GetDelayTime(MoveDelay);
 
             if (!RidingMount)
                 _runCounter++;
@@ -2723,7 +2725,7 @@ namespace Server.MirObjects
                     InSafeZone = false;
             }
 
-            ActionTime = Envir.Time + 500;
+            ActionTime = Envir.Time + Settings.PlayerTiming.Scale(500);
             return result;
         }
 
@@ -2845,7 +2847,7 @@ namespace Server.MirObjects
             Broadcast(new S.ObjectRangeAttack { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation, TargetID = targetID, Target = location, Spell = spell });
 
             AttackTime = Envir.Time + AttackSpeed;
-            ActionTime = Envir.Time + 550;
+            ActionTime = Envir.Time + Settings.PlayerTiming.Scale(550);
             RegenTime = Envir.Time + RegenDelay;
         }
         public void Attack(MirDirection dir, Spell spell)
@@ -2976,7 +2978,7 @@ namespace Server.MirObjects
             Broadcast(new S.ObjectAttack { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation, Spell = spell, Level = level });
 
             AttackTime = Envir.Time + AttackSpeed;
-            ActionTime = Envir.Time + 550;
+            ActionTime = Envir.Time + Settings.PlayerTiming.Scale(550);
             RegenTime = Envir.Time + RegenDelay;
 
             Point target = Functions.PointMove(CurrentLocation, dir, 1);
@@ -3429,7 +3431,7 @@ namespace Server.MirObjects
             }
 
             AttackTime = Envir.Time + MoveDelay;
-            SpellTime = Envir.Time + 1800; //Spell Delay
+            SpellTime = Envir.Time + Settings.PlayerTiming.CastDelay(spell);
 
             if (spell != Spell.ShoulderDash)
             {
@@ -3589,7 +3591,7 @@ namespace Server.MirObjects
                 case Spell.StormEscape:
                     ThunderStorm(magic);
                     if (spell == Spell.FlameField)
-                        SpellTime = Envir.Time + 2500; //Spell Delay
+                        SpellTime = Envir.Time + Settings.PlayerTiming.CastDelay(spell);
                     if (spell == Spell.StormEscape)
                         //Start teleport.
                         ActionList.Add(new DelayedAction(DelayedType.Magic, Envir.Time + 750, magic, location));
@@ -4106,6 +4108,7 @@ namespace Server.MirObjects
             }
 
             target.Broadcast(new S.ObjectName { ObjectID = target.ObjectID, Name = target.Name });
+            target.BroadcastInfo();
         }
         private void HellFire(UserMagic magic)
         {
@@ -5465,9 +5468,9 @@ namespace Server.MirObjects
 
             if (travel == 0) location = CurrentLocation;
 
-            int attackDelay = (AttackSpeed - 120) <= 300 ? 300 : (AttackSpeed - 120);
+            int attackDelay = Math.Max(Settings.PlayerTiming.Scale(300), AttackSpeed - Settings.PlayerTiming.Scale(120));
             AttackTime = Envir.Time + attackDelay;
-            SpellTime = Envir.Time + 300;
+            SpellTime = Envir.Time + Settings.PlayerTiming.Scale(300);
 
             location = Functions.PointMove(location, Direction, 1);
             if (CurrentMap.ValidPoint(location))
@@ -7222,9 +7225,9 @@ namespace Server.MirObjects
             Enqueue(new S.Struck { AttackerID = attacker.ObjectID });
             Broadcast(new S.ObjectStruck { ObjectID = ObjectID, AttackerID = attacker.ObjectID, Direction = Direction, Location = CurrentLocation });
 
-            BroadcastDamageIndicator(DamageType.Hit, armour - damage);
-
+            var healthBeforeChange = Health;
             ChangeHP(armour - damage);
+            BroadcastHealthDelta(healthBeforeChange);
             return damage - armour;
         }
         public override int Attacked(MonsterObject attacker, int damage, DefenceType type = DefenceType.ACAgility)
@@ -7317,9 +7320,9 @@ namespace Server.MirObjects
                 StruckTime = Envir.Time + 500;
             }
 
-            BroadcastDamageIndicator(DamageType.Hit, armour - damage);
-
+            var healthBeforeChange = Health;
             ChangeHP(armour - damage);
+            BroadcastHealthDelta(healthBeforeChange);
             return damage - armour;
         }
         public override int Struck(int damage, DefenceType type = DefenceType.ACAgility)
@@ -7382,7 +7385,9 @@ namespace Server.MirObjects
             Enqueue(new S.Struck { AttackerID = 0 });
             Broadcast(new S.ObjectStruck { ObjectID = ObjectID, AttackerID = 0, Direction = Direction, Location = CurrentLocation });
 
+            var healthBeforeChange = Health;
             ChangeHP(armour - damage);
+            BroadcastHealthDelta(healthBeforeChange);
             return damage - armour;
         }
 
@@ -7767,6 +7772,10 @@ namespace Server.MirObjects
                     if (!item.Info.RequiredClass.HasFlag(RequiredClass.Assassin))
                         return false;
                     break;
+                case MirClass.Archer:
+                    if (!item.Info.RequiredClass.HasFlag(RequiredClass.Archer))
+                        return false;
+                    break;
             }
 
             switch (item.Info.RequiredType)
@@ -7865,7 +7874,7 @@ namespace Server.MirObjects
         }
         public void DamageItem(UserItem item, int amount, bool isChanged = false)
         {
-            if (item == null || item.CurrentDura == 0 || item.Info.Type == ItemType.Amulet) return;
+            if (item == null || item.CurrentDura == 0 || item.Info.Type == ItemType.Amulet || MagicBloodStone.IsStone(item.Info)) return;
             if ((item.WeddingRing == Info.Married) && (Info.Equipment[(int)EquipmentSlot.RingL].UniqueID == item.UniqueID)) return;
             if (item.GetTotal(Stat.Strong) > 0) amount = Math.Max(1, amount - item.GetTotal(Stat.Strong));
             item.CurrentDura = (ushort)Math.Max(ushort.MinValue, item.CurrentDura - amount);
@@ -8484,6 +8493,7 @@ namespace Server.MirObjects
         }
         public override void SendHealth(HumanObject player)
         {
+            SendExactHealth(player);
             if (!player.IsMember(this) && Envir.Time > RevTime) return;
             byte time = Math.Min(byte.MaxValue, (byte)Math.Max(5, (RevTime - Envir.Time) / 1000));
             player.Enqueue(new S.ObjectHealth { ObjectID = ObjectID, Percent = PercentHealth, Expire = time });

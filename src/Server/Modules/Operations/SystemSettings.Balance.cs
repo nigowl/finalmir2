@@ -22,6 +22,8 @@ public sealed partial class SystemSettings
         s.ControlDurationRate = Settings.ControlDurationRate;
         s.SkillBuffDurationRate = Settings.SkillBuffDurationRate;
         s.PlayerAttackSpeedBonus = Settings.PlayerAttackSpeedBonus;
+        s.PlayerMoveMilliseconds = Settings.PlayerMoveMilliseconds;
+        s.PlayerActionSpeedPercent = Settings.PlayerActionSpeedPercent;
         s.MagicResistWeight = Settings.MagicResistWeight;
         s.PoisonResistWeight = Settings.PoisonResistWeight;
         s.CriticalRateWeight = Settings.CriticalRateWeight;
@@ -60,6 +62,8 @@ public sealed partial class SystemSettings
         Settings.ControlDurationRate = s.ControlDurationRate;
         Settings.SkillBuffDurationRate = s.SkillBuffDurationRate;
         Settings.PlayerAttackSpeedBonus = s.PlayerAttackSpeedBonus;
+        Settings.PlayerMoveMilliseconds = s.PlayerMoveMilliseconds;
+        Settings.PlayerActionSpeedPercent = s.PlayerActionSpeedPercent;
         Settings.MagicResistWeight = (byte)s.MagicResistWeight;
         Settings.PoisonResistWeight = (byte)s.PoisonResistWeight;
         Settings.CriticalRateWeight = (byte)s.CriticalRateWeight;
@@ -96,6 +100,8 @@ public sealed partial class SystemSettings
         if (!float.IsFinite(s.PoisonDurationRate) || s.PoisonDurationRate < 0.1f || s.PoisonDurationRate > 10f) throw new InvalidDataException("中毒持续时间倍率须为0.1–10。");
         if (!float.IsFinite(s.ControlDurationRate) || s.ControlDurationRate < 0.1f || s.ControlDurationRate > 10f) throw new InvalidDataException("控制状态时间倍率须为0.1–10。");
         if (!float.IsFinite(s.SkillBuffDurationRate) || s.SkillBuffDurationRate < 0.1f || s.SkillBuffDurationRate > 10f) throw new InvalidDataException("技能加成时间倍率须为0.1–10。");
+        Range(s.PlayerMoveMilliseconds, PlayerActionTiming.MinMoveMilliseconds, PlayerActionTiming.MaxMoveMilliseconds, "走跑间隔");
+        Range(s.PlayerActionSpeedPercent, PlayerActionTiming.MinActionSpeedPercent, PlayerActionTiming.MaxActionSpeedPercent, "角色动作速度");
         if (s.PlayerAttackSpeedBonus < -20 || s.PlayerAttackSpeedBonus > 30) throw new InvalidDataException("玩家基础攻速修正须为-20–30。");
         if (s.MagicResistWeight < 1 || s.MagicResistWeight > 255) throw new InvalidDataException("魔法抗性判定基数须为1–255。");
         if (s.PoisonResistWeight < 1 || s.PoisonResistWeight > 255) throw new InvalidDataException("毒抗判定基数须为1–255。");
@@ -133,6 +139,8 @@ public sealed partial class SystemSettings
         result["Balance"]["ControlDurationRate"] = s.ControlDurationRate.ToString(CultureInfo.CurrentCulture);
         result["Balance"]["SkillBuffDurationRate"] = s.SkillBuffDurationRate.ToString(CultureInfo.CurrentCulture);
         result["Balance"]["PlayerAttackSpeedBonus"] = s.PlayerAttackSpeedBonus.ToString();
+        result["Balance"]["PlayerMoveMilliseconds"] = s.PlayerMoveMilliseconds.ToString();
+        result["Balance"]["PlayerActionSpeedPercent"] = s.PlayerActionSpeedPercent.ToString();
         result["Items"]["MagicResistWeight"] = s.MagicResistWeight.ToString();
         result["Items"]["PoisonResistWeight"] = s.PoisonResistWeight.ToString();
         result["Items"]["CriticalRateWeight"] = s.CriticalRateWeight.ToString();

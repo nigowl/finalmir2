@@ -27,7 +27,7 @@ internal static class ClientMovementChecks
         foreach (var poison in new[] { PoisonType.Paralysis, PoisonType.LRParalysis, PoisonType.Frozen })
         { state.Me!.Poison = poison; check(!ClientMovement.CanRun(state, true, 1000, 1600), "不可移动状态仍允许跑步：" + poison); }
         state.Me!.Poison = PoisonType.Slow;
-        check(ClientMovement.CanRun(state, true, 0, 1600) && state.Me.MoveDelay == 1200, "减速被错误当作禁跑或丢失双倍间隔");
+        check(ClientMovement.CanRun(state, true, 0, 1600) && state.Me.MoveDelay == PlayerActionTiming.DefaultMoveMilliseconds * 2, "减速被错误当作禁跑或丢失双倍间隔");
         state.Me.Poison = PoisonType.None;
         state.UserBuffs[BuffType.MoonLight] = new() { Type = BuffType.MoonLight };
         check(!ClientMovement.CanRun(state, true, 1000, 1600), "潜行绕过原跑步限制");

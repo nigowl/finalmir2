@@ -13,6 +13,22 @@ public partial class WorldView
     internal int PrefetchedCells { get; private set; }
     internal int PrefetchQueueCount => terrainPrefetch.Count;
 
+    private SpriteImage? TerrainSprite(CellInfo cell, bool front, long now, out bool floor)
+    {
+        var library = MapLibrary(front ? cell.FrontIndex : cell.MiddleIndex);
+        var index = front ? (cell.FrontImage & 0x7fff) - 1 : cell.MiddleImage - 1;
+        var first = Assets.Sprite(library, index);
+        // 层次由原始地表尺寸决定，动画和裁边不能把地砖突然变成人物前景。
+        floor = first != null && IsFloor(first);
+        if (first == null) return null;
+        if (front && State.OpenDoors.Contains(cell.DoorIndex)) index += cell.DoorOffset;
+        var frames = front ? cell.FrontAnimationFrame & 0x7f : cell.MiddleAnimationFrame is > 0 and < 255
+            ? (cell.MiddleAnimationFrame & 0x0f) > 0 ? cell.MiddleAnimationFrame & 0x0f : cell.MiddleAnimationFrame : 0;
+        if (frames == 0) return Assets.Sprite(library, index) ?? first;
+        var tick = front ? cell.FrontAnimationTick : cell.MiddleAnimationTick;
+        return Assets.Sprite(library, index + (int)(now / (100 * (1 + tick)) % frames)) ?? first;
+    }
+
     private void ResetTerrainPrefetch()
     {
         terrainPrefetch.Clear(); terrainWarmup.Clear(); prefetchCentre = null; PrefetchedCells = 0; initialTerrainReady = warmupStarted = false;
@@ -66,7 +82,13 @@ public partial class WorldView
         var middleCount = cell.MiddleAnimationFrame is > 0 and < 255 ? (cell.MiddleAnimationFrame & 0x0f) > 0 ? cell.MiddleAnimationFrame & 0x0f : cell.MiddleAnimationFrame : 1;
         for (var frame = 0; frame < middleCount; frame++) ready &= Assets.PrepareSprite(MapLibrary(cell.MiddleIndex), cell.MiddleImage - 1 + frame);
         for (var frame = 0; frame < Math.Max(1, cell.FrontAnimationFrame & 0x7f); frame++)
-            ready &= Assets.PrepareSprite(MapLibrary(cell.FrontIndex), (cell.FrontImage & 0x7fff) - 1 + frame);
+        {
+            var index = (cell.FrontImage & 0x7fff) - 1 + frame;
+            ready &= Assets.PrepareSprite(MapLibrary(cell.FrontIndex), index);
+            // 两种门图一起预备，开门回执不能造成临时空白。
+            if (cell.DoorIndex != 0 && (cell.FrontImage & 0x7fff) > 0)
+                ready &= Assets.PrepareSprite(MapLibrary(cell.FrontIndex), index + cell.DoorOffset);
+        }
         return ready;
     }
 }

@@ -1,4 +1,4 @@
-using C = ClientPackets;
+﻿using C = ClientPackets;
 using S = ServerPackets;
 
 public abstract class Packet
@@ -112,8 +112,16 @@ public abstract class Packet
                 return new C.SetStoragePassword();
             case (short)ClientPacketIds.RemoveStoragePassword:
                 return new C.RemoveStoragePassword();
+            case (short)ClientPacketIds.PublicShopRequest: return new C.PublicShopRequest();
+            case (short)ClientPacketIds.PublicShopCatalogRequest: return new C.PublicShopCatalogRequest();
+            case (short)ClientPacketIds.RecycleItem: return new C.RecycleItem();
+            case (short)ClientPacketIds.PublicShopBuy: return new C.PublicShopBuy();
+            case (short)ClientPacketIds.QuestNavigationRequest: return new C.QuestNavigationRequest();
             case (short)ClientPacketIds.CharacterLocationRequest:
                 return new C.CharacterLocationRequest();
+            case (short)ClientPacketIds.HeroRecoveryRequest: return new C.HeroRecoveryRequest();
+            case (short)ClientPacketIds.DeleteHeroRequest: return new C.DeleteHeroRequest();
+            case (short)ClientPacketIds.HealthDisplayRequest: return new C.HealthDisplayRequest();
             case (short)ClientPacketIds.Login:
                 return new C.Login();
             case (short)ClientPacketIds.NewCharacter:
@@ -967,8 +975,16 @@ public abstract class Packet
                 return new S.SetCompass();
             case (short)ServerPacketIds.GuildTerritoryPage:
                 return new S.GuildTerritoryPage();
+            case (short)ServerPacketIds.PublicShop: return new S.PublicShop();
+            case (short)ServerPacketIds.PublicShopTabs: return new S.PublicShopTabs();
+            case (short)ServerPacketIds.RecycleItemResult: return new S.RecycleItemResult();
+            case (short)ServerPacketIds.PublicShopResult: return new S.PublicShopResult();
+            case (short)ServerPacketIds.QuestNavigation: return new S.QuestNavigation();
             case (short)ServerPacketIds.CharacterLocation:
                 return new S.CharacterLocation();
+            case (short)ServerPacketIds.HeroRecovery: return new S.HeroRecovery();
+            case (short)ServerPacketIds.DeleteHeroResult: return new S.DeleteHeroResult();
+            case (short)ServerPacketIds.ObjectVitals: return new S.ObjectVitals();
             default:
                 return null;
         }

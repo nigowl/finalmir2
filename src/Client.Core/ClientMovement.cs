@@ -4,9 +4,16 @@ namespace Crystal.Native;
 
 public static class ClientMovement
 {
+    public static MirDirection? KeyboardDirection(bool up, bool down, bool left, bool right)
+    {
+        var x = (right ? 1 : 0) - (left ? 1 : 0);
+        var y = (down ? 1 : 0) - (up ? 1 : 0);
+        return x == 0 && y == 0 ? null : Functions.DirectionFromPoint(Point.Empty, new Point(x, y));
+    }
+
     public static bool CanRun(GameState state, bool requested, long lastMoved, long now)
     {
-        if (!requested || state.User == null || state.Me is not { Dead: false } me ||
+        if (!requested || state.InTrapRock || state.User == null || state.Me is not { Dead: false } me ||
             (me.Poison & (PoisonType.Paralysis | PoisonType.LRParalysis | PoisonType.Frozen)) != 0 ||
             state.InventoryWeight > state.CalculateStats()[Stat.BagWeight] || Sneaking(state) && !Active(state, BuffType.SwiftFeet)) return false;
         if (Active(state, BuffType.Transform) && state.UserBuffs[BuffType.Transform].Values is { Length: > 0 }) return true;
@@ -18,7 +25,7 @@ public static class ClientMovement
             if (info.CanFastRun) return true;
         }
         // 普通角色仍需原服确认的一步起跑；不能省掉起步而让服务端反复拒绝。
-        return lastMoved > 0 && now >= lastMoved && now - lastMoved < Actor.RunContinuationWindow;
+        return lastMoved > 0 && now >= lastMoved && now - lastMoved < me.RunContinuationWindow;
     }
 
     public static int RunDistance(GameState state) => state.Me?.RidingMount == true || Active(state, BuffType.SwiftFeet) && !Sneaking(state) ? 3 : 2;

@@ -17,7 +17,9 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
         Validate(edit.Values);
         var document = files.Read(Setup);
         AdminChanges.Match(Version(document, Current()), edit.Version);
-        var restart = edit.Values.SafeZoneBorder != Settings.SafeZoneBorder || edit.Values.SafeZoneHealing != Settings.SafeZoneHealing || edit.Values.SkillCooldownRate != Settings.SkillCooldownRate;
+        var restart = edit.Values.SafeZoneBorder != Settings.SafeZoneBorder || edit.Values.SafeZoneHealing != Settings.SafeZoneHealing || edit.Values.SkillCooldownRate != Settings.SkillCooldownRate ||
+            edit.Values.PlayerMoveMilliseconds != Settings.PlayerTiming.MoveMilliseconds ||
+            edit.Values.PlayerActionSpeedPercent != Settings.PlayerTiming.ActionSpeedPercent;
         // 先原子保存并保留原配置备份；失败时不改变运行参数。
         files.Save(new(Setup, UpdateIni(document.Content, edit.Values), document.Version));
         Apply(edit.Values);
@@ -32,6 +34,7 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
         AllowCreateWarrior = Settings.AllowCreateWarrior, AllowCreateWizard = Settings.AllowCreateWizard, AllowCreateTaoist = Settings.AllowCreateTaoist,
         AllowCreateAssassin = Settings.AllowCreateAssassin, AllowCreateArcher = Settings.AllowCreateArcher,
         RequireStoragePassword = Settings.RequireStoragePassword,
+        PublicShopPriceRate = Settings.PublicShopPriceRate,
         ExpRate = Settings.ExpRate, DropRate = Settings.DropRate, SaveDelay = Settings.SaveDelay,
         ItemTimeOut = Settings.ItemTimeOut, PlayerDiedItemTimeOut = Settings.PlayerDiedItemTimeOut, PKDelay = Settings.PKDelay,
         SafeZoneBorder = Settings.SafeZoneBorder, SafeZoneHealing = Settings.SafeZoneHealing, ExpMobLevelDifference = Settings.ExpMobLevelDifference,
@@ -47,6 +50,7 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
         Settings.AllowLogin = s.AllowLogin; Settings.AllowNewCharacter = s.AllowNewCharacter; Settings.AllowDeleteCharacter = s.AllowDeleteCharacter;
         Settings.AllowCreateWarrior = s.AllowCreateWarrior; Settings.AllowCreateWizard = s.AllowCreateWizard; Settings.AllowCreateTaoist = s.AllowCreateTaoist;
         Settings.AllowCreateAssassin = s.AllowCreateAssassin; Settings.AllowCreateArcher = s.AllowCreateArcher; Settings.RequireStoragePassword = s.RequireStoragePassword;
+        Settings.PublicShopPriceRate = s.PublicShopPriceRate;
         Settings.ExpRate = s.ExpRate; Settings.DropRate = s.DropRate; Settings.SaveDelay = s.SaveDelay;
         Settings.ItemTimeOut = s.ItemTimeOut; Settings.PlayerDiedItemTimeOut = s.PlayerDiedItemTimeOut; Settings.PKDelay = s.PKDelay;
         Settings.SafeZoneBorder = s.SafeZoneBorder; Settings.SafeZoneHealing = s.SafeZoneHealing; Settings.ExpMobLevelDifference = s.ExpMobLevelDifference;
@@ -67,11 +71,15 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
     {
         if (s is null) throw new InvalidDataException("缺少系统设置。");
         Range(s.MaxUser, 1, 65535, "最大在线连接数"); Range(s.MaxIP, 1, 65535, "同 IP 最大连接数");
-        if (!float.IsFinite(s.ExpRate) || s.ExpRate < .01f || s.ExpRate > 100 || !float.IsFinite(s.DropRate) || s.DropRate < .01f || s.DropRate > 100)
-            throw new InvalidDataException("经验与掉落倍率须为 0.01–100。");
+        if (!float.IsFinite(s.ExpRate) || s.ExpRate < .01f || s.ExpRate > 1000)
+            throw new InvalidDataException("经验倍率须为 0.01–1000。");
+        if (!float.IsFinite(s.DropRate) || s.DropRate < .01f || s.DropRate > 100)
+            throw new InvalidDataException("掉落倍率须为 0.01–100。");
         Range(s.SaveDelay, 1, 60, "自动存档间隔"); Range(s.ItemTimeOut, 1, 1440, "物品保留时间");
         Range(s.PlayerDiedItemTimeOut, 1, 1440, "死亡掉落保留时间"); Range(s.PKDelay, 1, 3600, "PK 值衰减间隔");
         Range(s.MonsterRecallRange, 1, 100, "怪物召回距离"); Range(s.MonsterRecallCooldown, 100, 600000, "怪物召回冷却");
+        if (!float.IsFinite(s.PublicShopPriceRate) || s.PublicShopPriceRate < 1 || s.PublicShopPriceRate > 10)
+            throw new InvalidDataException("公共商店价格倍率须为 1–10。");
         ValidateBalance(s);
         ValidateSkills(s);
     }
@@ -89,6 +97,7 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
         },
         ["Game"] = new()
         {
+            ["PublicShopPriceRate"] = s.PublicShopPriceRate.ToString(CultureInfo.CurrentCulture),
             ["ExpRate"] = s.ExpRate.ToString(CultureInfo.CurrentCulture), ["DropRate"] = s.DropRate.ToString(CultureInfo.CurrentCulture),
             ["ItemTimeOut"] = s.ItemTimeOut.ToString(), ["PlayerDiedItemTimeOut"] = s.PlayerDiedItemTimeOut.ToString(), ["PKDelay"] = s.PKDelay.ToString(),
             ["MonsterRecallEnabled"] = s.MonsterRecallEnabled.ToString(), ["MonsterRecallRange"] = s.MonsterRecallRange.ToString(), ["MonsterRecallCooldown"] = s.MonsterRecallCooldown.ToString()

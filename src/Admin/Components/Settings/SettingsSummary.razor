@@ -19,6 +19,7 @@
             ("删除角色",On(value.AllowDeleteCharacter),"允许玩家删除角色"),("仓库密码",On(value.RequireStoragePassword),"存取前验证仓库密码")],
         "game"=>[
             ("经验倍率",$"{value.ExpRate:0.##} 倍","影响击杀和任务经验"),("掉落倍率",$"{value.DropRate:0.##} 倍","也影响任务金币奖励"),
+            ("公共商店价格倍率",$"{value.PublicShopPriceRate:0.##} 倍","相对 NPC 最低售价，1.5 表示贵 50%；立即生效"),
             ("普通掉落保留",$"{value.ItemTimeOut} 分钟","应用于后续掉落"),("死亡掉落保留",$"{value.PlayerDiedItemTimeOut} 分钟","应用于后续死亡掉落"),
             ("PK 值衰减间隔",$"{value.PKDelay} 秒","下一次衰减后使用新间隔"),("怪物等级差经验",On(value.ExpMobLevelDifference),"按角色与怪物的等级差调整经验")],
         "protection"=>[
@@ -40,7 +41,9 @@
             ("怪物伤害倍率",$"{value.MonsterDamageRate:0.##} 倍","野怪和敌对召唤物造成的伤害"),
             ("战宠伤害倍率",$"{value.PetDamageRate:0.##} 倍","玩家/英雄所属战宠；遵守归属和攻击权限"),
             ("技能冷却时间倍率",$"{value.SkillCooldownRate:0.##} 倍","越小冷却越短；保存后重启同步技能数据"),
-            ("玩家基础攻速修正",value.PlayerAttackSpeedBonus.ToString(),"每点约减少60毫秒，最低550毫秒；影响玩家和英雄"),
+            ("走跑间隔",$"{value.PlayerMoveMilliseconds} 毫秒","每步走跑使用同一间隔，越小越快。重启生效"),
+            ("角色动作速度",$"{value.PlayerActionSpeedPercent}%","普攻、全局施法间隔和动作动画，越大越快。重启生效"),
+            ("玩家基础攻速修正",value.PlayerAttackSpeedBonus.ToString(),"每点减少基础间隔60毫秒，再按角色动作速度计算"),
             ("暴击率系数",value.CriticalRateWeight.ToString(),"暴击属性乘此系数，最高100%"),
             ("暴击伤害除数",value.CriticalDamageWeight.ToString(),"越小暴击伤害越高"),
             ("幸运判定基数",value.MaxLuck.ToString(),"影响触发最高攻击的概率"),

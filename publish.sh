@@ -55,7 +55,7 @@ mkdir -p "$STAGE/client/.godot/mono/temp/bin/Debug"
 # shortcut: 当前随包携带已安装的 .NET 宿主，具备标准导出模板后改为精简导出。
 ditto "$GODOT_APP" "$STAGE/client/Godot.app"
 "$GODOT" --headless --path "$ROOT/src/Client" --export-pack macOS "$STAGE/client/CrystalMir2.pck"
-dotnet build "$ROOT/src/Client/Client.Godot.csproj" -c Debug -p:Optimize=true -p:DebugType=None \
+dotnet build "$ROOT/src/Client/Client.Godot.csproj" -c Debug -p:Optimize=true -p:DebugType=None -p:RequireClientStartupAssets=true \
   --nologo -v quiet -m:1 --disable-build-servers
 cp "$ROOT/src/Client/.godot/mono/temp/bin/Debug/"*.dll "$ROOT/src/Client/.godot/mono/temp/bin/Debug/"*.json "$STAGE/client/.godot/mono/temp/bin/Debug/"
 cat > "$STAGE/client/start.sh" <<'EOF'

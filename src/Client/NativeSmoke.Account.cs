@@ -42,8 +42,7 @@ public partial class NativeSmoke
         if (!AccountFeedback(register).Text.Contains("邮箱格式")) throw new Exception("注册邮箱没有校验。");
         AccountInput(register, "RegisterAccount").Text = "ab"; AccountSubmit(register);
         if (!AccountFeedback(register).Text.Contains("3–15")) throw new Exception("账号长度没有在弹窗内校验。");
-        var connect = login.GetChildren().OfType<Button>().Single(button => button.Text == "连接");
-        await ClickSelectionControl(connect);
+        await ClickSelectionControl(openPassword);
         if (!Client.HandshakeReady || !register.Visible || outsideAccount.Text != "Outside" || outsidePassword.Text != "Outside123")
             throw new Exception("注册弹窗没有阻挡底层操作，或提交借用了登录框字段。");
         register.GetCancelButton().EmitSignal(BaseButton.SignalName.Pressed);

@@ -21,7 +21,7 @@ public partial class NativeSpellSmoke
     {
         Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "游戏设置").EmitSignal(BaseButton.SignalName.Pressed);
         var tabs = Client.FindChildren("*", "TabContainer", true, false).Cast<TabContainer>().Single();
-        if (tabs.GetTabCount() != 4 || tabs.GetTabTitle(3) != "职业") throw new Exception("缺少第四个职业页签。");
+        if (tabs.GetTabCount() != 5 || tabs.GetTabTitle(3) != "职业") throw new Exception("缺少第四个职业页签。");
         tabs.CurrentTab = 3; return tabs.GetChild<Control>(3);
     }
 

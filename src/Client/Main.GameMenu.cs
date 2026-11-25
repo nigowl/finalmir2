@@ -11,8 +11,12 @@ public partial class Main
     private void BuildGameMenu()
     {
         gameMenu = new PopupMenu { Name = "GameMenu" }; game.AddChild(gameMenu);
-        var title = new Label { Text = "游戏菜单", Position = new Vector2(28, 4), Size = new Vector2(180, 24), VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore };
+        var title = new Label { Text = "菜单", Position = new Vector2(28, 4), Size = new Vector2(180, 24), VerticalAlignment = VerticalAlignment.Center, MouseFilter = MouseFilterEnum.Ignore };
         title.AddThemeFontSizeOverride("font_size", ClientUi.Title); gameMenu.AddChild(title);
+        var close = new OriginalButton { Name = "GameMenuClose", Assets = Assets, Library = "Prguse2", Index = 360,
+            HoverIndex = 360, PressedIndex = 362, TooltipText = "关闭菜单", Size = new Vector2(24, 24) };
+        gameMenu.AddChild(close); close.Pressed += () => gameMenu.Hide();
+        gameMenu.SizeChanged += () => close.Position = new Vector2(gameMenu.Size.X - 28, 4);
         gameMenu.AddSeparator("战斗", 100);
         AddMenuItem("开始挂机", 7, ControlKey | Key.Z);
         BuildAttackModes();
@@ -22,11 +26,14 @@ public partial class Main
         AddMenuItem("任务", 12, Key.Q); AddMenuItem("地图", 14, Key.M); AddMenuItem("游戏设置", 13, ControlKey | Key.O);
         gameMenu.AddSeparator("社交", 102);
         AddMenuItem("组队", 4, Key.P); AddMenuItem("交易", 5, Key.T); AddMenuItem("行会", 6, Key.H);
+        gameMenu.AddItem("好友", 15); gameMenu.AddItem("消息", 16); gameMenu.AddItem("宠物", 17); gameMenu.AddItem("英雄", 18);
         gameMenu.AddSeparator("角色", 103);
         AddMenuItem("切换角色", 2, ControlKey | Key.L); AddMenuItem("退出游戏", 3, ControlKey | Key.Q);
         gameMenu.IdPressed += id => MenuAction((int)id);
         gameMenu.AboutToPopup += RefreshBattleMenu;
-        gameMenuButton = ArtButton(game, "Prguse", 1960, 969, 651, "游戏菜单 Ctrl+E", ToggleGameMenu);
+        gameMenuButton = new MenuIconButton { Name = "GameMenuButton", Assets = Assets, Library = "Prguse", Index = 1960,
+            Position = new Vector2(972, 654), ArtSize = ClientUi.HudActionSize, Size = Vector2.One * ClientUi.HudActionSize, TooltipText = "菜单 Ctrl+E" };
+        game.AddChild(gameMenuButton); gameMenuButton.Pressed += ToggleGameMenu;
         deathDialog = new ConfirmationDialog { Name = "DeathConfirmation", Title = "角色阵亡", DialogText = "您已阵亡，是否回城复活？\n取消后可按 R 再次打开。" };
         game.AddChild(deathDialog); deathDialog.GetOkButton().Text = "回城复活"; deathDialog.GetCancelButton().Text = "暂不复活";
         deathDialog.Confirmed += () => { if (scene == "game" && State.Me?.Dead == true) Send(new C.TownRevive()); };
@@ -59,6 +66,7 @@ public partial class Main
             case 12: if (questList.Visible) CloseQuests(); else OpenQuestJournal(); break;
             case 13: if (settingsDialog.Visible) CloseSettings(); else OpenSettings(); break;
             case 14: MiniMap.SetExpanded(!MiniMap.Expanded); break;
+            case >= 15 and <= 18: ToggleSocial(id - 15); break;
         }
     }
 

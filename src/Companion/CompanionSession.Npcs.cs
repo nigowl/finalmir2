@@ -20,6 +20,7 @@ public sealed partial class CompanionSession
     private long npcSent;
     private async Task Call(uint id,string key)
     {
+        heroClasses = null;
         if(key.Equals("[@MAIN]",StringComparison.OrdinalIgnoreCase))
         {unloadOnly=Knowledge?.Goal?.SellItems is {Length:>0};repairOnly=Knowledge?.Goal?.Key.StartsWith("repair/",StringComparison.Ordinal)==true;
             storageOnly=Knowledge?.Goal?.StorageItems is {Length:>0};}
@@ -51,7 +52,7 @@ public sealed partial class CompanionSession
     {
         var shop=goods!;var user=state.User!;
         // 最后容量须先补低于储备线的药品，不能被便宜药的补满占掉。
-        foreach(var item in shop.List.Where(i=>i.Info!=null && Usable(i.Info)).OrderBy(SupplyPriority).ThenBy(i=>i.Price()))
+        foreach(var item in shop.List.Where(i=>i.Info!=null && (Usable(i.Info) || HeroDevelopmentCount(i) > 0)).OrderBy(SupplyPriority).ThenBy(i=>i.Price()))
         {
             if(Funding && !CompanionSupplyRules.IsPotion(item,Stat.HP))continue;
             var missing=1;
@@ -68,8 +69,10 @@ public sealed partial class CompanionSession
             }
             else
             {
+                if(CompanionSupplyRules.NeedsRefill(user.Inventory,Stat.HP,user.Class,Profile.Traits.Frugality))continue;
                 missing=CompanionInventoryRules.DevelopmentCount(item,user.Inventory,user.Equipment,user.Class,user.Gender,
                     user.Level,user.Magics.Select(m=>m.Spell).ToHashSet());
+                if(missing==0)missing=HeroDevelopmentCount(item);
                 if(missing==0)continue;
             }
             var unit=item.Clone();unit.Count=1;
@@ -124,7 +127,7 @@ public sealed partial class CompanionSession
             if(Knowledge?.Goal is not {Kind:"turn-in"} turnIn || turnIn.QuestId!=q.Index)continue;
             var npc=state.Actors.GetValueOrDefault(q.FinishNPCIndex);
             if(npc==null || npc.Hidden)continue;
-            if(Distance(user.Location,npc.Location)>4)return await MoveTo(npc.Location,3);
+            if(Distance(user.Location,npc.Location)>4)return await MoveTo(npc.Location,3,avoidThreats:true);
             if(npcId!=npc.Id){await Call(npc.Id,"[@MAIN]");return true;}
             finishedQuests.Add(q.Index);
             var reward=q.RewardsSelectItem.Select((item,index)=>(item,index)).OrderByDescending(pair=>MatchesIdentity(pair.item.Item))
@@ -145,7 +148,7 @@ public sealed partial class CompanionSession
         }
         if(page.Count>0 && npcId!=0)
         {
-            var links=page.SelectMany(line=>Regex.Matches(line,@"<[^<>]+/@([^<>]+)>").Select(m=>m.Groups[1].Value)).ToArray();page=[];
+            var links=page.SelectMany(line=>Regex.Matches(line,@"<[^<>]+/@([^<>]+)>").Select(m=>m.Groups[1].Value.Split('/')[0])).ToArray();page=[];
             if(storageOnly)
             {
                 var storageLink=links.FirstOrDefault(link=>link.Equals("STORAGE",StringComparison.OrdinalIgnoreCase));
@@ -154,13 +157,17 @@ public sealed partial class CompanionSession
                 CloseStorage();return true;
             }
             // 只识别原引擎内置服务，未知剧情链接保持未执行。
+            if (!heroCreationBlocked && !heroCreated && !user.HasHero && !user.Inventory.Any(item => item?.Info.Type == ItemType.SealedHero) &&
+                Knowledge?.Goal is { } heroGoal && heroGoal.NpcId == npcId && heroGoal.Key.StartsWith("hero-create/", StringComparison.Ordinal) &&
+                links.Any(link => link.Equals("CREATEHERO", StringComparison.OrdinalIgnoreCase)))
+            { await Call(npcId, "[@CREATEHERO]"); return true; }
             var service=links.FirstOrDefault(l=>!repairOnly && (l.Equals("SELL",StringComparison.OrdinalIgnoreCase)||l.Equals("BUYSELL",StringComparison.OrdinalIgnoreCase)) && SaleItem(true)!=null) ??
                 links.FirstOrDefault(l=>l.Equals("REPAIR",StringComparison.OrdinalIgnoreCase) && user.Inventory.Concat(user.Equipment).Any(RepairHere)) ??
                 links.FirstOrDefault(l=>!repairOnly && (l.Equals("BUY",StringComparison.OrdinalIgnoreCase)||l.Equals("BUYSELL",StringComparison.OrdinalIgnoreCase)) && (Knowledge?.Goal?.Key.StartsWith("develop/",StringComparison.Ordinal)==true||user.Equipment[0]==null||PotionCount(true)<PotionTarget(true)||PotionCount(false)<PotionTarget(false)||TownScrollCount()==0));
             if(service!=null){await Call(npcId,"[@"+service+"]");return true;}
         }
-        var needsService=SaleItem()!=null || user.Gold>0 && (user.Equipment[0]==null||PotionCount(true)<PotionTarget(true)||PotionCount(false)<PotionTarget(false)||user.Inventory.Concat(user.Equipment).Any(NeedsRepair));
-        if(!needsService || Funding || Knowledge?.Goal?.Kind is "accept" or "turn-in" or "service" ||
+        var needsService=user.Gold>0 && (user.Equipment[0]==null||user.Inventory.Concat(user.Equipment).Any(NeedsRepair));
+        if(!needsService || Funding || Knowledge?.Goal?.Kind is "accept" or "turn-in" or "guild-create" or "service" or "wait" ||
             Knowledge?.Goal is {Kind:"hunt"} journey && journey.MapId!=Knowledge.MapId)return false;
         var merchant=state.Actors.Values.Where(a=>a.Kind==ObjectType.Merchant && !a.Hidden && visited.GetValueOrDefault(a.Id).Until<now)
             .OrderBy(a=>Distance(user.Location,a.Location)).FirstOrDefault();

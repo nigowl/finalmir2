@@ -147,6 +147,7 @@ public enum Stat : byte
     ManaPenaltyPercent = 127,
     TeleportManaPenaltyPercent = 128,
     Hero = 129,
+    MagicBlood = 130,
 
     Unknown = 255
 }

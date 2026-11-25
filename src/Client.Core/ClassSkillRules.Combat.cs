@@ -67,10 +67,20 @@ public static partial class ClassSkillRules
         ClientMagic? Select(Spell spell)
         {
             var magic = state.User.Magics.FirstOrDefault(magic => magic.Spell == spell);
-            return magic != null && Ready(state, magic, now) && InRange(state, target, spell) && MaterialsAvailable(state, preferences, spell, target, true) ? magic : null;
+            return magic != null && Ready(state, magic, now) && InRange(state, target, spell) &&
+                (magic.Range == 0 || Functions.MaxDistance(state.User.Location, target.Location) <= magic.Range) &&
+                MaterialsAvailable(state, preferences, spell, target, true) ? magic : null;
         }
         var healingShot = state.User.Class == MirClass.Archer ? Spell.VampireShot : Spell.Vampirism;
         if (state.User.Class is MirClass.Wizard or MirClass.Archer && state.User.HP * 2L <= state.CalculateStats()[Stat.HP] && Select(healingShot) is { } drain) return drain;
+        if (state.User.Class == MirClass.Assassin && !target.Poison.HasFlag(PoisonType.Green) && Select(Spell.PoisonSword) is { } poisonSword) return poisonSword;
+        if (state.User.Class == MirClass.Archer)
+        {
+            if ((ActiveBuff(state, BuffType.PoisonShot) || ActiveBuff(state, BuffType.VampireShot)) &&
+                ClientAutomation.Targets(state).Count(actor => !ClientAutomation.RequiresPhysicalAttack(actor) && Functions.MaxDistance(actor.Location, target.Location) <= 1) >= 2 &&
+                Select(Spell.CrippleShot) is { } cripple) return cripple;
+            if (!target.Poison.HasFlag(PoisonType.Green) && Select(Spell.PoisonShot) is { } poisonShot) return poisonShot;
+        }
         foreach (var spell in Areas(state.User.Class))
         {
             var nearby = ClientAutomation.Targets(state).Count(actor => !ClientAutomation.RequiresPhysicalAttack(actor) && InArea(state.User.Location, target.Location, actor.Location, spell));
@@ -86,7 +96,9 @@ public static partial class ClassSkillRules
         state.User != null && !ClientAutomation.RequiresPhysicalAttack(target) && Functions.MaxDistance(state.User.Location, target.Location) > 1 &&
         state.User.Magics.Any(magic => Singles(state.User.Class).Contains(magic.Spell) && !state.DisabledSkills.Contains(magic.Spell) &&
             state.User.MP >= ManaCost(state, magic) && now < magic.CastTime + ClientSkillRules.Cooldown(magic) && InRange(state, target, magic.Spell) &&
-            MaterialsAvailable(state, preferences, magic.Spell, target, true));
+            (magic.Range == 0 || Functions.MaxDistance(state.User.Location, target.Location) <= magic.Range) && MaterialsAvailable(state, preferences, magic.Spell, target, true));
+
+    private static bool ActiveBuff(GameState state, BuffType buff) => state.UserBuffs.TryGetValue(buff, out var status) && !status.Paused;
 
     private static bool InRange(GameState state, Actor target, Spell spell)
     {
@@ -98,7 +110,7 @@ public static partial class ClassSkillRules
             Spell.HellFire => distance <= 4,
             Spell.Lightning => distance <= 5,
             Spell.IceThrust => distance <= 3,
-            Spell.CrescentSlash => distance <= 1,
+            Spell.CrescentSlash or Spell.PoisonSword => distance <= 1,
             Spell.HeavenlySword => distance <= 3 && target.Location == Functions.PointMove(state.User.Location, Functions.DirectionFromPoint(state.User.Location, target.Location), distance),
             _ => distance <= 9
         };

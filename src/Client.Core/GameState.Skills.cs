@@ -19,6 +19,41 @@ public sealed partial class GameState
 
 public static partial class ClientSkillRules
 {
+    public static bool NeedsClearShot(Spell spell) => spell is Spell.FireBall or Spell.GreatFireBall or Spell.FrostCrunch or Spell.SoulFireBall or Spell.CatTongue or
+        Spell.ElementalShot or Spell.StraightShot or Spell.DoubleShot or Spell.DelayedExplosion or Spell.BindingShot or Spell.VampireShot or Spell.PoisonShot or
+        Spell.CrippleShot or Spell.NapalmShot or Spell.FireBounce or Spell.MeteorShower;
+
+    public static bool TargetsGround(Spell spell) => spell is Spell.Teleport or Spell.Blink or Spell.FireBang or Spell.IceStorm or
+        Spell.MassHiding or Spell.SoulShield or Spell.BlessedArmour or Spell.FireWall or Spell.MassHealing or Spell.StormEscape or
+        Spell.PoisonCloud or Spell.Blizzard or Spell.MeteorStrike or Spell.TrapHexagon or Spell.Curse or Spell.Plague or Spell.SummonVampire or
+        Spell.SummonToad or Spell.SummonSnakes or Spell.Stonetrap or Spell.HealingCircle or Spell.Portal;
+
+    public static bool RequiresTarget(Spell spell) => spell is Spell.ElectricShock or Spell.Poisoning or Spell.ThunderBolt or Spell.FlameDisruptor or
+        Spell.TurnUndead or Spell.Vampirism or Spell.Revelation or Spell.Entrapment or Spell.PetEnhancer or Spell.Reincarnation or
+        Spell.Hallucination or Spell.Trap or Spell.CatTongue or Spell.BindingShot or Spell.VampireShot or Spell.PoisonShot or Spell.CrippleShot or
+        Spell.NapalmShot or Spell.MeteorShower or Spell.FireBounce or Spell.StraightShot or Spell.DoubleShot or Spell.DelayedExplosion or
+        Spell.ElementalShot or Spell.DarkBody;
+
+    public static bool CastBlocked(PoisonType poison) => (poison & (PoisonType.Stun | PoisonType.Dazed | PoisonType.Paralysis | PoisonType.Frozen)) != 0;
+
+    public static (uint Target, System.Drawing.Point Location)? Aim(Spell spell, Actor caster, Actor? selected, System.Drawing.Point mouse, Actor? hovered = null)
+    {
+        if (hovered is { Hidden: false, Kind: ObjectType.Player or ObjectType.Monster } && hovered.Dead == (spell == Spell.Reincarnation)) selected = hovered;
+        var directional = spell is Spell.FireBall or Spell.GreatFireBall or Spell.FrostCrunch or Spell.SoulFireBall or
+            Spell.HellFire or Spell.Lightning or Spell.IceThrust or Spell.ShoulderDash or Spell.FlashDash or Spell.BackStep or
+            Spell.ExplosiveTrap or Spell.BladeAvalanche or Spell.CrescentSlash or Spell.SlashingBurst or Spell.HeavenlySword or Spell.PoisonSword;
+        if ((TargetsGround(spell) || RequiresTarget(spell) || directional || spell is Spell.Healing or Spell.Purification or Spell.EnergyShield or Spell.UltimateEnhancer) &&
+            selected is { Kind: ObjectType.Player or ObjectType.Monster } && (!selected.Hidden || selected.Id == caster.Id) &&
+            selected.Dead == (spell == Spell.Reincarnation) &&
+            (spell != Spell.Healing || selected.Kind == ObjectType.Player))
+            return (selected.Id, selected.Location);
+        if (RequiresTarget(spell)) return null;
+        if (spell is Spell.Healing or Spell.Purification or Spell.EnergyShield or Spell.UltimateEnhancer) return (caster.Id, caster.Location);
+        if (TargetsGround(spell) || directional)
+            return (0, mouse);
+        return (0, caster.Location);
+    }
+
     public static bool IsImplemented(Spell spell) => Enum.IsDefined(spell) && (byte)spell is > 0 and < 200 && spell != Spell.FastMove;
     public static MirAction Animation(Spell spell) => spell switch
     {
@@ -32,17 +67,6 @@ public static partial class ClientSkillRules
             or Spell.VampireShot or Spell.PoisonShot or Spell.CrippleShot or Spell.NapalmShot or Spell.SummonVampire
             or Spell.SummonToad or Spell.SummonSnakes or Spell.Stonetrap => MirAction.AttackRange2,
         _ => MirAction.Spell
-    };
-    public static int GlobalDelay(Spell spell) => spell switch
-    {
-        Spell.FlashDash => 250, Spell.CounterAttack => 100, Spell.DoubleShot => 500,
-        Spell.ShoulderDash or Spell.BackStep or Spell.FlameField => 2500,
-        Spell.HeavenlySword => 1200,
-        Spell.StraightShot or Spell.DelayedExplosion or Spell.ExplosiveTrap or Spell.ElementalShot
-            or Spell.BladeAvalanche or Spell.SlashingBurst or Spell.PoisonSword or Spell.CrescentSlash => 1500,
-        Spell.BindingShot or Spell.VampireShot or Spell.PoisonShot or Spell.CrippleShot or Spell.NapalmShot
-            or Spell.SummonVampire or Spell.SummonToad or Spell.SummonSnakes or Spell.Stonetrap => 1000,
-        _ => 1800
     };
     public static bool IsPassive(Spell spell) => spell is Spell.Fencing or Spell.SpiritSword or Spell.Slaying or Spell.FatalSword
         or Spell.MPEater or Spell.Hemorrhage or Spell.Focus or Spell.Meditation;

@@ -25,11 +25,11 @@ public static class CompanionLoot
             item.Owner.Race == ObjectType.Player && player.GroupMembers?.Any(member => member == item.Owner) == true) &&
             (item.Item == null ? player.CanGainGold(item.Gold) : player.CanGainItem(item.Item)));
 
-    public static uint[] Targets(PlayerObject player)
+    public static uint[] Targets(PlayerObject player, IEnumerable<MapObject> mapObjects)
     {
         var needed = player.CurrentQuests.SelectMany(quest => quest.ItemTaskCount.Where(task => !task.Complete)).Select(task => task.ItemID).ToHashSet();
-        var positions = Server.MirEnvir.Envir.Main.Objects.OfType<ItemObject>()
-            .Where(item => item.CurrentMap == player.CurrentMap && Functions.InRange(item.CurrentLocation, player.CurrentLocation, Globals.DataRange))
+        var positions = mapObjects.OfType<ItemObject>()
+            .Where(item => Functions.InRange(item.CurrentLocation, player.CurrentLocation, Globals.DataRange))
             .Select(item => item.CurrentLocation).Distinct().OrderBy(point => Functions.MaxDistance(point, player.CurrentLocation)).Take(128);
         return positions.Select(point => FirstPickup(player, player.CurrentMap.GetCell(point).Objects))
             .Where(item => item != null && CompanionInventoryRules.CanCollect(player.CurrentBagWeight, player.Stats[Stat.BagWeight],

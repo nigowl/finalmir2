@@ -3,6 +3,16 @@ using System.IO.Compression;
 
 public static class Functions
 {
+    public static bool CanFly(Point location, Point target, Func<Point, bool> valid)
+    {
+        while (location != target)
+        {
+            location = PointMove(location, DirectionFromPoint(location, target), 1);
+            if (!valid(location)) return false;
+        }
+        return true;
+    }
+
     public static bool CompareBytes(byte[] a, byte[] b)
     {
         if (a == b) return true;

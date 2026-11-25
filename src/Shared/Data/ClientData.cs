@@ -359,6 +359,8 @@ public class ClientMapInfo
 
 public class ClientQuestInfo
 {
+    public static bool IsMengchongDaily(QuestType type, string group) =>
+        type == QuestType.Daily && group.StartsWith("盟重日常·", StringComparison.Ordinal);
     public int Index;
 
     public uint NPCIndex;

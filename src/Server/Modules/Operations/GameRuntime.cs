@@ -129,7 +129,7 @@ public static class OperationsModule
         group.MapPut("/settings", async (GameRuntime runtime, SystemSettings settings, ServerSettingsEdit edit, CancellationToken token) =>
         {
             var saved = await runtime.Invoke(() => settings.Save(edit), token);
-            // 安全区法术在地图创建时生成，必须正常保存重启才能更新。
+            // 保存退出后更新地图效果和动作间隔，旧连接随引擎退出。
             if (saved.RequiresRestart) await runtime.Restart(CancellationToken.None);
             return await runtime.Invoke(settings.Read, CancellationToken.None);
         });

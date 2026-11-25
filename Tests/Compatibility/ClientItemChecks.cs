@@ -28,8 +28,8 @@ internal static class ClientItemChecks
         state.Apply(new S.UserInformation { ObjectID = 1, Inventory = [item], Equipment = new UserItem[14], QuestInventory = [] });
         state.Apply(new S.DropItem { UniqueID = 42, Count = 1, Success = false });
         check(item.Count == 3 && state.User!.Inventory[0] == item, "Rejected drop removed inventory locally");
-        state.Apply(new S.DropItem { UniqueID = 42, Count = 1, HeroItem = true, Success = true });
-        check(item.Count == 3, "Hero drop changed the player inventory");
+        state.Apply(new S.DropItem { UniqueID = 42, Count = 1, HeroItem = true, Success = false });
+        check(item.Count == 3, "Rejected hero drop changed the shared inventory");
         state.Apply(new S.DropItem { UniqueID = 99, Count = 1, Success = true });
         check(item.Count == 3, "Unrelated drop changed a different item");
         state.Apply(new S.DropItem { UniqueID = 42, Count = 1, Success = true });

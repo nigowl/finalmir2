@@ -6,10 +6,23 @@ public partial class OriginalArt
     public static Texture2D InterfaceTexture(string library, int index, SpriteImage image) => (library, index) switch
     {
         ("Title", 504) => CharacterPanelSkin(image),
+        ("Prguse", 65) => SelectionSkin(image),
         ("Title", 196) or ("Prguse", 180) => DialogSkin(image),
+        ("Prguse", 961) => QuestJournalSkin(image),
         ("Title", >= 658 and <= 663) => CharacterRowSkin(image),
         _ => image.Texture
     };
+
+    public static Texture2D SelectionSkin(SpriteImage image)
+    {
+        using var source = image.Texture.GetImage();
+        using var row = source.GetRegion(new Rect2I(636, 193, 288, 54));
+        // 原底图烘焙了四个空框，先清除再按五个真实选角位置接续。
+        source.FillRect(new Rect2I(634, 190, 294, 374), source.GetPixel(630, 260));
+        for (var i = 0; i < Globals.MaxCharacterCount; i++)
+            source.BlitRect(row, new Rect2I(0, 0, row.GetWidth(), row.GetHeight()), new Vector2I(637, 194 + 78 * i));
+        return ImageTexture.CreateFromImage(source);
+    }
 
     public static Texture2D DialogSkin(SpriteImage image)
     {
@@ -19,6 +32,21 @@ public partial class OriginalArt
         // 原 NPC 底图已经画了关闭图标，通用框须换成花角，关闭图标由控件负责。
         corner.FlipX(); source.BlitRect(corner, new Rect2I(0, 0, 32, 33), new Vector2I(source.GetWidth() - 32, 0));
         return ImageTexture.CreateFromImage(source);
+    }
+
+    public static Texture2D InventorySkin(SpriteImage image)
+    {
+        using var frame = DialogSkin(image);
+        using var source = frame.GetImage();
+        using var skin = Image.CreateEmpty(source.GetWidth(), source.GetHeight() + ClientUi.InventoryExtraHeight, false, Image.Format.Rgba8);
+        skin.BlitRect(source, new Rect2I(0, 0, source.GetWidth(), 37), Vector2I.Zero);
+        // 逐行复用原格子和两侧边框，不拉伸格子，也不保留底图的特殊空位。
+        for (var row = 0; row < ClientUi.InventoryRows; row++)
+            skin.BlitRect(source, new Rect2I(0, 70, source.GetWidth(), 33), new Vector2I(0, 37 + row * 33));
+        // 格线只由服务端实际容量绘制，不能让旧服46格看起来也开放了80格。
+        skin.FillRect(new Rect2I(9, 37, 295, ClientUi.InventoryRows * 33), source.GetPixel(12, 75));
+        skin.BlitRect(source, new Rect2I(0, 202, source.GetWidth(), source.GetHeight() - 202), new Vector2I(0, 202 + ClientUi.InventoryExtraHeight));
+        return ImageTexture.CreateFromImage(skin);
     }
 
     public static Texture2D ButtonSkin(SpriteImage image)
@@ -31,23 +59,38 @@ public partial class OriginalArt
         return ImageTexture.CreateFromImage(skin);
     }
 
-    public static Texture2D TabSkin(SpriteImage image, Rect2I area, Texture2D? outline = null)
+    public static Texture2D TabSkin(SpriteImage selected, SpriteImage? inactivePanel = null)
     {
-        using var source = image.Texture.GetImage();
-        using var tab = source.GetRegion(area);
+        using var source = selected.Texture.GetImage();
+        using var tab = source.GetRegion(new Rect2I(1, 0, 60, 20));
         using var skin = Image.CreateEmpty(17, tab.GetHeight(), false, Image.Format.Rgba8);
         // 原角色页签两侧各8像素没有文字，拼成可伸展底图，完整保留圆角、金边和纵向高光。
         skin.BlitRect(tab, new Rect2I(0, 0, 8, tab.GetHeight()), Vector2I.Zero);
         skin.BlitRect(tab, new Rect2I(8, 0, 1, tab.GetHeight()), new Vector2I(8, 0));
         skin.BlitRect(tab, new Rect2I(tab.GetWidth() - 8, 0, 8, tab.GetHeight()), new Vector2I(9, 0));
-        if (outline != null)
+        if (inactivePanel != null)
         {
-            using var mask = outline.GetImage();
+            using var panel = inactivePanel.Texture.GetImage();
+            // 未选中图只取一列无字底色，轮廓共用，避免把相邻页签边线带到当前页签。
             for (var y = 0; y < skin.GetHeight(); y++)
             for (var x = 0; x < skin.GetWidth(); x++)
-                if (mask.GetPixel(x, y).A == 0) skin.SetPixel(x, y, Colors.Transparent);
+            {
+                var pixel = skin.GetPixel(x, y);
+                if (pixel.A == 0) continue;
+                var tone = y >= 3 && x is >= 2 and <= 14 ? panel.GetPixel(17, 70 + Math.Min(y, 18)) : pixel.Darkened(.18f);
+                skin.SetPixel(x, y, new Color(tone.R, tone.G, tone.B, pixel.A));
+            }
         }
         return ImageTexture.CreateFromImage(skin);
+    }
+
+    private static Texture2D QuestJournalSkin(SpriteImage image)
+    {
+        using var source = image.Texture.GetImage();
+        // 滚动交由 ScrollContainer；用内容边缘填掉底图上不可操作的滚动槽和箭头。
+        for (var x = 291; x < 307; x++)
+            source.BlitRect(source, new Rect2I(290, 32, 1, 399), new Vector2I(x, 32));
+        return ImageTexture.CreateFromImage(source);
     }
 
     public static Texture2D CharacterPanelSkin(SpriteImage image)

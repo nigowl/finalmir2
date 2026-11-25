@@ -6,8 +6,11 @@ namespace Crystal.Native;
 public sealed class Actor
 {
     public const int MoveDuration = 600;
-    public const int RunContinuationWindow = 1100;
-    public int MoveDelay => Poison.HasFlag(PoisonType.Slow) ? MoveDuration * 2 : MoveDuration;
+    public int RunContinuationWindow => Math.Max(1100, LastMoveDelay + 100);
+    public const int MovementBuffer = 34;
+    public PlayerActionTiming PlayerTiming { get; init; } = PlayerActionTiming.Default;
+    public int MoveDelay => (Kind == ObjectType.Player ? PlayerTiming.MoveMilliseconds : MoveDuration) * (Poison.HasFlag(PoisonType.Slow) ? 2 : 1);
+    public int LastMoveDelay => (Kind == ObjectType.Player ? PlayerTiming.MoveMilliseconds : MoveDuration) * (movementSlowed ? 2 : 1);
     public uint Id;
     public string Name = "";
     public ObjectType Kind;
@@ -18,13 +21,19 @@ public sealed class Actor
     public Spell ActionSpell;
     public byte SpellLevel;
     public bool Casting, SpellParam, MagicShield, ElementalBarrier;
+    public bool IsShinsu => Kind == ObjectType.Monster && Image is (int)Monster.Shinsu or (int)Monster.Shinsu1;
     public bool Concentrating, ConcentrationInterrupted;
     public uint ElementLevel;
     public readonly Dictionary<uint, uint> Elements = new();
     public readonly HashSet<BuffType> Buffs = new();
     public long MotionTime, ActionTime;
+    private bool movementSlowed;
     private System.Numerics.Vector2 motionOrigin;
+    private System.Numerics.Vector2 motionCorner;
+    private float motionCornerFraction;
+    private bool skillMovement;
     private int remoteMoveDuration;
+    private double movementPhase;
     public bool Dead, Hidden, Harvested, RidingMount;
     public int Image, Armour, Weapon = -1, Hair;
     public byte AI;
@@ -33,39 +42,70 @@ public sealed class Actor
     public MirGender Gender;
     public MirClass Class;
     public byte Health = 100;
+    public int? CurrentHealth, MaximumHealth;
     public System.Drawing.Color Colour = System.Drawing.Color.White;
 
-    public void Move(Point location, MirDirection direction, MirAction action, long? timestamp = null)
+    public void Move(Point location, MirDirection direction, MirAction action, long? timestamp = null, bool isSkillMovement = false)
     {
         var now = timestamp ?? Environment.TickCount64;
-        var moving = action is MirAction.Walking or MirAction.Running or MirAction.Jump or MirAction.DashAttack;
+        var dx = Math.Abs(location.X - Location.X); var dy = Math.Abs(location.Y - Location.Y);
+        if (Kind == ObjectType.Player && !isSkillMovement && action is MirAction.Walking or MirAction.Running &&
+            (Math.Max(dx, dy) > 3 || dx != 0 && dy != 0 && dx != dy)) action = MirAction.Standing;
+        var moving = action is MirAction.Walking or MirAction.Running or MirAction.Pushed or MirAction.Jump or MirAction.DashAttack;
         if (moving && location == Location && Action == action) { Direction = direction; return; }
         var interval = now - MotionTime;
-        var continuous = (Kind == ObjectType.Monster && moving || Kind == ObjectType.Player && action is MirAction.Walking or MirAction.Running) &&
+        var continuous = !isSkillMovement && !skillMovement && (Kind == ObjectType.Monster && moving || Kind == ObjectType.Player && action is MirAction.Walking or MirAction.Running) &&
             Action is MirAction.Walking or MirAction.Running && interval >= 100 && interval <= (Kind == ObjectType.Player ? MoveDelay + 250 : 2000) &&
-            Math.Max(Math.Abs(location.X - Location.X), Math.Abs(location.Y - Location.Y)) <= 2;
+            Math.Max(Math.Abs(location.X - Location.X), Math.Abs(location.Y - Location.Y)) <= (Kind == ObjectType.Player ? 3 : 2);
         // 回执间隔包含网络和帧调度；从当前画面接续，不回跳或在每步末尾切站立。
-        motionOrigin = continuous ? PositionAt(now, MoveDuration) : new(Location.X, Location.Y);
-        remoteMoveDuration = continuous ? (int)interval : 0;
+        var phase = continuous && Kind == ObjectType.Player ? MovementAnimationElapsed(now, MoveDuration) / (double)MoveDuration : 0;
+        var cornerPending = continuous && motionCornerFraction > 0 && now - MotionTime < MovementDuration(MoveDuration) * motionCornerFraction;
+        motionOrigin = continuous || action == MirAction.Pushed ? PositionAt(now, MoveDuration) : new(Location.X, Location.Y);
+        // 转弯先走完已确认的一段；过密回执不积压路径，回到上一确认格重新同步。
+        if (cornerPending) motionOrigin = new(Location.X, Location.Y);
+        motionCorner = new(Location.X, Location.Y);
+        var remaining = System.Numerics.Vector2.Abs(motionCorner - motionOrigin);
+        var firstLength = Math.Max(remaining.X, remaining.Y);
+        motionCornerFraction = continuous && firstLength > 0 && Math.Max(dx, dy) > 0 ? firstLength / (firstLength + Math.Max(dx, dy)) : 0;
+        remoteMoveDuration = continuous && movementSlowed == Poison.HasFlag(PoisonType.Slow) ? (int)interval : 0;
+        movementPhase = phase;
         Previous = Location;
         MotionTime = now;
         Location = location; Direction = direction; Action = action; ActionTime = MotionTime;
+        movementSlowed = Poison.HasFlag(PoisonType.Slow);
+        skillMovement = isSkillMovement;
     }
 
-    public int MovementDuration(int animationDuration) => remoteMoveDuration > 0 ? remoteMoveDuration :
-        Action is MirAction.Walking or MirAction.Running && Poison.HasFlag(PoisonType.Slow) ? animationDuration * 2 : animationDuration;
+    public int MovementDuration(int animationDuration)
+    {
+        if (Action == MirAction.Pushed) return Kind == ObjectType.Player ? PlayerTiming.Scale(500) : 500;
+        var step = !skillMovement && Action is MirAction.Walking or MirAction.Running;
+        var duration = remoteMoveDuration > 0 ? remoteMoveDuration :
+            (Kind == ObjectType.Player ? step ? animationDuration * PlayerTiming.MoveMilliseconds / MoveDuration : PlayerTiming.Scale(animationDuration) : animationDuration) *
+            (step && movementSlowed ? 2 : 1);
+        // 留两帧显示余量吸收回执抖动；坐标始终不越过已确认终点。
+        return duration + (Kind == ObjectType.Player && step ? MovementBuffer : 0);
+    }
+
+    public long MovementAnimationElapsed(long now, int duration) => (long)((movementPhase +
+        Math.Max(0, now - MotionTime) / (double)Math.Max(1, MovementDuration(MoveDuration))) * duration);
 
     public System.Numerics.Vector2 PositionAt(long now, int duration)
     {
         var end = new System.Numerics.Vector2(Location.X, Location.Y);
-        if (Action is not (MirAction.Walking or MirAction.Running or MirAction.Jump or MirAction.DashAttack)) return end;
-        return System.Numerics.Vector2.Lerp(motionOrigin, end,
-            Math.Clamp((now - MotionTime) / (float)Math.Max(1, MovementDuration(duration)), 0, 1));
+        if (Action is not (MirAction.Walking or MirAction.Running or MirAction.Pushed or MirAction.Jump or MirAction.DashAttack)) return end;
+        var progress = Math.Clamp((now - MotionTime) / (float)Math.Max(1, MovementDuration(duration)), 0, 1);
+        if (motionCornerFraction > 0)
+            return progress < motionCornerFraction
+                ? System.Numerics.Vector2.Lerp(motionOrigin, motionCorner, progress / motionCornerFraction)
+                : System.Numerics.Vector2.Lerp(motionCorner, end, (progress - motionCornerFraction) / (1 - motionCornerFraction));
+        return System.Numerics.Vector2.Lerp(motionOrigin, end, progress);
     }
 }
 
 public sealed partial class GameState
 {
+    public PlayerActionTiming PlayerTiming { get; set; } = PlayerActionTiming.Default;
     public S.UserInformation? User;
     public S.MapInformation? Map;
     public readonly Dictionary<uint, Actor> Actors = new();
@@ -100,10 +140,14 @@ public sealed partial class GameState
     public Actor? Me => User != null ? Actors.GetValueOrDefault(User.ObjectID) : null;
     public void Reset()
     {
+        PlayerTiming = PlayerActionTiming.Default;
         ClearCharacter(); Items.Clear(); QuestDefinitions.Clear(); Characters.Clear();
     }
     private void ClearCharacter()
     {
+        ResetItemOwnerNames();
+        InTrapRock = false; OpenDoors.Clear();
+        PublicShop = null; PublicShopRevision++; QuestNavigation.Clear();
         User = null; Map = null; Actors.Clear(); ActiveSkills.Clear(); DisabledSkills.Clear(); UserBuffs.Clear(); BaseStats = null; NpcId = 0;
         Storage = []; StorageActive = StorageUnlocked = false;
         Quests.Clear(); CompletedQuests.Clear();
@@ -111,11 +155,13 @@ public sealed partial class GameState
         CurrentAttackMode = AttackMode.Peace;
         ClearTrade();
         ClearGuild();
+        ResetSocial();
         InventoryRevision++; QuestRevision++;
     }
 
     public void Apply(Packet packet)
     {
+        if (ApplyMovement(packet) || ApplySocial(packet) || ApplyPublicServices(packet)) return;
         ApplyTrade(packet);
         ApplyGuild(packet);
         ApplyGuildStorage(packet);
@@ -145,20 +191,37 @@ public sealed partial class GameState
             case S.NewItemInfo p:
                 Items[p.Info.Index] = p.Info;
                 if (User != null) { Bind(User.Inventory); Bind(User.Equipment); Bind(User.QuestInventory); }
+                if (Hero != null) { Bind(Hero.Inventory); Bind(Hero.Equipment); SocialRevision++; }
                 Bind(Storage);
                 Bind(TradeItems); Bind(GuestTradeItems);
+                foreach (var mail in Mail) foreach (var item in mail.Items) Bind(item);
                 foreach (var entry in GuildStorage) Bind(entry?.Item);
                 InventoryRevision++; break;
             case S.MapInformation p: Map = p; ResetActors(); break;
             case S.UserInformation p:
+                ResetItemOwnerNames();
                 ActiveSkills.Clear(); DisabledSkills.Clear();
                 Storage = []; StorageActive = StorageUnlocked = false;
                 Quests.Clear(); CompletedQuests.Clear(); QuestRevision++;
                 User = p; Bind(p.Inventory); Bind(p.Equipment); Bind(p.QuestInventory);
                 foreach (var skill in p.Magics) skill.CastTime += Environment.TickCount64;
-                Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Kind = ObjectType.Player, Name = p.Name,
-                    Location = p.Location, Previous = p.Location, Direction = p.Direction, Gender = p.Gender, Class = p.Class, Hair = p.Hair, Dead = p.HP <= 0 };
+                Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Kind = ObjectType.Player, PlayerTiming = PlayerTiming, Name = p.Name,
+                    Location = p.Location, Previous = p.Location, Direction = p.Direction, Gender = p.Gender, Class = p.Class, Hair = p.Hair, Dead = p.HP <= 0, Colour = p.NameColour };
                 RefreshLooks(); InventoryRevision++; break;
+            case S.ColourChanged p when User != null:
+                User.NameColour = p.NameColour;
+                if (Me != null) Me.Colour = p.NameColour;
+                break;
+            case S.ObjectColourChanged p when p.ObjectID != User?.ObjectID:
+                if (Actors.TryGetValue(p.ObjectID, out var recoloured)) recoloured.Colour = p.NameColour;
+                break;
+            case S.ObjectName p when p.ObjectID != User?.ObjectID:
+                if (Actors.TryGetValue(p.ObjectID, out var renamed)) renamed.Name = p.Name;
+                break;
+            case S.UserName p: ItemOwnerNameReceived(p); break;
+            case S.ResizeInventory p when User != null && p.Size > User.Inventory.Length && p.Size <= Globals.MaxInventorySize:
+                Array.Resize(ref User.Inventory, p.Size); if (Hero != null && User != null) Hero.Inventory = User.Inventory;
+                InventoryRevision++; break;
             case S.MapChanged p:
                 StorageActive = StorageUnlocked = false;
                 Map = new S.MapInformation { MapIndex = p.MapIndex, FileName = p.FileName, Title = p.Title, Music = p.Music, MiniMap = p.MiniMap };
@@ -177,16 +240,27 @@ public sealed partial class GameState
                 }
                 break;
             case S.ObjectPlayer p:
-                Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = p.Name, Kind = ObjectType.Player,
+                Actors.TryGetValue(p.ObjectID, out var previousPlayer);
+                Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = p.Name, Kind = ObjectType.Player, PlayerTiming = PlayerTiming,
                     Location = p.Location, Previous = p.Location, Direction = p.Direction, Gender = p.Gender, Class = p.Class,
-                    Armour = p.Armour, Weapon = p.Weapon, Hair = p.Hair, Dead = p.Dead, Hidden = p.Hidden, Colour = p.NameColour, Poison = p.Poison, RidingMount = p.RidingMount }; break;
+                    Armour = p.Armour, Weapon = p.Weapon, Hair = p.Hair, Dead = p.Dead, Hidden = p.Hidden, Colour = p.NameColour, Poison = p.Poison, RidingMount = p.RidingMount,
+                    CurrentHealth = previousPlayer?.Kind == ObjectType.Player ? previousPlayer.CurrentHealth : null,
+                    MaximumHealth = previousPlayer?.Kind == ObjectType.Player ? previousPlayer.MaximumHealth : null }; break;
             case S.MountUpdate p:
                 if (Actors.TryGetValue(p.ObjectID, out var mounted)) mounted.RidingMount = p.RidingMount;
                 break;
             case S.ObjectMonster p:
-                Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = p.Name, Kind = ObjectType.Monster,
-                    Location = p.Location, Previous = p.Location, Direction = p.Direction, Image = (int)p.Image,
-                    Dead = p.Dead, Hidden = p.Hidden, Harvested = p.Skeleton, Colour = p.NameColour, AI = p.AI, MasterObjectId = p.MasterObjectId, Poison = p.Poison }; break;
+                var newMonster = !Actors.TryGetValue(p.ObjectID, out var monster) || monster.Kind != ObjectType.Monster;
+                if (newMonster) Actors[p.ObjectID] = monster = new Actor { Id = p.ObjectID, Kind = ObjectType.Monster, Location = p.Location, Previous = p.Location };
+                // 归属刷新复用原对象；只有位置、造型或生死变化才丢弃旧动作插值。
+                if (monster!.Location != p.Location || monster.Image != (int)p.Image || monster.Dead != p.Dead)
+                { monster.Move(p.Location, p.Direction, MirAction.Standing); monster.Previous = p.Location; monster.Casting = false; }
+                monster.Name = p.Name; monster.Direction = p.Direction; monster.Image = (int)p.Image;
+                monster.Dead = p.Dead; monster.Hidden = p.Hidden; monster.Harvested = p.Skeleton;
+                monster.Colour = p.NameColour; monster.AI = p.AI; monster.MasterObjectId = p.MasterObjectId; monster.Poison = p.Poison;
+                monster.Buffs.Clear(); monster.Buffs.UnionWith(p.Buffs);
+                if (newMonster && !p.Dead && p.Image == Monster.Shinsu && !p.Extra) Move(p.ObjectID, p.Location, p.Direction, MirAction.Appear);
+                break;
             case S.Poisoned p: if (Me != null) Me.Poison = p.Poison; break;
             case S.ObjectPoisoned p: if (Actors.TryGetValue(p.ObjectID, out var poisoned)) poisoned.Poison = p.Poison; break;
             case S.ObjectNPC p:
@@ -201,7 +275,6 @@ public sealed partial class GameState
             case S.ObjectTurn p: Move(p.ObjectID, p.Location, p.Direction, MirAction.Standing); break;
             case S.ObjectWalk p: Move(p.ObjectID, p.Location, p.Direction, MirAction.Walking); break;
             case S.ObjectRun p: Move(p.ObjectID, p.Location, p.Direction, MirAction.Running); break;
-            case S.ObjectPushed p: Move(p.ObjectID, p.Location, p.Direction, MirAction.Walking); break;
             case S.ObjectDied p:
                 Move(p.ObjectID, p.Location, p.Direction, MirAction.Die);
                 if (Actors.TryGetValue(p.ObjectID, out var corpse)) corpse.Dead = true;
@@ -211,13 +284,19 @@ public sealed partial class GameState
             case S.Revived: if (Me != null) { Me.Dead = false; Me.Action = MirAction.Standing; } break;
             case S.ObjectRevived p: if (Actors.TryGetValue(p.ObjectID, out var revived)) { revived.Dead = false; revived.Action = MirAction.Standing; } break;
             case S.ObjectHealth p: if (Actors.TryGetValue(p.ObjectID, out var hp)) hp.Health = p.Percent; break;
-            case S.ObjectHide p: if (Actors.TryGetValue(p.ObjectID, out var hidden)) hidden.Hidden = true; break;
-            case S.ObjectShow p: if (Actors.TryGetValue(p.ObjectID, out var shown)) shown.Hidden = false; break;
+            case S.ObjectVitals p:
+                if (p.MaxHP > 0 && p.HP >= 0 && p.HP <= p.MaxHP && Actors.TryGetValue(p.ObjectID, out var vital) && vital.Kind is ObjectType.Player or ObjectType.Monster)
+                { vital.CurrentHealth = p.HP; vital.MaximumHealth = p.MaxHP; vital.Health = (byte)((long)p.HP * 100 / p.MaxHP); }
+                break;
+            case S.ObjectHide p: SetActorShown(p.ObjectID, false); break;
+            case S.ObjectShow p: SetActorShown(p.ObjectID, true); break;
             case S.PlayerUpdate p:
                 if (Actors.TryGetValue(p.ObjectID, out var look)) { look.Armour = p.Armour; look.Weapon = p.Weapon; } break;
             case S.HealthChanged p: if (User != null) { User.HP = p.HP; User.MP = p.MP; } break;
             case S.BaseStatsInfo p: BaseStats = p.Stats; break;
-            case S.GainExperience p: if (User != null) User.Experience += p.Amount; break;
+            case S.GainExperience p:
+                if (User != null) { User.Experience += p.Amount; if (p.Amount > 0) NotifyMessage($"获得经验 +{p.Amount:N0}", ChatType.System2); }
+                break;
             case S.LevelChanged p:
                 if (User != null) { User.Level = p.Level; User.Experience = p.Experience; User.MaxExperience = p.MaxExperience; }
                 NotifyMessage($"等级提升至 {p.Level}", ChatType.LevelUp); break;
@@ -241,7 +320,6 @@ public sealed partial class GameState
                 else NotifyMessage("出售失败，请检查物品限制、数量及 NPC 距离。", ChatType.Hint);
                 break;
             case S.DropItem p:
-                if (p.HeroItem) break;
                 if (p.Success) { NotifyItemMessage($"丢弃成功：{ItemName(p.UniqueID)} ×{p.Count}。", ChatType.System2); Remove(p.UniqueID, p.Count); }
                 else NotifyMessage("丢弃失败，请检查地图、物品绑定及角色状态。", ChatType.Hint);
                 break;
@@ -268,7 +346,7 @@ public sealed partial class GameState
             case S.UserSlotsRefresh p:
                 if (User != null)
                 {
-                    if (p.Inventory != null) { User.Inventory = p.Inventory; Bind(p.Inventory); }
+                    if (p.Inventory != null) { User.Inventory = p.Inventory; if (Hero != null) Hero.Inventory = User.Inventory; Bind(p.Inventory); }
                     if (p.Equipment != null) { User.Equipment = p.Equipment; Bind(p.Equipment); }
                     RefreshLooks(); InventoryRevision++;
                 }
@@ -277,13 +355,15 @@ public sealed partial class GameState
                 Bind(p.Item);
                 if (User != null) foreach (var array in new[] { User.Inventory, User.Equipment, User.QuestInventory, Storage })
                 { var index = Array.FindIndex(array, item => item?.UniqueID == p.Item.UniqueID); if (index >= 0) array[index] = p.Item; }
+                if (Hero != null) foreach (var array in new[] { Hero.Inventory, Hero.Equipment })
+                { var index = Array.FindIndex(array, item => item?.UniqueID == p.Item.UniqueID); if (index >= 0) { array[index] = p.Item; SocialRevision++; } }
                 InventoryRevision++; break;
             case S.DuraChanged p:
-                var worn = User?.Inventory.Concat(User.Equipment).FirstOrDefault(i => i?.UniqueID == p.UniqueID);
+                var worn = User?.Inventory.Concat(User.Equipment).Concat(Hero?.Equipment ?? []).FirstOrDefault(i => i?.UniqueID == p.UniqueID);
                 if (worn != null) worn.CurrentDura = p.CurrentDura;
                 InventoryRevision++; break;
             case S.ItemRepaired p:
-                var repaired = User?.Inventory.Concat(User.Equipment).FirstOrDefault(i => i?.UniqueID == p.UniqueID);
+                var repaired = User?.Inventory.Concat(User.Equipment).Concat(Hero?.Equipment ?? []).FirstOrDefault(i => i?.UniqueID == p.UniqueID);
                 if (repaired != null) { repaired.CurrentDura = p.CurrentDura; repaired.MaxDura = p.MaxDura; NotifyItemMessage($"修理成功：{repaired.Info?.FriendlyName}，耐久 {p.CurrentDura / 1000f:0.###}/{p.MaxDura / 1000f:0.###}。", ChatType.System2); }
                 InventoryRevision++; break;
             case S.MoveItem p:
@@ -292,17 +372,22 @@ public sealed partial class GameState
                     (grid![p.From], grid[p.To]) = (grid[p.To], grid[p.From]);
                 InventoryRevision++; break;
             case S.MergeItem p: ApplyMerge(p); break;
-            case S.SplitItem1 p when p.Grid==MirGridType.Storage:
-                var split=Storage.FirstOrDefault(item=>item?.UniqueID==p.UniqueID);
+            case S.SplitItem1 p when p.Grid is MirGridType.Storage or MirGridType.Inventory:
+                var split=(p.Grid == MirGridType.Storage ? Storage : User?.Inventory)?.FirstOrDefault(item=>item?.UniqueID==p.UniqueID);
                 if(p.Success && split!=null && p.Count>0 && p.Count<split.Count)split.Count-=p.Count;
                 InventoryRevision++;break;
-            case S.SplitItem p when p.Grid==MirGridType.Storage:
+            case S.SplitItem p when p.Grid is MirGridType.Storage or MirGridType.Inventory:
                 Bind(p.Item);
-                if(p.Item!=null && !Storage.Any(item=>item?.UniqueID==p.Item.UniqueID))
+                var splitGrid = p.Grid == MirGridType.Storage ? Storage : User?.Inventory;
+                if(p.Item!=null && splitGrid != null && !splitGrid.Any(item=>item?.UniqueID==p.Item.UniqueID))
                 {
-                    // 原SplitItem在仓库也先从6号格起找，再回填前六格；不得放入未租用的扩展格。
-                    var slot=Enumerable.Range(0,StorageCapacity).OrderBy(i=>i<6).FirstOrDefault(i=>Storage[i]==null,-1);
-                    if(slot>=0)Storage[slot]=p.Item;
+                    var capacity = p.Grid == MirGridType.Storage ? StorageCapacity : splitGrid.Length;
+                    // 拆分不能调用AddItem重新合堆，按原服护符/药品快捷槽优先，再找普通格。
+                    var belt = p.Grid != MirGridType.Inventory ? -1 : p.Item.Info?.Type == ItemType.Amulet ? 4 :
+                        p.Item.Info?.Type is ItemType.Potion or ItemType.Scroll || p.Item.Info?.Type == ItemType.Script && p.Item.Info.Effect == 1 ? 0 : -1;
+                    var slot = belt < 0 ? -1 : Enumerable.Range(belt, Math.Max(0, Math.Min(belt == 0 ? 4 : 6, capacity) - belt)).FirstOrDefault(i => splitGrid[i] == null, -1);
+                    if(slot<0)slot=Enumerable.Range(0,capacity).OrderBy(i=>i<6).FirstOrDefault(i=>splitGrid[i]==null,-1);
+                    if(slot>=0)splitGrid[slot]=p.Item;
                 }
                 InventoryRevision++;break;
             case S.UserStorage p: Storage = p.Storage ?? []; Bind(Storage); InventoryRevision++; break;
@@ -357,6 +442,10 @@ public sealed partial class GameState
             case S.NewMagic p:
                 if (User != null && !p.Hero) { p.Magic.CastTime += Environment.TickCount64; User.Magics.Add(p.Magic); NotifyMessage($"学会技能：{p.Magic.Name}。", ChatType.System2); }
                 break;
+            case S.RemoveMagic p when User != null && (uint)p.PlaceId < User.Magics.Count:
+                var removedSpell = User.Magics[p.PlaceId].Spell;
+                User.Magics.RemoveAt(p.PlaceId); ActiveSkills.Remove(removedSpell); DisabledSkills.Remove(removedSpell);
+                break;
             case S.MagicDelay p:
                 if (p.ObjectID != User?.ObjectID) break;
                 var delayed = User?.Magics.FirstOrDefault(m => m.Spell == p.Spell);
@@ -384,6 +473,14 @@ public sealed partial class GameState
     private void ClearGroup() { GroupMembers.Clear(); GroupMaps.Clear(); GroupLocations.Clear(); GroupRevision++; }
 
     private void Move(uint id, Point point, MirDirection direction, MirAction action) => Actors.GetValueOrDefault(id)?.Move(point, direction, action);
+    private void SetActorShown(uint id, bool show)
+    {
+        if (!Actors.TryGetValue(id, out var actor)) return;
+        if (!actor.IsShinsu) { actor.Hidden = !show; return; }
+        if (actor.Dead) return;
+        actor.Image = (int)(show ? Monster.Shinsu1 : Monster.Shinsu);
+        actor.Move(actor.Location, actor.Direction, show ? MirAction.Show : MirAction.Hide);
+    }
     private void AddItem(UserItem item)
     {
         if (User == null || item.Info == null) return;
@@ -404,11 +501,11 @@ public sealed partial class GameState
         Bind(item.Slots);
     }
     private void Bind(UserItem[]? array) { if (array != null) foreach (var item in array) Bind(item); }
-    private string ItemName(ulong id) => User?.Inventory.Concat(User.Equipment).FirstOrDefault(item => item?.UniqueID == id)?.Info?.FriendlyName ?? "物品";
+    private string ItemName(ulong id) => User?.Inventory.Concat(User.Equipment).Concat(Hero?.Equipment ?? []).FirstOrDefault(item => item?.UniqueID == id)?.Info?.FriendlyName ?? "物品";
     private void Remove(ulong id, int count)
     {
         if (User == null) return;
-        foreach (var array in new[] { User.Inventory, User.Equipment, TradeItems }) RemoveFrom(array, id, count);
+        foreach (var array in new[] { User.Inventory, User.Equipment, Hero?.Equipment, TradeItems }) RemoveFrom(array, id, count);
         RefreshLooks(); InventoryRevision++;
     }
     private static bool ValidSlot(UserItem[]? grid, int slot) => grid != null && (uint)slot < grid.Length;
@@ -438,6 +535,8 @@ public sealed partial class GameState
     }
     public bool CanAcceptQuest(ClientQuestInfo quest) => User != null && !Quests.ContainsKey(quest.Index) && !CompletedQuests.Contains(quest.Index) &&
         Quests.Count < Globals.MaxConcurrentQuests && User.Level >= quest.MinLevelNeeded && User.Level <= quest.MaxLevelNeeded &&
+        (!ClientQuestInfo.IsMengchongDaily(quest.Type, quest.Group) || !QuestDefinitions.Values.Any(q =>
+            ClientQuestInfo.IsMengchongDaily(q.Type, q.Group) && q.Group == quest.Group && (Quests.ContainsKey(q.Index) || CompletedQuests.Contains(q.Index)))) &&
         (quest.ClassNeeded & (RequiredClass)(1 << (int)User.Class)) != 0 && (quest.QuestNeeded <= 0 || CompletedQuests.Contains(quest.QuestNeeded));
     public IEnumerable<ClientQuestInfo> QuestsAt(uint npc) => QuestDefinitions.Values.Where(q =>
         (q.NPCIndex == npc && (CanAcceptQuest(q) || Quests.ContainsKey(q.Index))) || (q.FinishNPCIndex == npc && Quests.ContainsKey(q.Index)))
@@ -455,6 +554,7 @@ public sealed partial class GameState
         if (User == null) return stats;
         foreach (var stat in BaseStats?.Stats ?? []) stats[stat.Type] = stat.Calculate(User.Class, User.Level);
         foreach (var item in User.Equipment.Where(item => item?.Info != null)) { stats.Add(item.Info.Stats); stats.Add(item.AddedStats); }
+        stats[Stat.MagicBlood] = 0; // 储量属于物品，不计入人物战斗属性。
         foreach (var buff in UserBuffs.Values.Where(buff => !buff.Paused && buff.Stats != null)) stats.Add(buff.Stats);
         stats[Stat.HP] += stats[Stat.HP] * stats[Stat.HPRatePercent] / 100;
         stats[Stat.MP] += stats[Stat.MP] * stats[Stat.MPRatePercent] / 100;

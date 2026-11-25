@@ -14,6 +14,7 @@ public partial class Main
     private Label dropHint = null!;
     private SpinBox dropCount = null!;
     private ulong dropCandidate, pendingDrop;
+    private bool dropForHero;
     private long dropSentAt;
 
     private static bool IsItemShortcut(Button button) => button is OriginalItemButton { SlotAssets: not null };
@@ -75,7 +76,7 @@ public partial class Main
     private void InventoryDragInput(InputEvent input)
     {
         if (input is InputEventMouseMotion motion) itemDragPosition = motion.Position;
-        if (SkillPreparationBusy) return;
+        if (SkillPreparationBusy || heroItemPending != null) return;
         if (input is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mouse || State.User == null || scene != "game") return;
         itemDragPosition = mouse.Position;
         if (mouse.Pressed)
@@ -87,8 +88,12 @@ public partial class Main
             inventoryDragShortcut = IsItemShortcut(source.button);
             draggedItem = State.User.Inventory.ElementAtOrDefault(source.slot)?.UniqueID ?? 0;
             if (inventoryDragShortcut && !ItemPresentation.CanQuickUse(State.User.Inventory.ElementAtOrDefault(source.slot))) draggedItem = 0;
-            if (draggedItem == pendingDrop || draggedItem == automation.PendingItem) draggedItem = 0;
-            if (!inventoryDragShortcut && mouse.DoubleClick && draggedItem != 0) { UseItem(draggedItem); draggedItem = 0; }
+            if (inventoryOrganizer.Locked(draggedItem) || draggedItem == pendingDrop || draggedItem == automation.PendingItem || draggedItem == recyclePending?.UniqueID) draggedItem = 0;
+            if (draggedItem != 0) _ = PlaySound(Client.MirObjects.OriginalSoundRules.Item(State.User.Inventory[source.slot]?.Info?.Type));
+            if (!inventoryDragShortcut && mouse.DoubleClick && draggedItem != 0)
+            {
+                UseItem(draggedItem); draggedItem = 0; inventoryDragSource = -1;
+            }
             GetViewport().SetInputAsHandled(); return;
         }
         if (inventoryDragSource < 0) return;
@@ -102,13 +107,16 @@ public partial class Main
         if (from < 0) return;
         var destinationButton = InventoryDropAt(position, State.User.Inventory[from]);
         var storageSlot = StorageCellAtMouse(); var tradeSlot = TradeCellAtMouse(); var guildSlot = GuildCellAtMouse();
-        if (repairCell.IsVisibleInTree() && repairCell.GetGlobalRect().HasPoint(position)) SelectRepairItem(draggedItem);
+        if (equipmentSlots.IsVisibleInTree() && equipmentSlots.GetGlobalRect().HasPoint(position) && ItemPresentation.Slots(State.User.Inventory[from].Info.Type).Length > 0)
+            UseItem(draggedItem);
+        else if (repairCell.IsVisibleInTree() && repairCell.GetGlobalRect().HasPoint(position)) SelectRepairItem(draggedItem);
         else if (guildSlot >= 0) StoreGuildItem(from, guildStorageRow * 8 + guildSlot);
         else if (tradeSlot >= 0) OfferTradeItem(from, tradeSlot);
         else if (storageSlot >= 0) StoreInventory(from, storagePage * Globals.StorageGridSize + storageSlot);
         else if (destinationButton.button != null && destinationButton.slot != from)
         {
             var source = State.User.Inventory[from]; var target = State.User.Inventory[destinationButton.slot];
+            if (target != null && inventoryOrganizer.Locked(target.UniqueID)) return;
             if (target != null && source.CanStackWith(target) && target.Count < target.Info.StackSize)
                 Send(new C.MergeItem { GridFrom = MirGridType.Inventory, GridTo = MirGridType.Inventory, IDFrom = source.UniqueID, IDTo = target.UniqueID });
             else Send(new C.MoveItem { Grid = MirGridType.Inventory, From = from, To = destinationButton.slot });
@@ -122,9 +130,10 @@ public partial class Main
         if (pendingDrop != 0 || State.Trading || State.Me?.Dead != false || World.Loading || MiniMap.Expanded ||
             position.X < 0 || position.X >= 1024 || position.Y < 0 || position.Y >= 616 || GetViewport().GuiGetHoveredControl() != null) return;
         var item = State.User?.Inventory.FirstOrDefault(item => item?.UniqueID == id);
-        if (item?.Info == null || automation.PendingItem == id) return;
+        if (item?.Info == null || automation.PendingItem == id || recyclePending?.UniqueID == id) return;
         if (item.Info.Bind.HasFlag(BindMode.DontDrop) || item.RentalInformation?.BindingFlags.HasFlag(BindMode.DontDrop) == true)
         { Log("该物品不能丢弃。"); return; }
+        dropForHero = HeroInventoryContext;
         dropCandidate = id; dropCount.MaxValue = Math.Min(item.Count, ushort.MaxValue); dropCount.Value = 1;
         dropHint.Text = $"丢弃 {item.Info.FriendlyName}？" + (item.Info.Bind.HasFlag(BindMode.DestroyOnDrop) ? "\n丢弃后会销毁。" : "");
         dropDialog.PopupCentered();
@@ -133,15 +142,16 @@ public partial class Main
     private void ConfirmItemDrop()
     {
         var item = State.User?.Inventory.FirstOrDefault(item => item?.UniqueID == dropCandidate);
-        if (item == null || pendingDrop != 0 || State.Trading || State.Me?.Dead != false || automation.PendingItem == item.UniqueID) return;
+        if (dropForHero != HeroInventoryContext) return;
+        if (item == null || pendingDrop != 0 || heroItemPending != null || State.Trading || State.Me?.Dead != false || automation.PendingItem == item.UniqueID || recyclePending?.UniqueID == item.UniqueID) return;
         var count = (ushort)Math.Clamp(dropCount.Value, 1, Math.Min(item.Count, ushort.MaxValue));
         pendingDrop = item.UniqueID; dropCandidate = 0; dropSentAt = Environment.TickCount64;
-        Send(new C.DropItem { UniqueID = pendingDrop, Count = count });
+        Send(new C.DropItem { UniqueID = pendingDrop, Count = count, HeroInventory = dropForHero });
     }
 
     private void ItemDropPacket(Packet packet)
     {
-        if (packet is S.DropItem { HeroItem: false } result && result.UniqueID == pendingDrop) pendingDrop = 0;
+        if (packet is S.DropItem result && result.UniqueID == pendingDrop) pendingDrop = 0;
         if (packet is S.MapChanged or S.Death) { CancelItemDrag(); dropDialog.Hide(); dropCandidate = 0; }
     }
 }

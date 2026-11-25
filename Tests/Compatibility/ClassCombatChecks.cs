@@ -70,7 +70,7 @@ internal static class ClassCombatChecks
         check(ClassSkillRules.Next(state, preferences, target, true, now) == Spell.Healing, "道士挂机低血未优先治愈");
         state.User.HP = 100;
         check(ClassSkillRules.Next(state, preferences, target, true, now) == Spell.SummonSkeleton, "道士挂机没有补召唤兽");
-        var pet = new Actor { Id = 3, Kind = ObjectType.Monster, MasterObjectId = 1, Location = new Point(10, 11) }; state.Actors[3] = pet;
+        var pet = new Actor { Id = 3, Kind = ObjectType.Monster, MasterObjectId = 1, Location = new Point(10, 11), Image = (int)Monster.BoneFamiliar }; state.Actors[3] = pet;
         Learn(Spell.PetEnhancer);
         check(ClassSkillRules.Next(state, preferences, target, true, now) == Spell.PetEnhancer && ClassSkillRules.PetToEnhance(state) == pet, "宠物强化没有选择本人的未强化宠物");
         pet.Buffs.Add(BuffType.PetEnhancer);

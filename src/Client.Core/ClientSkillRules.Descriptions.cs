@@ -7,14 +7,17 @@ public static partial class ClientSkillRules
     public static long Cooldown(ClientMagic magic) => Math.Max(Math.Max(0, magic.Delay),
         magic.Spell == Spell.FlamingSword ? 10000 : magic.Spell == Spell.CounterAttack ? 7000 : 0);
 
-    public static string Tooltip(ClientMagic magic, bool enabled = true)
+    public static long CooldownRemaining(ClientMagic magic, long now) => IsPassive(magic.Spell) || IsToggle(magic.Spell)
+        ? 0 : Math.Max(0, magic.CastTime + Cooldown(magic) - now);
+
+    public static string Tooltip(ClientMagic magic, bool enabled = true, PlayerActionTiming? timing = null)
     {
         var passive = IsPassive(magic.Spell); var toggle = IsToggle(magic.Spell);
         var kind = passive ? "被动技能" : toggle ? $"攻击开关 · {(enabled ? "已开启" : "已关闭")}" : IsTrigger(magic.Spell) ? "蓄力技能" : "主动技能";
         var cooldown = passive ? "无（被动生效）" : toggle ? "无（随普通攻击生效）" : Seconds(Cooldown(magic)) + "秒";
         var text = $"{magic.Name ?? magic.Spell.ToLocalizedString()} · {magic.Level}级\n{kind}\n效果：{Description(magic.Spell)}\n冷却：{cooldown}";
         if (!passive) text += $"\n基础耗蓝：{magic.BaseCost + magic.LevelCost * magic.Level}";
-        if (!passive && !toggle && !IsTrigger(magic.Spell)) text += $"\n施放间隔：{Seconds(GlobalDelay(magic.Spell))}秒";
+        if (!passive && !toggle && !IsTrigger(magic.Spell)) text += $"\n施放间隔：{Seconds((timing ?? PlayerActionTiming.Default).CastDelay(magic.Spell))}秒";
         if (magic.Range > 0 && !passive) text += $"\n施法距离：{magic.Range}格";
         if (magic.Spell == Spell.Slaying) text += $"\n触发概率：{(Math.Clamp((int)magic.Level, 0, 3) + 1) * 100d / 12:0.#}%（原服概率准备）";
         text += !IsImplemented(magic.Spell) ? "\n当前原引擎尚未实现，无法施放。" : passive ? "\n学习后自动生效，无需设置快捷键。" : toggle

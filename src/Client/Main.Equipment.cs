@@ -1,10 +1,11 @@
 using Godot;
+using Crystal.Native;
 
 public partial class Main
 {
     private void RefreshEquipmentStats(Stats stats)
     {
-        if (!equipment.Visible || equipmentPage is not (1 or 2) || State.User is not { } user) return;
+        if (!equipment.Visible || equipmentPage is not (1 or 2) || EquipmentSubject is not { } user) return;
         string Values(params Stat[] names) => string.Join('\n', names.Select(stat => $"{stat.ToLocalizedString()} {stats[stat]}"));
         if (equipmentPage == 1)
         {
@@ -15,7 +16,7 @@ public partial class Main
         }
         else
         {
-            attributes.Text = $"背包负重 {State.InventoryWeight:0.##}/{stats[Stat.BagWeight]}\n穿戴负重 {State.WearWeight:0.##}/{stats[Stat.WearWeight]}\n手持负重 {State.HandWeight:0.##}/{stats[Stat.HandWeight]}\n" +
+            attributes.Text = $"共用背包 {State.InventoryWeight:0.##}/{State.CalculateStats()[Stat.BagWeight]}\n穿戴负重 {ItemPresentation.EquipmentWeight(user, false):0.##}/{stats[Stat.WearWeight]}\n手持负重 {ItemPresentation.EquipmentWeight(user, true):0.##}/{stats[Stat.HandWeight]}\n" +
                 Values(Stat.MagicResist, Stat.PoisonResist, Stat.HealthRecovery);
             attributesRight.Text = Values(Stat.SpellRecovery, Stat.PoisonRecovery, Stat.Holy, Stat.Freezing, Stat.PoisonAttack);
         }

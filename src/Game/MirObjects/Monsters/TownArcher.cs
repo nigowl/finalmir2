@@ -36,7 +36,7 @@ namespace Server.MirObjects.Monsters
             ShockTime = 0;
 
             Direction = Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
-            Broadcast(new S.ObjectRangeAttack { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation, TargetID = Target.ObjectID });
+            Broadcast(new S.ObjectRangeAttack { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation, TargetID = Target.ObjectID, Target = Target.CurrentLocation });
 
             ActionTime = Envir.Time + 300;
             AttackTime = Envir.Time + AttackSpeed;
@@ -51,7 +51,7 @@ namespace Server.MirObjects.Monsters
         {
             if (Target == null || !CanAttack) return;
 
-            if (InAttackRange() && Envir.Time < FearTime)
+            if (InAttackRange() && (IsTownGuard || Envir.Time < FearTime))
             {
                 Attack();
                 return;
@@ -65,9 +65,7 @@ namespace Server.MirObjects.Monsters
                 return;
             }
 
-            int dist = Functions.MaxDistance(CurrentLocation, Target.CurrentLocation);
-
-            if (dist > AttackRange) // || Target.PKPoints <= 99
+            if (!InAttackRange())
             {
                 Target = null;
 
@@ -78,7 +76,7 @@ namespace Server.MirObjects.Monsters
 
         protected override void FindTarget()
         {
-            for (int d = 0; d <= Info.ViewRange; d++)
+            for (int d = 0; d <= Math.Min(Info.ViewRange, AttackRange); d++)
             {
                 for (int y = CurrentLocation.Y - d; y <= CurrentLocation.Y + d; y++)
                 {
@@ -104,6 +102,10 @@ namespace Server.MirObjects.Monsters
                                     if (playerob.PKPoints < 200 || ob.Hidden && (!CoolEye || Level < ob.Level)) continue;
                                     Target = ob;
                                     return;
+                                case ObjectType.Monster:
+                                    if (!ob.IsAttackTarget(this) || ob.Hidden && (!CoolEye || Level < ob.Level)) continue;
+                                    Target = ob;
+                                    return;
                                 default:
                                     continue;
                             }
@@ -115,7 +117,8 @@ namespace Server.MirObjects.Monsters
 
         protected override bool InAttackRange()
         {
-            return CurrentMap == Target.CurrentMap && Functions.InRange(CurrentLocation, Target.CurrentLocation, AttackRange);
+            return CurrentMap == Target.CurrentMap && Functions.InRange(CurrentLocation, Target.CurrentLocation,
+                IsTownGuard ? Math.Min(Info.ViewRange, AttackRange) : AttackRange);
         }
     }
 }

@@ -19,7 +19,7 @@ public partial class Main
 
     private void BuildGuildStorage()
     {
-        guildTabs.Add(ArtButton(guild, "Title", 105, 233, 34, "行会仓库与资金（仅安全区）", () => SelectGuildPage(3), "仓库"));
+        guildTabs.Add(ArtButton(guild, "Title", 105, 236, 34, "行会仓库与资金（仅安全区）", () => SelectGuildPage(3), "仓库"));
         foreach (var tab in guildTabs) TabStyle(tab, 68);
         guildStoragePage = new Control { Position = new Vector2(0, 60), Size = new Vector2(352, 342) }; guild.AddChild(guildStoragePage);
         Picture(guildStoragePage, "Prguse", 1851, 30, 19);
@@ -27,7 +27,7 @@ public partial class Main
         {
             var index = i;
             var button = new Button { Position = new Vector2(31 + i % 8 * 36, 20 + i / 8 * 36), Size = new Vector2(35, 35), ExpandIcon = true, FocusMode = FocusModeEnum.None };
-            CellStyle(button); button.GuiInput += input => GuildStorageCellInput(index, input);
+            ItemCellStyle(button); button.GuiInput += input => GuildStorageCellInput(index, input);
             guildStoragePage.AddChild(button); guildStorageCells.Add(button);
         }
         ArtButton(guildStoragePage, "Prguse2", 197, 337, 1, "上滚一行", () => ScrollGuildStorage(-1));
@@ -46,6 +46,7 @@ public partial class Main
     public void StoreGuildItem(int from, int to = -1)
     {
         if (!CanChangeGuildStorage || !State.HasGuildPermission(GuildRankOptions.CanStoreItem) || State.User == null || (uint)from >= State.User.Inventory.Length || State.User.Inventory[from] == null) return;
+        if (inventoryOrganizer.Locked(State.User.Inventory[from].UniqueID)) return;
         if (to < 0) to = Array.IndexOf(State.GuildStorage, null);
         if ((uint)to >= State.GuildStorage.Length || State.GuildStorage[to] != null) { Log("行会仓库没有可用空位。"); return; }
         SendGuildStorage(0, from, to);

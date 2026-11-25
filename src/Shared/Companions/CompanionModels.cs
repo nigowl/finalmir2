@@ -119,7 +119,7 @@ public sealed record WorkerEvent(string Kind, Guid Id, string State = "", string
 public sealed record GoalSuggestion(string[] Candidates,string Observation);
 public static class CompanionProtocol
 {
-    public const string Revision = "mir2-companion-12";
+    public const string Revision = "mir2-companion-15";
     public const int MaxMessage = 262144;
     public static string Fingerprint => Revision + ":" + typeof(Packet).Module.ModuleVersionId;
 }
@@ -132,8 +132,8 @@ public sealed record KnownSale(ulong UniqueId, ushort Count);
 public sealed record KnownStorage(ulong UniqueId, ushort Count, bool Take);
 public sealed record KnownPartyPlan(string Invite, string[] Peers, string Leader, KnownGoal? Goal, uint[] Targets);
 public sealed record KnownGoal(string Kind, int MapId, int X, int Y, string Reason, int QuestId = 0, uint NpcId = 0,
-    int[]? MonsterIds = null, KnownExit? NextExit = null, string Key = "", KnownSale[]? SellItems = null, KnownStorage[]? StorageItems = null);
+    int[]? MonsterIds = null, KnownExit? NextExit = null, string Key = "", KnownSale[]? SellItems = null, KnownStorage[]? StorageItems = null, int PublicItemId = 0);
 public sealed record CompanionKnowledge(string Revision, int MapId, bool NoFight, bool NoDrug, bool NoEscape,
     KnownNpc[] Npcs, KnownQuest[] Quests, KnownSpawn[] Spawns, KnownExit[] Exits, bool AllowPk = false, bool InSafeZone = false,
     KnownGoal? Goal = null, KnownEnemy[]? Enemies = null, uint[]? LootTargets = null, bool NoTownTeleport = true, KnownGuildPlan? Guild = null,
-    KnownPartyPlan? Party = null);
+    KnownPartyPlan? Party = null, bool NoRandom = true, bool TownOnRoute = false, bool NoHero = true);

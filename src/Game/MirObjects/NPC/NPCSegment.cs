@@ -449,6 +449,11 @@ namespace Server.MirObjects
 
             switch (parts[0].ToUpper())
             {
+                case "CITYTRAVEL":
+                    if (parts.Length == 6)
+                        acts.Add(new NPCActions(ActionType.CityTravel, parts[1], parts[2], parts[3], parts[4], parts[5]));
+                    break;
+
                 case "MOVE":
                     if (parts.Length < 2) return;
 
@@ -3011,6 +3016,12 @@ namespace Server.MirObjects
 
                 switch (act.Type)
                 {
+                    case ActionType.CityTravel:
+                        if (int.TryParse(param[0], out var mapId) && int.TryParse(param[1], out var travelX) &&
+                            int.TryParse(param[2], out var travelY) && param[3] is "SAFE" or "FIELD" && uint.TryParse(param[4], out var travelGold))
+                            CityTravel.TrySend(player, Envir.GetMap(mapId), new Point(travelX, travelY), param[3] == "SAFE", travelGold);
+                        break;
+
                     case ActionType.Move:
                         {
                             Map targetmap = Envir.GetMapByNameAndInstance(param[0]);

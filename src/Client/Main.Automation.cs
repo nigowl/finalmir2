@@ -1,4 +1,5 @@
 using Crystal.Native;
+using Client.MirObjects;
 using Godot;
 using C = ClientPackets;
 using S = ServerPackets;
@@ -20,6 +21,7 @@ public partial class Main
 
     public override void _Input(InputEvent input)
     {
+        if (input is InputEventKey { Pressed: false }) KeyboardInput(input);
         StopBattleForInput(input);
         ChatResizeInput(input);
         InventoryDragInput(input);
@@ -40,6 +42,7 @@ public partial class Main
         CloseSettings(); if (settingsDialog.Visible) return;
         automation.Resume();
         if (skillEquipmentPending == 0) { skillPreparationPaused = false; classSkillsPaused = false; }
+        CancelQuestNavigation();
         autoBattleEnabled = true; nextBattleScan = noMonsterSince = 0; battleMapIndex = State.Map?.MapIndex ?? 0;
         roaming.Reset(); roamDestination = null;
         destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; RefreshBattleMenu();
@@ -57,8 +60,10 @@ public partial class Main
 
     private void ProcessAutomation()
     {
-        if (!HandshakeReady || World.Loading || State.Me?.Dead != false || settingsDialog.Visible || pendingDrop != 0 || dropDialog.Visible) return;
+        if (!HandshakeReady || World.Loading || State.Me?.Dead != false || settingsDialog.Visible || social.Visible || HeroInventoryContext || npcInput.Visible || heroItemPending != null || pendingDrop != 0 || dropDialog.Visible) return;
         var now = Environment.TickCount64;
+        if (inventoryOrganizer.Pending != null) return;
+        if (recyclePending != null) { ProcessAutoRecycle(now); return; }
         pickup.Tick(now);
         if (!pickup.Paused) pickupNotice = false;
         if (pickup.Paused && !pickupNotice) { pickupNotice = true; Log("自动拣取未收到物品移除回执，已暂停且不会重发；可手动核对，切图或重连后恢复。", ChatType.Hint); }
@@ -71,7 +76,8 @@ public partial class Main
             Send(new C.UseItem { Grid = MirGridType.Inventory, UniqueID = item.UniqueID });
         }
         if (automation.Notice != automationNotice) { automationNotice = automation.Notice; if (automationNotice.Length > 0) Log(automationNotice); }
-        if (automation.PendingItem != 0 || ProcessSkillPreparation(now) || ProcessClassSkills(now)) return;
+        ProcessAutoRecycle(now);
+        if (automation.PendingItem != 0 || recyclePending != null || ProcessSkillPreparation(now) || ProcessClassSkills(now)) return;
         if (!autoBattleEnabled || automation.PendingScrollShape != null || now < nextBattleScan) return;
         nextBattleScan = now + 350;
         if (State.Trading || State.StorageActive || npc.Visible || GuildStorageOpen) return;
@@ -125,8 +131,11 @@ public partial class Main
     private bool BattleSkill(Actor target, long now)
     {
         if (!SmartCombatActive) return false;
-        if (now < spellTime) return true;
+        // 公共施法间隔只限制下一次法术，近身或弓箭普攻仍按原服攻击间隔衔接。
+        if (now < spellTime) return Distance(State.User!.Location, target.Location) > 1 && !OriginalPlayerArt.HasBow(State.User.Class, State.Me!.Weapon);
         var skill = ClientAutomation.SkillFor(State, preferences, target, now);
+        // 与原服CanFly逐格规则一致；隔墙时交回现有寻路，获得射线后再施法。
+        if ((skill == null || ClientSkillRules.NeedsClearShot(skill.Spell)) && !World.ClearShot(target.Location)) return false;
         if (skill == null) return ClassSkillRules.WaitForRanged(State, preferences, target, now);
         if (skillPreparationPaused && SkillMaterials.Required(State, skill.Spell, target).Length > 0) return false;
         var distance = Distance(State.User!.Location, target.Location);

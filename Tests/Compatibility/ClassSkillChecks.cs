@@ -50,7 +50,7 @@ internal static class ClassSkillChecks
         Learn(Spell.SummonSkeleton); Learn(Spell.SummonHolyDeva);
         check(ClassSkillRules.Next(state, preferences, null, false, now) == Spell.SummonSkeleton, "自动召唤忽略用户指定技能");
         check(!ClassSkillRules.Confirmed(state, Spell.SummonSkeleton, 0, 0, 100), "召唤未出现宠物即算成功");
-        state.Actors[3] = new Actor { Id = 3, Kind = ObjectType.Monster, MasterObjectId = 1, Hidden = true };
+        state.Actors[3] = new Actor { Id = 3, Kind = ObjectType.Monster, MasterObjectId = 1, Hidden = true, Image = (int)Monster.BoneFamiliar };
         check(ClassSkillRules.Next(state, preferences, null, false, now) == Spell.None && ClassSkillRules.Confirmed(state, Spell.SummonSkeleton, 0, 0, 100), "已有存活宠物仍召唤");
         state.Actors[3].Dead = true;
         check(ClassSkillRules.Next(state, preferences, null, false, now) == Spell.SummonSkeleton, "宠物死亡后无法补召");

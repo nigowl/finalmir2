@@ -24,7 +24,8 @@ public sealed partial class CompanionService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         runtime.BeforeStop=Shutdown;
-        using var timer=new PeriodicTimer(TimeSpan.FromSeconds(1));
+        using var timer=new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+        var nextControl = DateTimeOffset.MinValue;
         try
         {
             while(await timer.WaitForNextTickAsync(stoppingToken))
@@ -36,7 +37,15 @@ public sealed partial class CompanionService
                 {
                     while(worker.Events.TryDequeue(out var e)){transportFailure=e.Kind=="worker-failed"&&e.Recoverable;await runtime.Invoke(()=>{Handle(e);return true;},stoppingToken);}
                     if(!worker.Running&&live.Values.Any(l=>!l.WorkerStopped)){transportFailure=true;throw new IOException(CompanionSupervision.WorkerExit);}
-                    var commands=await runtime.Invoke(Plan,stoppingToken);
+                    var commands=await runtime.Invoke(() =>
+                    {
+                        var now = DateTimeOffset.UtcNow;
+                        var control = now >= nextControl;
+                        if (control) nextControl = now.AddSeconds(1);
+                        var commands = control ? Plan() : new List<WorkerCommand>();
+                        if (PlanKnowledge(now) is { } knowledge) commands.Add(knowledge);
+                        return commands;
+                    },stoppingToken);
                     if(commands.Any(c=>c.Kind=="recover-worker")){transportFailure=true;throw new IOException("陪玩会话停止后仍无回执，智能托管重建执行组件。");}
                     while(llmResults.TryDequeue(out var answer))commands.Add(answer);
                     if(commands.Count>0)
@@ -103,16 +112,6 @@ public sealed partial class CompanionService
             {
                 var seconds=Math.Min(10,r.Profile.Schedule.DailyMinutes*60-Math.Max(store.TodaySeconds(r,now),store.RollingSeconds(r,now)));
                 store.ReserveOnline(r,now,seconds);l.ReservedUntil=now.AddSeconds(seconds);
-            }
-            if(now>=l.NextKnowledge)
-            {
-                l.NextKnowledge=now.AddSeconds(3);
-                foreach(var key in l.BlockedGoals.Keys.Where(key=>l.BlockedGoals[key]<=now).ToArray())l.BlockedGoals.Remove(key);
-                var knowledge=CompanionKnowledgeReader.Read(store.Get(id),l.BlockedGoals.Keys.ToHashSet(),store.Records.Values.ToArray(),store.Settings.AllowPk);
-                l.Goal=knowledge?.Goal;
-                l.Guild=knowledge?.Guild;
-                if(knowledge!=null)knowledge=knowledge with{AllowPk=store.Settings.AllowPk,Revision=knowledge.Revision+"/"+store.Settings.AllowPk+"/"+knowledge.InSafeZone};
-                if(knowledge!=null&&knowledge.Revision!=l.Knowledge){l.Knowledge=knowledge.Revision;commands.Add(new("knowledge",Id:id,Knowledge:knowledge));}
             }
         }
         foreach(var r in store.Records.Values.Where(r=>!live.ContainsKey(r.Profile.Id)).ToArray())

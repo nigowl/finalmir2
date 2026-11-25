@@ -20,8 +20,7 @@ public sealed class ClientPickup
 
     public static bool Allowed(Actor item, ClientPreferences preferences)
     {
-        var listed = preferences.PickupNames.Contains(Name(item), StringComparer.OrdinalIgnoreCase);
-        return preferences.PickupWhitelist ? listed : !listed;
+        return preferences.ForItem(Name(item)).HasFlag(ItemActions.Pickup);
     }
 
     public Actor? Next(GameState state, ClientPreferences preferences, long now, Func<Actor, bool>? reachable = null)

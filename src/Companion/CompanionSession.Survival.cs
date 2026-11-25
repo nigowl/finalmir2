@@ -11,6 +11,8 @@ public sealed partial class CompanionSession
         preferences.AutoHp=preferences.AutoMp=Knowledge?.NoDrug==false;
         preferences.AutoTown=CompanionSafety.TownAllowed(Knowledge);
         preferences.TownPercent=Crowded(now)?65:35;
+        preferences.AutoRandom=!retiring && Knowledge is { NoRandom:false, InSafeZone:false } && now-monsterAttackedAt<5000;
+        preferences.RandomPercent=35;
         if (protection.NextItem(state, preferences, now) is { } potion)
         { await connection.Send(new C.UseItem { Grid = MirGridType.Inventory, UniqueID = potion.UniqueID }); return true; }
         if (protection.Paused) throw new InvalidOperationException(protection.Notice);

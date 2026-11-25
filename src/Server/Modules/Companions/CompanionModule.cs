@@ -10,7 +10,7 @@ public static class CompanionModule
         var group=management.MapGroup("/companions");
         group.MapGet("/world-checks",(GameRuntime runtime,CancellationToken token)=>runtime.Invoke(CompanionWorldChecks.Read,token));
         group.MapGet("/overview",(GameRuntime runtime,CompanionService service,CancellationToken token)=>runtime.Invoke(service.Overview,token));
-        group.MapGet("",(GameRuntime runtime,CompanionService service,int? page,string? search,CancellationToken token)=>runtime.Invoke(()=>service.List(page??0,search),token));
+        group.MapGet("",(GameRuntime runtime,CompanionService service,int? page,string? search,int? pageSize,string? status,CancellationToken token)=>runtime.Invoke(()=>service.List(page??0,search,pageSize??20,status),token));
         group.MapGet("/{id:guid}",(GameRuntime runtime,CompanionService service,Guid id,CancellationToken token)=>runtime.Invoke(()=>service.Detail(id),token));
         group.MapPost("",(GameRuntime runtime,CompanionService service,CompanionProfile value,CancellationToken token)=>runtime.Invoke(()=>service.Create(value),token));
         group.MapPut("/{id:guid}",(GameRuntime runtime,CompanionService service,Guid id,CompanionProfile value,CancellationToken token)=>runtime.Invoke(()=>

@@ -43,7 +43,7 @@ public partial class Main
             foreach (var peer in new[] { false, true })
             {
                 var cell = new Button { Position = new Vector2(10 + i / 2 * 37, 39 + i % 2 * 33), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
-                CellStyle(cell); (peer ? guest : own).AddChild(cell); (peer ? guestTradeCells : tradeCells).Add(cell);
+                ItemCellStyle(cell); (peer ? guest : own).AddChild(cell); (peer ? guestTradeCells : tradeCells).Add(cell);
                 if (!peer) cell.GuiInput += input => TradeCellInput(index, input);
             }
         }
@@ -75,6 +75,7 @@ public partial class Main
     public void OfferTradeItem(int from, int to = -1)
     {
         if (!State.Trading || tradeBusy || State.PendingTradeGold != 0 || State.User == null || (uint)from >= State.User.Inventory.Length || State.User.Inventory[from] == null) return;
+        if (inventoryOrganizer.Locked(State.User.Inventory[from].UniqueID)) return;
         if (to < 0) to = Array.IndexOf(State.TradeItems, null);
         if ((uint)to >= State.TradeItems.Length || State.TradeItems[to] != null) { Log("交易栏已满。"); return; }
         tradeBusy = true; Send(new C.DepositTradeItem { From = from, To = to }); RenderTrade();

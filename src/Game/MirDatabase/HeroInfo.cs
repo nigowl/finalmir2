@@ -11,6 +11,10 @@ namespace Server.MirDatabase
         public byte AutoHPPercent;
         public byte AutoMPPercent;
         public ushort SealCount;
+        public DateTime ReviveAtUtc;
+        public const int RecoveryDelay = 60000;
+        public int RecoveryRemaining(DateTime nowUtc) => HP == 0
+            ? (int)Math.Clamp(Math.Ceiling((ReviveAtUtc - nowUtc).TotalMilliseconds), 0, RecoveryDelay) : 0;
         public HeroInfo(ClientPackets.NewHero p)
         {
             Name = p.Name;
@@ -92,6 +96,9 @@ namespace Server.MirDatabase
 
             if (version > 101)
                 SealCount = reader.ReadUInt16();
+            // 旧死亡存档没有时间，升级后至少等待一次完整恢复期。
+            ReviveAtUtc = customVersion >= 3 ? DateTime.FromBinary(reader.ReadInt64()) :
+                HP == 0 ? DateTime.UtcNow.AddMilliseconds(RecoveryDelay) : DateTime.MinValue;
 
         }
 
@@ -144,6 +151,7 @@ namespace Server.MirDatabase
             writer.Write(AutoHPPercent);
             writer.Write(AutoMPPercent);
             writer.Write(SealCount);
+            writer.Write(ReviveAtUtc.ToBinary());
         }
 
         public override int ResizeInventory()

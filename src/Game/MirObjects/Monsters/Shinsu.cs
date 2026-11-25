@@ -68,7 +68,8 @@ namespace Server.MirObjects.Monsters
                 return;
             }
 
-            ActionTime = Envir.Time + 300;
+            // 释放喷火后的动作还未结束，此时不能转身或走动覆盖剩余帧。
+            ActionTime = Envir.Time + 600;
             AttackTime = Envir.Time + AttackSpeed;
             ShockTime = 0;
 
@@ -86,6 +87,13 @@ namespace Server.MirObjects.Monsters
             base.Spawned();
 
             Summoned = true;
+        }
+
+        public override void Die()
+        {
+            if (Dead) return;
+            base.Die();
+            DeadTime = Envir.Time + 1500;
         }
 
         public override Packet GetInfo()

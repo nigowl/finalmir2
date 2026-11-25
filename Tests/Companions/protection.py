@@ -79,12 +79,18 @@ try:
             detail=call(base+'/'+ident);c=call('/management/admin/characters/'+str(cid));rounds.append({'seconds':time.monotonic()-began,'character':c,'runtime':detail['runtime'],'events':detail['events']})
             (root/(mode+'-samples.json')).write_text(json.dumps(rounds,ensure_ascii=False))
             assert not detail['row']['lastError'] and not any(e['kind'] in ['death','protection-rejected'] for e in detail['events']),detail
-            if mode=='denied':
+            if mode in ('denied','random-denied'):
                 assert c['mapId']==fixture['field'] and sum(i['count'] for i in c['inventory'] if i['itemId']==fixture['scroll'])==2
-                return c if c['online'] and time.monotonic()-began>=3 else False
+                return c if c['online'] and time.monotonic()-began>=3 and (mode=='denied' or c['hp']<before['hp'] or
+                    any(r['character']['online'] and r['character']['hp']>c['hp'] for r in rounds)) else False
+            if mode=='random':
+                return c if any(e['kind']=='escape' and '随机传送卷' in e['text'] for e in detail['events']) else False
             return c if c['online'] and c['hp']>0 and c['mapId']==fixture['town'] else False
         result=wait(observed,20)
-        if mode!='denied':
+        if mode=='random':
+            assert result['mapId']==fixture['field'] and (result['x'],result['y'])!=(20,20),result
+            assert sum(i['count'] for i in result['inventory'] if i['itemId']==fixture['scroll'])==1,result
+        elif mode not in ('denied','random-denied'):
             assert max(abs(result['x']-10),abs(result['y']-10))<=2 and (result['x'],result['y'])!=(10,10),result
             assert sum(i['count'] for i in result['inventory'] if i['itemId']==fixture['scroll'])==(2 if mode=='revive' else 1),result
         if mode=='crowd':assert any((r['runtime'] or {}).get('hp',68)<68 for r in rounds),'未观察到真实扣血'

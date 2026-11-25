@@ -171,6 +171,7 @@
   "Stat_ManaPenaltyPercent": "魔力额外消耗百分比",
   "Stat_TeleportManaPenaltyPercent": "传送魔力额外消耗百分比",
   "Stat_Hero": "英雄",
+  "Stat_MagicBlood": "魔血储量",
   "Stat_Unknown": "未知",
   "Spell_None": "无",
   "Spell_Fencing": "基本剑术",

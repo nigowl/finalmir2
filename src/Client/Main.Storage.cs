@@ -26,7 +26,7 @@ public partial class Main
         for (var page = 0; page < Mir2.StorageRules.MaxPages; page++)
         {
             var selected = page;
-            var tab = ArtButton(storage, "Title", 743, 8 + page * 72, 34, Mir2.StorageRules.PageName(page), () => SelectStoragePage(selected), Mir2.StorageRules.PageName(page));
+            var tab = ArtButton(storage, "Title", 743, 8 + page * (68 + ClientUi.Gap), 34, Mir2.StorageRules.PageName(page), () => SelectStoragePage(selected), Mir2.StorageRules.PageName(page));
             TabStyle(tab, 68); storageTabs.Add(tab);
         }
         var passwordButton = ArtButton(storage, "Title", 113, 328, 33, "修改仓库密码", ChangeStoragePassword, "密码");
@@ -37,7 +37,7 @@ public partial class Main
         {
             var slot = index;
             var button = new ItemTipButton { Position = new Vector2(9 + index % 10 * 37, 60 + index / 10 * 33), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
-            CellStyle(button); button.GuiInput += input => StorageCellInput(slot, input);
+            ItemCellStyle(button); button.GuiInput += input => StorageCellInput(slot, input);
             storageGrid.AddChild(button); storageButtons.Add(button);
         }
         storageLockedPage = Picture(storage, "Prguse", 2443, 8, 59);
@@ -155,6 +155,7 @@ public partial class Main
     public void StoreInventory(int from, int to = -1)
     {
         if (!CanUseStorage || storageBusy || State.User == null || (uint)from >= State.User.Inventory.Length || State.User.Inventory[from] == null) return;
+        if (inventoryOrganizer.Locked(State.User.Inventory[from].UniqueID)) return;
         if (to < 0) to = Enumerable.Range(0, StorageCapacity).FirstOrDefault(i => State.Storage[i] == null, -1);
         if ((uint)to >= StorageCapacity || State.Storage[to] != null) { Log("仓库没有可用空位。"); return; }
         storageBusy = true; Send(new C.StoreItem { From = from, To = to }); RenderStorage();

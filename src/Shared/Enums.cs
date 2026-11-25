@@ -1715,6 +1715,14 @@ public enum ServerPacketIds : short
     StorageUnlockResult,
     StoragePasswordResult,
     CharacterLocation,
+    PublicShop,
+    PublicShopResult,
+    QuestNavigation,
+    RecycleItemResult,
+    ObjectVitals,
+    PublicShopTabs,
+    HeroRecovery,
+    DeleteHeroResult,
 }
 
 public enum ClientPacketIds : short
@@ -1880,6 +1888,14 @@ public enum ClientPacketIds : short
     SetStoragePassword,
     RemoveStoragePassword,
     CharacterLocationRequest,
+    PublicShopRequest,
+    PublicShopBuy,
+    QuestNavigationRequest,
+    RecycleItem,
+    HealthDisplayRequest,
+    PublicShopCatalogRequest,
+    HeroRecoveryRequest,
+    DeleteHeroRequest,
 }
 
 public enum ConquestType : byte

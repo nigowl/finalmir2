@@ -26,6 +26,7 @@ public sealed class CompanionWorker
         var info = new ProcessStartInfo(File.Exists(native) ? native : "dotnet")
         { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = ExecutableDirectory };
         if (!File.Exists(native)) info.ArgumentList.Add(Path.Combine(ExecutableDirectory, "Mir2.Companion.dll"));
+        info.Environment["MIR2_COMPANION_PLAYER_TIMING"] = JsonSerializer.Serialize(Settings.PlayerTiming);
         process = Process.Start(info) ?? throw new IOException("无法启动陪玩工作进程。");
         StartedAt=DateTimeOffset.UtcNow;
         reader = Read(process.StandardOutput); errors = ReadErrors(process.StandardError);

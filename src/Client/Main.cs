@@ -16,9 +16,9 @@ public partial class Main : Control
     public bool HandshakeReady;
     private string scene = "login";
     private Control login = null!, selection = null!, game = null!, inventory = null!, equipment = null!, npc = null!, skills = null!;
-    private LineEdit account = null!, password = null!, server = null!, characterName = null!, chat = null!;
+    private LineEdit account = null!, password = null!, characterName = null!, chat = null!;
     private OptionButton characterClass = null!, gender = null!;
-    private Label status = null!, vitals = null!, gold = null!, location = null!;
+    private Label status = null!, gold = null!, location = null!;
     private RichTextLabel messages = null!;
     private VBoxContainer characterList = null!, npcText = null!, npcGoods = null!, skillList = null!;
     private Control equipmentSlots = null!;
@@ -29,12 +29,13 @@ public partial class Main : Control
     private readonly List<Button> equipmentButtons = new();
     private int selectedCharacter;
     private readonly List<(Button button, int slot)> inventorySlots = new();
+    private OriginalArt inventoryGrid = null!;
     private readonly List<(TextureRect rect, string library, int index)> pictures = new();
     private readonly List<(Button button, UserItem item)> icons = new();
     private Point? destination;
     private uint actionTarget;
     private bool running, moving;
-    private long moveTime, attackTime, spellTime;
+    private long moveTime, lastAcceptedMoveTime, attackTime, spellTime;
     private long lastMoved;
     private double hudRefresh;
     private Point confirmedLocation;
@@ -62,7 +63,11 @@ public partial class Main : Control
         var theme = new Theme { DefaultFont = font, DefaultFontSize = ClientUi.Body };
         Theme = theme;
         GetWindow().Theme = theme;
+        GetTree().NodeAdded += StyleOptionPopup;
         BuildScreenEffects(); BuildLogin(); BuildSelection(); BuildGame();
+        Assets.Sprite("ChrSel", 0);
+        Assets.Sprite("Prguse", 65);
+        PrepareButtonTheme();
         var startupAccount = Environment.GetEnvironmentVariable("MIR2_LOGIN_ACCOUNT");
         var startupPassword = Environment.GetEnvironmentVariable("MIR2_LOGIN_PASSWORD");
         Environment.SetEnvironmentVariable("MIR2_LOGIN_ACCOUNT", null); Environment.SetEnvironmentVariable("MIR2_LOGIN_PASSWORD", null);
@@ -72,9 +77,9 @@ public partial class Main : Control
         State.ItemMessage += (text, type) => { if (scene == "game") ShowItemNotice(text, type); };
         var address = OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--server="))?[9..]
             ?? Environment.GetEnvironmentVariable("MIR2_SERVER") ?? "http://127.0.0.1:5080";
-        server.Text = address;
         _ = Connect(address);
-        if (OS.GetCmdlineUserArgs().Any(a => a is "--smoke" or "--verify-save" or "--reference-world" or "--verify-auto-login" or "--verify-ui" or "--verify-quest-ui" or "--verify-storage-pages" or "--profile-actors" or "--verify-actors" or "--profile-motion" or "--verify-smooth" or "--verify-movement" or "--verify-automation" or "--verify-accounts" or "--verify-combat" or "--verify-npc-templates" or "--verify-shadows" or "--verify-item-ui" or "--verify-item-weight" or "--verify-npc-shop" or "--verify-class-selection"))
+        if (OS.GetCmdlineUserArgs().Any(a => a is "--verify-grid-movement" or "--verify-default-client" or "--verify-social" or "--verify-hero-management" or "--verify-hero-inventory" or "--verify-hero-recovery" or "--verify-gm-login" or "--verify-health-display" or "--verify-movement-state" or "--verify-npc-input" or "--verify-skill-removal" or "--verify-name-colours" or "--verify-guild-war" or "--verify-guild-creation" or "--verify-object-names" or "--verify-item-owners" or "--verify-shop-catalog")) AddChild(new NativeSmoke { Client = this });
+        if (OS.GetCmdlineUserArgs().Any(a => a is "--verify-client-polish" or "--verify-city-travel" or "--verify-connection-failures" or "--verify-resource-startup" or "--verify-visual-fixes" or "--verify-locomotion" or "--verify-action-items" or "--verify-audio" or "--smoke" or "--verify-save" or "--reference-world" or "--verify-auto-login" or "--verify-ui" or "--verify-quest-ui" or "--verify-public-services" or "--verify-storage-pages" or "--profile-actors" or "--verify-actors" or "--profile-motion" or "--verify-smooth" or "--verify-movement" or "--verify-automation" or "--verify-accounts" or "--verify-combat" or "--verify-npc-templates" or "--verify-shadows" or "--verify-item-ui" or "--verify-inventory" or "--verify-item-weight" or "--verify-npc-shop" or "--verify-class-selection"))
             AddChild(new NativeSmoke { Client = this });
         if (OS.GetCmdlineUserArgs().Any(a => a is "--spell-effects" or "--class-combos")) AddChild(new NativeSpellSmoke { Client = this });
     }
@@ -111,7 +116,18 @@ public partial class Main : Control
             panel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty()); skinnedPanels.Remove(panel);
         }
         var image = new TextureRect { Position = new Vector2(x, y), MouseFilter = MouseFilterEnum.Ignore, TextureFilter = TextureFilterEnum.Nearest };
-        parent.AddChild(image); pictures.Add((image, library, index)); return image;
+        parent.AddChild(image); pictures.Add((image, library, index));
+        PreparePicture(image, library, index);
+        return image;
+    }
+    private void PreparePicture(TextureRect rect, string library, int index)
+    {
+        if (rect.Texture == null && Assets.Sprite(library, index) is { } image)
+        {
+            rect.Texture = library == "Title" && index == 196 && rect.GetParent() == inventory
+                ? OriginalArt.InventorySkin(image) : OriginalArt.InterfaceTexture(library, index, image);
+            rect.Size = rect.Texture.GetSize();
+        }
     }
     private Control Panel(Control parent, float x, float y, float width, float height)
     {
@@ -120,12 +136,13 @@ public partial class Main : Control
         if (originalPanelSkin != null) panel.AddThemeStyleboxOverride("panel", originalPanelSkin);
         skinnedPanels.Add(panel); parent.AddChild(panel); return panel;
     }
-    private static void CellStyle(Button button, float inset = 1)
+    private static void ItemCellStyle(Button button) => CellStyle(button, ClientUi.SlotInset, ClientUi.SlotInset);
+    private static void CellStyle(Button button, float inset = 1, float verticalInset = 1)
     {
-        var normal = new StyleBoxEmpty { ContentMarginLeft = inset, ContentMarginRight = inset, ContentMarginTop = 1, ContentMarginBottom = 1 };
+        var normal = new StyleBoxEmpty { ContentMarginLeft = inset, ContentMarginRight = inset, ContentMarginTop = verticalInset, ContentMarginBottom = verticalInset };
         foreach (var state in new[] { "normal", "disabled", "focus" }) button.AddThemeStyleboxOverride(state, normal);
         var hover = new StyleBoxFlat { BgColor = new GColor(1, 1, 0.5f, 0.12f), BorderColor = new GColor("b59b5d"), BorderWidthLeft = 1, BorderWidthRight = 1, BorderWidthTop = 1, BorderWidthBottom = 1,
-            ContentMarginLeft = inset, ContentMarginRight = inset, ContentMarginTop = 1, ContentMarginBottom = 1 };
+            ContentMarginLeft = inset, ContentMarginRight = inset, ContentMarginTop = verticalInset, ContentMarginBottom = verticalInset };
         button.AddThemeStyleboxOverride("hover", hover);
         var pressed = (StyleBoxFlat)hover.Duplicate(); pressed.BgColor = new GColor(1, 1, 0.5f, 0.25f);
         button.AddThemeStyleboxOverride("pressed", pressed); button.AddThemeStyleboxOverride("hover_pressed", pressed);
@@ -150,20 +167,19 @@ public partial class Main : Control
         var register = ArtButton(frame, "Title", 323, 60, 176, "打开账号注册", OpenRegistration, "注册账号");
         var quit = ArtButton(frame, "Title", 329, 166, 176, "退出游戏", () => _ = Quit(), "退出游戏"); register.Size = quit.Size = new Vector2(100, ClientUi.ButtonHeight);
         Text(login, "Godot 原生客户端 · 原 TCP 协议 · 原版资源按需缓存", 320, 520, 490);
-        server = Edit(login, 308, 666, 300, "资源服务地址");
-        Button(login, "连接", 620, 667, 85, () => _ = Connect(server.Text));
         status = Text(login, "连接中…", 230, 712, 700);
-        BuildAccountDialogs();
+        BuildAccountDialogs(); BuildConnectionDialog();
     }
     private void BuildSelection()
     {
         selection = new Control { Size = new Vector2(1024, 768), Visible = false, MouseFilter = MouseFilterEnum.Ignore }; AddChild(selection);
+        Picture(selection, "Prguse", 65, 0, 0);
         characterPreview = new OriginalArt { Assets = Assets, State = State, Page = "select" }; selection.AddChild(characterPreview);
         var selectTitle = Text(selection, "选择角色", 445, 20, 134); selectTitle.HorizontalAlignment = HorizontalAlignment.Center; selectTitle.AddThemeFontSizeOverride("font_size", ClientUi.Title);
         var gameTitle = Text(selection, "传奇2", 416, 58, 192); gameTitle.HorizontalAlignment = HorizontalAlignment.Center; gameTitle.AddThemeFontSizeOverride("font_size", ClientUi.Title);
         selectionLocation = Text(selection, "", 199, 613, 174); selectionLocation.Size = new Vector2(174, 19);
         selectionLocation.HorizontalAlignment = HorizontalAlignment.Center; selectionLocation.ClipText = true; selectionLocation.AddThemeFontSizeOverride("font_size", 10);
-        characterList = new VBoxContainer { Position = new Vector2(637, 194), Size = new Vector2(278, 390) }; characterList.AddThemeConstantOverride("separation", 24); selection.AddChild(characterList);
+        characterList = new VBoxContainer { Position = new Vector2(637, 194), Size = new Vector2(278, 390) }; characterList.AddThemeConstantOverride("separation", 0); selection.AddChild(characterList);
         var enter = ArtButton(selection, "Title", 340, 132, 736, "进入游戏", () => { if (pendingCharacterDeletion < 0 && State.Characters.Count > selectedCharacter) Send(new C.StartGame { CharacterIndex = State.Characters[selectedCharacter].Index }); }, "进入游戏");
         var create = ArtButton(selection, "Title", 343, 296, 736, "创建角色", OpenCharacterCreation, "创建角色");
         var quit = ArtButton(selection, "Title", 352, 788, 736, "退出", () => _ = Quit(), "退出游戏");
@@ -182,9 +198,11 @@ public partial class Main : Control
         skills = new ScrollContainer { Position = new Vector2(12, 96), Size = new Vector2(240, 270), Visible = false,
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled }; equipment.AddChild(skills);
         skillList = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill }; skills.AddChild(skillList);
-        BuildQuests(); BuildGroup(); BuildTrade(); BuildGuild();
+        skillList.AddThemeConstantOverride("separation", ClientUi.SkillRowGap);
+        BuildPublicShop(); BuildQuests(); BuildGroup(); BuildTrade(); BuildGuild(); BuildSocial();
         BuildSettings();
         BuildItemDrag();
+        BuildSkillLearning();
         BuildAutoBattleConfirmation();
         foreach (var dialog in new[] { inventory, equipment, npc }) Draggable(dialog);
     }
@@ -200,7 +218,7 @@ public partial class Main : Control
     }
     private void BuildInventory()
     {
-        inventory = Panel(game, 700, 35, 316, 236); inventory.Visible = false;
+        inventory = Panel(game, 700, 35, 316, 236 + ClientUi.InventoryExtraHeight); inventory.Visible = false;
         Picture(inventory, "Title", 196, 0, 0, nativeFrame: true); WindowTitle(inventory, "背包", 90);
         var questTab = ArtButton(inventory, "Title", 739, 112, 4, "任务物品", () => { questBag.Visible = !questBag.Visible; RenderQuestBag(); }, "任务物品");
         questTab.Name = "InventoryQuestItems"; questTab.Size = new Vector2(82, ClientUi.ButtonHeight);
@@ -208,24 +226,18 @@ public partial class Main : Control
         var warehouse = Button(inventory, "仓库物品", 198, 4, 82, OpenInventoryStorage); warehouse.Name = "InventoryStorage";
         ArtButton(inventory, "Prguse2", 360, 289, 3, "关闭背包", () => inventory.Hide());
         inventory.AddChild(new OriginalArt { Assets = Assets, State = State, Page = "inventory" });
-        bagGold = Text(inventory, "", 40, 212, 111); bagGold.Size = new Vector2(111, 14); bagGold.AddThemeFontSizeOverride("font_size", 10);
-        bagWeight = Text(inventory, "", 182, 212, 82); bagWeight.Name = "BagWeight"; bagWeight.Size = new Vector2(82, 14);
+        bagGold = Text(inventory, "", 40, 212 + ClientUi.InventoryExtraHeight, 111); bagGold.Size = new Vector2(111, 14); bagGold.AddThemeFontSizeOverride("font_size", 10);
+        bagWeight = Text(inventory, "", 182, 212 + ClientUi.InventoryExtraHeight, 82); bagWeight.Name = "BagWeight"; bagWeight.Size = new Vector2(82, 14);
         bagWeight.HorizontalAlignment = HorizontalAlignment.Center; bagWeight.AddThemeFontSizeOverride("font_size", ClientUi.Small);
-        bagFree = Text(inventory, "", 268, 212, 26); bagFree.Name = "BagFree"; bagFree.Size = new Vector2(26, 14); bagFree.HorizontalAlignment = HorizontalAlignment.Center; bagFree.AddThemeFontSizeOverride("font_size", 10);
-        // 原快捷格仍是库存前六格；背包完整呈现46格，旧装备不会因快捷栏过滤而失去入口。
-        var scroll = new ScrollContainer { Name = "InventoryScroll", Position = new Vector2(9, 37), Size = new Vector2(297, 165),
+        bagFree = Text(inventory, "", 268, 212 + ClientUi.InventoryExtraHeight, 26); bagFree.Name = "BagFree"; bagFree.Size = new Vector2(26, 14); bagFree.HorizontalAlignment = HorizontalAlignment.Center; bagFree.AddThemeFontSizeOverride("font_size", 10);
+        // 前六格独立显示在快捷栏，普通背包从第七格开始。
+        var scroll = new ScrollContainer { Name = "InventoryScroll", Position = new Vector2(9, 37), Size = new Vector2(297, ClientUi.InventoryRows * 33),
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, VerticalScrollMode = ScrollContainer.ScrollMode.Auto };
         inventory.AddChild(scroll);
         var bar = scroll.GetVScrollBar();
         foreach (var state in new[] { "scroll", "grabber", "grabber_highlight", "grabber_pressed" })
             bar.AddThemeStyleboxOverride(state, new StyleBoxFlat { BgColor = new GColor(state == "scroll" ? "19150e" : "82704c"), ContentMarginLeft = 1, ContentMarginRight = 1 });
-        var grid = new OriginalArt { Assets = Assets, State = State, Page = "inventory-grid", CustomMinimumSize = new Vector2(295, 198), MouseFilter = MouseFilterEnum.Ignore }; scroll.AddChild(grid);
-        for (var slot = 0; slot < 46; slot++)
-        {
-            var index = slot < 40 ? slot + 6 : slot - 40;
-            var button = ItemButton(grid, index, slot % 8 * 37, slot / 8 * 33); button.Name = $"InventorySlot{index}";
-            inventorySlots.Add((button, index));
-        }
+        inventoryGrid = new OriginalArt { Assets = Assets, State = State, Page = "inventory-grid", MouseFilter = MouseFilterEnum.Ignore }; scroll.AddChild(inventoryGrid);
         for (var i = 0; i < 6; i++)
         {
             var position = OriginalArt.QuickSlotPosition(i);
@@ -238,34 +250,28 @@ public partial class Main : Control
             key.AddThemeColorOverride("font_shadow_color", Colors.Black); key.AddThemeConstantOverride("shadow_offset_x", 1); key.AddThemeConstantOverride("shadow_offset_y", 1);
         }
     }
+    private void ResizeInventoryGrid(UserItem[] items)
+    {
+        var slots = ItemPresentation.BagSlots(items);
+        if (inventoryGrid.GetChildCount() == slots.Length && inventorySlots.Where(pair => pair.button.GetParent() == inventoryGrid)
+            .Select(pair => pair.slot).SequenceEqual(slots)) return;
+        inventorySlots.RemoveAll(pair => pair.button.GetParent() == inventoryGrid);
+        Clear(inventoryGrid);
+        inventoryGrid.CustomMinimumSize = new Vector2(295, (slots.Length + ClientUi.InventoryColumns - 1) / ClientUi.InventoryColumns * 33);
+        for (var slot = 0; slot < slots.Length; slot++)
+        {
+            var index = slots[slot];
+            var button = ItemButton(inventoryGrid, index, slot % ClientUi.InventoryColumns * 37, slot / ClientUi.InventoryColumns * 33);
+            button.Name = $"InventorySlot{index}"; inventorySlots.Add((button, index));
+        }
+    }
     private Button ItemButton(Control parent, int slot, float x, float y)
     {
         var button = new OriginalItemButton { Position = new Vector2(x, y), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
-        CellStyle(button);
+        ItemCellStyle(button);
         parent.AddChild(button); return button;
     }
 
-    public async Task Connect(string address)
-    {
-        if (connecting) return;
-        connecting = true;
-        try
-        {
-            Connection.Dispose();
-            ResetAccountRequests();
-            State.Reset();
-            SetScene("login");
-            lastResourceError = "";
-            originalButtonThemeReady = false;
-            foreach (var (rect, _, _) in pictures) if (IsInstanceValid(rect)) rect.Texture = null;
-            HandshakeReady = false; status.Text = "连接资源与原 TCP 服务端…";
-            await Assets.Initialize(address);
-            await Connection.Connect(Assets.Host, Assets.GamePort);
-            _ = PlaySound(10146, true);
-        }
-        catch (Exception error) { status.Text = error.Message; Log(error.Message); }
-        finally { connecting = false; }
-    }
     public void Login(string id, string secret)
     {
         if (accountRequest != null) { status.Text = "账号操作正在等待回执，请稍候。"; return; }
@@ -283,8 +289,9 @@ public partial class Main : Control
     }
     public void Send(Packet packet)
     {
-        if (packet is C.CallNPC call) { InvalidateNpcPurchase(); npcDialogueId = call.ObjectID; }
-        if (HandshakeReady || packet is C.ClientVersion) _ = Connection.Send(packet);
+        if (BlockHeroItemConflict(packet)) { Log("正在等待英雄物品回执，请稍候。", ChatType.Hint); return; }
+        if (packet is C.CallNPC call) { CloseNpcInput(); InvalidateNpcPurchase(); npcDialogueId = call.ObjectID; }
+        if (HandshakeReady || packet is C.ClientVersion) { inventoryOrganizer.Sent(packet); _ = Connection.Send(packet); }
     }
     public override void _Process(double delta)
     {
@@ -293,15 +300,20 @@ public partial class Main : Control
         UpdateDisplay(delta);
         for (var handled = 0; handled < 1024 && Connection.Received.TryDequeue(out var packet); handled++)
         {
-            State.Apply(packet); Handle(packet); PacketReceived?.Invoke(packet);
+            AudioItemPacket(packet); State.Apply(packet); Handle(packet); PacketReceived?.Invoke(packet);
         }
-        while (Connection.Errors.TryDequeue(out var error)) { Connection.Received.Clear(); State.Reset(); HandshakeReady = false; ResetAccountRequests(); SetScene("login"); status.Text = error; Log(error); }
+        while (Connection.Errors.TryDequeue(out var error))
+        {
+            Connection.Received.Clear(); State.Reset(); inventoryOrganizer.Reset(); HandshakeReady = false; ResetAccountRequests(); SetScene("login"); status.Text = error; Log(error);
+            if (connecting) connectionHandshake?.TrySetException(new IOException(error));
+            else ShowConnectionFailure(error);
+        }
         ProcessCharacterCreation(Environment.TickCount64);
         ProcessAccountRequests(Environment.TickCount64);
+        UpdateConnectionDialog(Environment.TickCount64);
         if (Assets.Errors.TryDequeue(out var resourceError)) { lastResourceError = resourceError; GD.PrintErr(resourceError); }
         pictures.RemoveAll(p => !IsInstanceValid(p.rect));
-        foreach (var (rect, library, index) in pictures)
-            if (rect.Texture == null) { var image = Assets.Sprite(library, index); if (image != null) { rect.Texture = OriginalArt.InterfaceTexture(library, index, image); rect.Size = rect.Texture.GetSize(); } }
+        foreach (var (rect, library, index) in pictures) PreparePicture(rect, library, index);
         foreach (var (button, item) in icons)
             if (IsInstanceValid(button) && item.Info != null)
             {
@@ -311,10 +323,10 @@ public partial class Main : Control
         if (State.User != null && scene == "game")
         {
             hudRefresh -= delta;
-            if (hudRefresh <= 0) { UpdateHud(); RefreshSkillBar(); hudRefresh = .1; }
-            if (revision != State.InventoryRevision) { RenderInventory(); RenderStorage(); RenderQuestBag(); RenderTrade(); RenderGuildStorage(); revision = State.InventoryRevision; }
-            ProcessStorage(); ProcessQuests(); ProcessGroup(); ProcessTrade(); ProcessGuild(); ProcessAutomation(); ProcessActions(); ProcessFootsteps();
-            ProcessNpc();
+            if (hudRefresh <= 0) { UpdateHud(); RefreshSkillBar(); RefreshCompanionPortraits(); hudRefresh = .1; }
+            if (revision != State.InventoryRevision) { RenderInventory(); RenderStorage(); RenderQuestBag(); RenderTrade(); RenderGuildStorage(); if (settingsDialog.Visible && itemRuleOwnedOnly.ButtonPressed) FillItemRuleRows(); revision = State.InventoryRevision; }
+            ProcessPublicShop(); ProcessQuestNavigation(); ProcessStorage(); ProcessQuests(); ProcessGroup(); ProcessTrade(); ProcessGuild(); ProcessSocial(); ProcessAutomation(); ProcessActions(); ProcessFootsteps();
+            ProcessNpc(); ProcessInventoryOrganization(Environment.TickCount64);
         }
         ProcessItemDrag();
         ProcessItemNotices(Environment.TickCount64);
@@ -322,27 +334,48 @@ public partial class Main : Control
     }
     public override void _Draw()
     {
-        if (scene == "game" || !Assets.Ready) return;
-        var background = Assets.Sprite(scene == "login" ? "ChrSel" : "Prguse", scene == "login" ? 0 : 65);
+        if (scene != "login") return;
+        var background = Assets.Sprite("ChrSel", 0);
         if (background != null) DrawTexture(background.Texture, Vector2.Zero);
     }
     private void Handle(Packet packet)
     {
+        HeroManagementPacket(packet);
+        if (packet is S.ManageHeroes or S.ChangeHero) RequestHeroRecovery();
+        SkillLearningPacket(packet);
+        // 英雄资料已在 GameState 处理，不能触发玩家登录时的资产锁和画面重置。
+        if (packet is S.HeroInformation)
+        {
+            if (HeroInventoryContext) { RenderInventory(); RenderSkills(); }
+            return;
+        }
+        NpcInputPacket(packet);
+        HeroItemPacket(packet);
+        inventoryOrganizer.Observe(packet);
+        AutoRecyclePacket(packet);
         AutomationPacket(packet);
         AudioPacket(packet);
         TradePacket(packet);
         GuildPacket(packet);
         ItemDropPacket(packet);
         NpcTransactionPacket(packet);
+        PublicShopPacket(packet); QuestNavigationPacket(packet);
         World.SpellPacket(packet);
         SkillPreparationPacket(packet);
         ClassSkillPacket(packet);
         switch (packet)
         {
             case S.Connected: Send(new C.ClientVersion { VersionHash = [] }); break;
-            case S.Disconnect p: HandshakeReady = false; Connection.Dispose(); ResetAccountRequests(); SetScene("login"); status.Text = $"服务端断开连接：{p.Reason}。点击连接后重新登录。"; break;
+            case S.Disconnect p:
+                HandshakeReady = false; Connection.Dispose(); ResetAccountRequests(); SetScene("login");
+                status.Text = $"服务端断开连接：{p.Reason}。";
+                connectionHandshake?.TrySetException(new IOException(status.Text));
+                if (!connecting) ShowConnectionFailure(status.Text);
+                break;
             case S.ClientVersion p:
-                HandshakeReady = p.Result == 1; status.Text = HandshakeReady ? "原 TCP 服务端已连接" : "客户端版本不匹配";
+                HandshakeReady = p.Result == 1; status.Text = HandshakeReady ? "已连接服务器" : "客户端版本不匹配";
+                if (HandshakeReady) { connectionDialog.Hide(); connectionHandshake?.TrySetResult(); }
+                else connectionHandshake?.TrySetException(new InvalidDataException(status.Text));
                 if (startupLoginPending) { startupLoginPending = false; if (HandshakeReady) Login(account.Text, password.Text); }
                 break;
             case S.NewAccount p: RegistrationResult(p); break;
@@ -363,12 +396,17 @@ public partial class Main : Control
             case S.DeleteCharacterSuccess p: CharacterDeleted(p.CharacterIndex); break;
             case S.DeleteCharacter p: CharacterDeletionFailed(p.Result); break;
             case S.StartGame p: if (p.Result != 4) Log($"进入游戏失败：{p.Result}"); break;
-            case S.UserInformation p: SetScene("game"); MiniMap.SetExpanded(false); pendingAttack = null; destination = null; actionTarget = 0; moveTime = 0; moving = false; confirmedLocation = p.Location; lastMoved = 0; RenderInventory(); RenderSkills(); SetMapMusic(); break;
+            case S.UserInformation p: healthDisplayRequested = false; RequestHealthDisplay(); SetScene("game"); MiniMap.SetExpanded(false); pendingAttack = null; destination = null; actionTarget = 0; moveTime = lastAcceptedMoveTime = 0; moving = false; confirmedLocation = p.Location; lastMoved = 0; ResetRouteRetry(); RenderInventory(); RenderSkills(); SetMapMusic(); break;
             case S.MapInformation p: _ = World.Load(p.FileName); break;
-            case S.MapChanged p: MiniMap.SetExpanded(false); MiniMap.Route = []; pendingAttack = null; moveTime = 0; npc.Hide(); shopMode = null; CloseStorage(); CloseQuests(); destination = null; actionTarget = 0; moving = false; lastMoved = 0; confirmedLocation = p.Location; _ = World.Load(p.FileName); SetMapMusic(); break;
-            case S.Death: destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; moving = false; ShowDeathDialog(); break;
+            case S.MapChanged p: doorRequests.Clear(); MiniMap.SetExpanded(false); MiniMap.Route = []; pendingAttack = null; moveTime = lastAcceptedMoveTime = 0; npc.Hide(); shopMode = null; CloseStorage(); CloseQuests(); destination = null; actionTarget = 0; moving = false; lastMoved = 0; confirmedLocation = p.Location; ResetRouteRetry(); _ = World.Load(p.FileName); SetMapMusic(); break;
+            case S.Death: destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; moving = false; lastMoved = 0; ResetRouteRetry(); ShowDeathDialog(); break;
             case S.Revived: deathDialog.Hide(); break;
-            case S.UserLocation p: if (moving) moveTime = Environment.TickCount64; moving = false; lastMoved = p.Location == confirmedLocation ? 0 : Environment.TickCount64; confirmedLocation = p.Location; break;
+            case S.UserLocation p: ConfirmLocation(p.Location); break;
+            case S.Pushed when State.User != null:
+                confirmedLocation = State.User.Location; moving = false; lastMoved = lastAcceptedMoveTime = 0; pendingAttack = null; MiniMap.Route = []; ResetRouteRetry(); break;
+            case S.Opendoor p: doorRequests.Remove(p.DoorIndex); break;
+            case S.UserDash or S.UserBackStep or S.UserDashAttack when State.User != null:
+                confirmedLocation = State.User.Location; moving = false; lastMoved = 0; ResetRouteRetry(); break;
             case S.DamageIndicator p: World.ShowDamage(p.ObjectID, p.Damage, p.Type); break;
             case S.Magic p:
                 if (State.User != null) World.ShowSpell(p.Spell, State.User.ObjectID, p.TargetID, p.Target, p.Cast, p.Level, p.SecondaryTargetIDs);
@@ -391,24 +429,35 @@ public partial class Main : Control
             case S.LogOutFailed: Log("战斗中暂时无法退出角色，请稍候。"); break;
             case S.ChangeAMode: RefreshAttackModes(); break;
             case S.ReturnToLogin: HandshakeReady = true; SetScene("login"); break;
-            case S.NewMagic: case S.MagicLeveled: case S.SpellToggle: RefreshSkillRows(); break;
+            case S.ChangeHero or S.UpdateHeroSpawnState when HeroInventoryContext: RenderInventory(); RenderSkills(); break;
+            case S.NewMagic: RenderSkills(); break;
+            case S.MagicLeveled: case S.SpellToggle: RefreshSkillRows(); break;
+            case S.RemoveMagic: RenderSkills(); RefreshSkillBar(); break;
             case S.MergeItem p: if (p.GridFrom == MirGridType.Storage || p.GridTo == MirGridType.Storage) { storageBusy = false; RenderStorage(); } break;
-            case S.UseItem p: if (p.Success) _ = PlaySound(10107); break;
             case S.LevelChanged: _ = PlaySound(10156); break;
         }
     }
     private void SetScene(string name)
     {
+        doorRequests.Clear();
+        CloseNpcInput();
+        StopKeyboardMovement();
         ResetAccountRequests();
+        CancelQuestNavigation(); ClosePublicShop(); questNavigationRequests.Clear();
         StopAutoBattle(); automation.Reset(); automationNotice = ""; CloseSettings(); CloseGroundMove(); CancelItemDrag(); dropDialog.Hide(); dropCandidate = pendingDrop = 0;
         preparedSkill = null; skillEquipmentPending = 0; skillPreparationPaused = false; ResetClassSkills();
+        if (heroWindow) equipment.Position = characterEquipmentPosition;
+        heroWindow = false; paperdoll.Hero = false;
         scene = name; login.Visible = name == "login"; selection.Visible = name == "selection"; game.Visible = name == "game";
         deathDialog.Hide(); sessionDialog.Hide(); gameMenu.Hide();
+        heroCreation.Hide(); heroManagement.Hide();
+        if (name != "game") { heroCreationPending = heroCreationUnknown = false; heroToggleAt = 0; }
+        if (name != "game") publicPurchases.Reset();
         if (name == "game" && State.Me?.Dead == true) ShowDeathDialog();
         ResetCharacterCreation();
         InvalidateNpcPurchase(); npcTransactionPending = false; npcPendingSale = 0;
         destination = null; actionTarget = 0; pendingAttack = null; moving = false; MiniMap.Route = []; MiniMap.SetExpanded(false); GetViewport().GuiReleaseFocus();
-        CloseStorage(); CloseQuests(); inventory.Hide(); equipment.Hide(); npc.Hide(); questBag.Hide(); CloseGroup(); CloseTradeUi(); CloseGuildUi(); shopMode = null;
+        CloseStorage(); CloseQuests(); inventory.Hide(); equipment.Hide(); npc.Hide(); questBag.Hide(); CloseGroup(); CloseTradeUi(); CloseGuildUi(); CloseSocial(); if (name != "game") ResetChat(); shopMode = null;
     }
     private void RenderCharacters()
     {
@@ -417,18 +466,20 @@ public partial class Main : Control
         deleteCharacterButton.Disabled = State.Characters.Count == 0 || characterCreateSentAt != 0 || pendingCharacterDeletion >= 0;
         characterPreview.Character = State.Characters.ElementAtOrDefault(selectedCharacter);
         if (State.Characters.Count == 0) characterCreation.Show();
-        for (var i = 0; i < State.Characters.Count; i++)
+        for (var i = 0; i < Globals.MaxCharacterCount; i++)
         {
+            var row = new Control { Name = $"CharacterSlot{i + 1}", CustomMinimumSize = new Vector2(278, 78) }; characterList.AddChild(row);
+            if (i >= State.Characters.Count) continue;
             var index = i; var character = State.Characters[i];
-            var row = new Control { CustomMinimumSize = new Vector2(278, 80) }; characterList.AddChild(row);
             Picture(row, "Title", 658 + (int)character.Class, 0, 0);
             foreach (var (caption, x, y) in new[] { ("名字", 78, 8), ("等级", 78, 29), ("职业", 146, 29) })
             { var label = Text(row, caption, x, y, 28); label.Size = new Vector2(28, 18); label.AddThemeFontSizeOverride("font_size", ClientUi.Small); }
             var characterLabel = Text(row, character.Name, 114, 8, 164); characterLabel.Size = new Vector2(164, 18); characterLabel.ClipText = true; characterLabel.TooltipText = character.Name;
             Text(row, character.Level.ToString(), 114, 29, 24).Size = new Vector2(24, 18);
             Text(row, character.Class switch { MirClass.Warrior => "战士", MirClass.Wizard => "法师", MirClass.Taoist => "道士", _ => character.Class.ToLocalizedString() }, 182, 29, 96).Size = new Vector2(96, 18);
-            var button = Button(row, "", 0, 0, 278, () => { selectedCharacter = index; RenderCharacters(); }); button.Size = new Vector2(278, 80);
-            foreach (var state in new[] { "normal", "hover", "pressed", "focus" }) button.AddThemeStyleboxOverride(state, new StyleBoxEmpty());
+            var button = Button(row, "", 0, 0, 288, () => { selectedCharacter = index; RenderCharacters(); });
+            button.Name = "CharacterChoice"; button.ToggleMode = true; button.ButtonPressed = index == selectedCharacter;
+            CellStyle(button, 0, 0); button.Size = new Vector2(288, 54);
         }
         selectionLocation.Text = State.Characters.Count == 0 ? "" : Assets.SupportsCharacterLocation ? "正在读取角色位置…" : "位置查询需要更新服务端";
         if (Assets.SupportsCharacterLocation && State.Characters.ElementAtOrDefault(selectedCharacter) is { } selected)
@@ -438,7 +489,8 @@ public partial class Main : Control
     private void RenderInventory()
     {
         if (State.User == null) return;
-        icons.RemoveAll(pair => !GodotObject.IsInstanceValid(pair.button) || !npcGoods.IsAncestorOf(pair.button));
+        ResizeInventoryGrid(State.User.Inventory);
+        icons.RemoveAll(pair => !GodotObject.IsInstanceValid(pair.button) || !npcGoods.IsAncestorOf(pair.button) && !publicShopRows.IsAncestorOf(pair.button));
         foreach (var (button, slot) in inventorySlots)
         {
             var item = slot < State.User.Inventory.Length ? State.User.Inventory[slot] : null;
@@ -447,9 +499,9 @@ public partial class Main : Control
             ItemTooltip(button, item, IsItemShortcut(button) ? "仅可放入使用类道具" : "空格");
             if (item != null) icons.Add((button, item));
         }
-        for (var i = 0; i < State.User.Equipment.Length; i++)
+        for (var i = 0; i < equipmentButtons.Count; i++)
         {
-            var item = State.User.Equipment[i]; var button = equipmentButtons[i];
+            var item = SubjectEquipment.ElementAtOrDefault(i); var button = equipmentButtons[i];
             button.Icon = null; ItemTooltip(button, item, ((EquipmentSlot)i).ToLocalizedString());
             if (item != null) icons.Add((button, item));
         }
@@ -457,9 +509,9 @@ public partial class Main : Control
     private void RemoveEquipment(int slot)
     {
         if (SkillPreparationBusy) { Log("正在等待毒符换装回执，请稍候。"); return; }
-        var item = State.User?.Equipment[slot]; if (item == null) return;
+        var item = SubjectEquipment.ElementAtOrDefault(slot); if (item == null) return;
         var to = Array.IndexOf(State.User!.Inventory, null);
-        if (to >= 0) Send(new C.RemoveItem { Grid = MirGridType.Inventory, UniqueID = item.UniqueID, To = to }); else Log("背包已满。");
+        if (to >= 0) SendSubjectItem(new C.RemoveItem { Grid = SubjectGrid, UniqueID = item.UniqueID, To = to }); else Log("背包已满。");
     }
     private void ShowEquipmentPage(int page)
     {
@@ -469,45 +521,52 @@ public partial class Main : Control
         equipment.Show(); paperdoll.Visible = page == 0; equipmentSlots.Visible = page == 0;
         attributes.Visible = attributesRight.Visible = attributeExperience.Visible = page is 1 or 2; skills.Visible = page == 3;
         if (page == 3) RenderSkills();
-        else RefreshEquipmentStats(State.CalculateStats());
+        else RefreshEquipmentStats(HeroInventoryContext ? State.CalculateHeroStats() : State.CalculateStats());
     }
-    private void ToggleEquipmentPage(int page) { if (equipment.Visible && equipmentPage == page) equipment.Hide(); else ShowEquipmentPage(page); }
+    private void ToggleEquipmentPage(int page)
+    {
+        if (!HeroInventoryContext && equipment.Visible && equipmentPage == page) { CloseEquipment(); return; }
+        if (HeroInventoryContext) CloseEquipment();
+        heroWindow = false; paperdoll.Hero = false; equipmentTabs[0].Text = "人物";
+        CancelItemContext(); ShowEquipmentPage(page); RenderInventory();
+    }
     public void UseItem(ulong id)
     {
         if (SkillPreparationBusy) { Log("正在等待毒符换装回执，请稍候。"); return; }
-        if (automation.PendingItem == id || pendingDrop == id) { Log("正在等待该物品的服务端回执。"); return; }
+        if (inventoryOrganizer.Locked(id) || automation.PendingItem == id || pendingDrop == id || recyclePending?.UniqueID == id) { Log("正在等待该物品的服务端回执。"); return; }
         var item = State.User?.Inventory.FirstOrDefault(i => i?.UniqueID == id);
         if (item?.Info == null) return;
+        if (HeroInventoryContext) { UseSubjectItem(item); return; }
         if (State.Trading) { OfferTradeItem(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
         if (GuildStorageOpen) { StoreGuildItem(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
         if (storage.Visible && !storagePreview) { StoreInventory(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
         if (shopMode == PanelType.Sell) { ConfirmNpcSale(item); return; }
         if (shopMode is PanelType.Repair or PanelType.SpecialRepair) { SelectRepairItem(id); return; }
-        int? slot = item.Info.Type switch
-        {
-            ItemType.Weapon => 0, ItemType.Armour => 1, ItemType.Helmet => 2, ItemType.Torch => 3,
-            ItemType.Necklace => 4, ItemType.Bracelet => State.User!.Equipment[5] == null ? 5 : 6,
-            ItemType.Ring => State.User!.Equipment[7] == null ? 7 : 8, ItemType.Amulet => 9,
-            ItemType.Belt => 10, ItemType.Boots => 11, ItemType.Stone => 12, ItemType.Mount => 13, _ => null
-        };
-        Send(slot.HasValue ? new C.EquipItem { Grid = MirGridType.Inventory, UniqueID = id, To = slot.Value }
-            : new C.UseItem { Grid = MirGridType.Inventory, UniqueID = id });
+        UseSubjectItem(item);
+    }
+    private void UseSubjectItem(UserItem item)
+    {
+        if (item.Info.Type == ItemType.Book) { ConfirmSkillLearning(item); return; }
+        var slots = ItemPresentation.Slots(item.Info.Type);
+        var slot = slots.FirstOrDefault(index => SubjectEquipment.ElementAtOrDefault(index) == null, slots.FirstOrDefault(-1));
+        SendSubjectItem(slot >= 0 ? new C.EquipItem { Grid = SubjectGrid, UniqueID = item.UniqueID, To = slot }
+            : new C.UseItem { Grid = SubjectGrid, UniqueID = item.UniqueID });
     }
     public void BindMagic(int index, byte key)
     {
-        if (State.User == null || index < 0 || index >= State.User.Magics.Count || !SkillKeys.IsPlayer(key)) return;
-        var magic = State.User.Magics[index];
+        var magics = SubjectMagics;
+        if (index < 0 || index >= magics.Count || (HeroInventoryContext ? key != 0 && !SkillKeys.IsHero(key) : !SkillKeys.IsPlayer(key))) return;
+        var magic = magics[index];
+        if (magic.Key == key) return;
+        if (HeroInventoryContext && State.HeroState != HeroSpawnState.Summoned) return;
         Send(new C.MagicKey { Spell = magic.Spell, Key = key, OldKey = magic.Key });
-        foreach (var other in State.User.Magics) if (other.Key == key) other.Key = 0;
+        foreach (var other in magics) if (other.Key == key) other.Key = 0;
         magic.Key = key;
     }
     public void Log(string text, ChatType type = ChatType.System)
     {
         if (messages == null) return;
-        messages.PushColor(ChatColour(type));
-        messages.AddText(text + "\n");
-        messages.Pop();
-        while (messages.GetParagraphCount() > 101) messages.RemoveParagraph(0);
+        AppendChat(text, type);
         if (scene != "game" && status != null) status.Text = text;
     }
     private void SetMapMusic()
@@ -520,6 +579,7 @@ public partial class Main : Control
     {
         if (scene != "game" || State.User == null) return;
         if (input is InputEventKey && GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit) return;
+        if (KeyboardInput(input)) return;
         StopBattleForInput(input);
         if (input is InputEventMouseButton mouse && mouse.Pressed && mouse.Position.Y < 616 && !MiniMap.Expanded)
         {
@@ -555,7 +615,7 @@ public partial class Main : Control
             case Key.H: if (guild.Visible) CloseGuild(); else OpenGuild(); break;
             case Key.Enter: chat.GrabFocus(); break;
             case Key.Space: Attack(State.User.Direction); break;
-            case Key.Escape: CloseSettings(); MiniMap.SetExpanded(false); MiniMap.Route = []; pendingAttack = null; destination = null; actionTarget = 0; npc.Hide(); shopMode = null; CloseStorage(); CloseQuests(); questBag.Hide(); CloseGroup(); tradeMenu.Hide(); CancelTrade(); if (guild.Visible) CloseGuild(); break;
+            case Key.Escape: CloseEquipment(); CancelQuestNavigation(); ClosePublicShop(); CloseSettings(); MiniMap.SetExpanded(false); MiniMap.Route = []; pendingAttack = null; destination = null; actionTarget = 0; npc.Hide(); shopMode = null; CloseStorage(); CloseQuests(); questBag.Hide(); CloseGroup(); CloseSocial(); tradeMenu.Hide(); CancelTrade(); if (guild.Visible) CloseGuild(); break;
             default:
                 if (key.PhysicalKeycode >= Key.Key1 && key.PhysicalKeycode <= Key.Key6)
                 { UseQuickItem((int)(key.PhysicalKeycode - Key.Key1)); }
@@ -564,24 +624,33 @@ public partial class Main : Control
                     if ((int)(key.PhysicalKeycode - Key.F1 + 1) > Assets.FunctionKeys) return;
                     var binding = SkillKeys.FunctionKey((int)(key.PhysicalKeycode - Key.F1 + 1), key.ShiftPressed);
                     if (binding == 0) return;
-                    var index = State.User.Magics.FindIndex(m => m.Key == binding); if (index >= 0) Cast(index);
+                    if (HeroInventoryContext)
+                    {
+                        var number = (int)(key.PhysicalKeycode - Key.F1 + 1);
+                        if (number <= 8 && !key.ShiftPressed) CastSubjectSkill(SubjectMagics.FindIndex(m => m.Key == number + 16));
+                    }
+                    else { var index = State.User.Magics.FindIndex(m => m.Key == binding); if (index >= 0) Cast(index); }
                 }
                 break;
         }
     }
-    public override void _Notification(int what) { if (what == NotificationWMCloseRequest) _ = Quit(); }
+    public override void _Notification(int what) { if (what == NotificationWMWindowFocusOut) StopKeyboardMovement(); if (what == NotificationWMCloseRequest) _ = Quit(); }
     public async Task Quit()
     {
+        connectionCancellation?.Cancel();
         StopAudio();
         await Connection.Send(new C.Disconnect()); await Task.Delay(150); GetTree().Quit();
     }
     private void StopAudio()
     {
         musicGeneration++;
+        effectGeneration++; soundPlayedAt.Clear();
         foreach (var player in effectPlayers.Prepend(music)) { player.Stop(); player.Stream = null; }
     }
     public override void _ExitTree()
     {
+        GetTree().NodeAdded -= StyleOptionPopup;
+        connectionCancellation?.Cancel();
         Connection.Dispose();
         StopAudio();
         Assets.Dispose();

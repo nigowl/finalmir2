@@ -15,7 +15,7 @@ public partial class WorldView : Node2D
     private readonly List<(SpriteImage image, Vector2 position, float opacity)> glow = new();
     private GlowLayer glowLayer = null!;
     private CombatTextLayer combatTextLayer = null!;
-    private readonly List<Actor> drawActors = new();
+    private readonly List<(Actor Actor, float Depth)> drawActors = new();
     public uint Selected;
     private bool loadingMap;
     public bool Loading => loadingMap || Map != null && !initialTerrainReady;
@@ -58,6 +58,8 @@ public partial class WorldView : Node2D
     public bool Walkable(Point point) => Map != null && point.X >= 0 && point.Y >= 0 && point.X < Map.Width && point.Y < Map.Height &&
         (Map.MapCells[point.X, point.Y].BackImage & 0x20000000) == 0 && (Map.MapCells[point.X, point.Y].FrontImage & 0x8000) == 0;
 
+    internal bool ClearShot(Point target) => State.User != null && Map != null && Functions.CanFly(State.User.Location, target, Walkable);
+
     public Point? NextStep(Point target, bool run = false)
     {
         return NextStep(target, run, out _);
@@ -71,11 +73,11 @@ public partial class WorldView : Node2D
         return route[step];
     }
 
-    public Point[] PathTo(Point target)
+    public Point[] PathTo(Point target, bool ignoreActors = false)
     {
         if (Map == null || State.User == null || !Walkable(target)) return [];
         // Players can share a login/revive tile; keep the start open so they can walk apart.
-        var occupied = State.Actors.Values.Where(a => a.Id != State.User.ObjectID && a.Location != State.User.Location && a.Kind is not (ObjectType.Item or ObjectType.Spell) && !a.Dead && !a.Hidden && Walkable(a.Location)).Select(a => new Vector2I(a.Location.X, a.Location.Y)).Distinct().ToArray();
+        var occupied = ignoreActors ? [] : State.Actors.Values.Where(a => a.Id != State.User.ObjectID && a.Location != State.User.Location && a.Kind is not (ObjectType.Item or ObjectType.Spell) && !a.Dead && !a.Hidden && Walkable(a.Location)).Select(a => new Vector2I(a.Location.X, a.Location.Y)).Distinct().ToArray();
         foreach (var point in occupied) navigation.SetPointSolid(point);
         var current = State.User.Location;
         try { return navigation.GetIdPath(new Vector2I(current.X, current.Y), new Vector2I(target.X, target.Y)).Select(p => new Point(p.X, p.Y)).ToArray(); }
@@ -112,12 +114,13 @@ public partial class WorldView : Node2D
         return new Point((int)Math.Floor((screen.X - Centre.X) / 48 + camera.X), (int)Math.Floor((screen.Y - Centre.Y) / 32 + camera.Y));
     }
 
-    public Actor? ActorAt(Vector2 screen)
+    public Actor? ActorAt(Vector2 screen, bool skillTarget = false)
     {
-        return State.Actors.Values.Where(a => !a.Hidden && a.Kind != ObjectType.Spell && a.Id != State.User?.ObjectID)
+        return State.Actors.Values.Where(a => !a.Hidden && a.Kind != ObjectType.Spell && a.Id != State.User?.ObjectID &&
+            (!skillTarget || a.Kind is ObjectType.Player or ObjectType.Monster))
             .OrderByDescending(a => a.Kind == ObjectType.Item).ThenByDescending(a => a.Location.Y).FirstOrDefault(a =>
             {
-                var p = Screen(a.Location);
+                var p = Screen(Visual(a, frameTime));
                 return a.Kind == ObjectType.Item ? new Rect2(p, new Vector2(48, 32)).HasPoint(screen)
                     : new Rect2(p + new Vector2(-5, -65), new Vector2(60, 95)).HasPoint(screen);
             });
@@ -132,11 +135,12 @@ public partial class WorldView : Node2D
 
     public uint Hovered { get; private set; }
     internal bool ShowNpcNames = true, ShowMonsterNames, ShowItemNames;
+    internal ClientPreferences? ItemPreferences;
     internal bool NameVisible(Actor actor) => actor.Id == State.User?.ObjectID || (actor.Kind switch
     {
         ObjectType.Merchant => ShowNpcNames || actor.Id == Hovered || actor.Id == Selected,
         ObjectType.Monster => ShowMonsterNames || actor.Id == Hovered || actor.Id == Selected,
-        ObjectType.Item => ShowItemNames || actor.Id == Hovered || actor.Id == Selected,
+        ObjectType.Item => (ItemPreferences?.ForItem(ClientPickup.Name(actor)).HasFlag(ItemActions.Display) ?? ShowItemNames) || actor.Id == Hovered || actor.Id == Selected,
         _ => actor.Id == Selected
     });
     internal void UpdateHover(Vector2 screen, bool overUi) => Hovered = overUi ? 0 : ActorAt(screen)?.Id ?? 0;
@@ -177,7 +181,10 @@ public partial class WorldView : Node2D
         var now = frameTime;
         drawActors.Clear();
         foreach (var actor in State.Actors.Values)
-            if (actor.Location.Y >= fromY && actor.Location.Y <= bounds.ObjectToY) drawActors.Add(actor);
+        {
+            var depth = Visual(actor, now).Y;
+            if (depth >= fromY && depth < bounds.ObjectToY + 1) drawActors.Add((actor, depth));
+        }
         drawActors.Sort(CompareDrawOrder);
         var actorIndex = 0;
         for (var y = fromY; y <= bounds.FloorToY; y++)
@@ -185,63 +192,57 @@ public partial class WorldView : Node2D
         {
             var cell = Map.MapCells[x, y]; var position = Screen(new Point(x, y));
             if (x % 2 == 0 && y % 2 == 0) DrawTile(cell.BackIndex, (cell.BackImage & 0x1FFFFFFF) - 1, position, false);
-            var middle = Assets.Sprite(MapLibrary(cell.MiddleIndex), cell.MiddleImage - 1);
-            if (middle != null && IsFloor(middle)) DrawTexture(middle.Texture, position);
-            var front = Assets.Sprite(MapLibrary(cell.FrontIndex), (cell.FrontImage & 0x7FFF) - 1);
-            if (front != null && IsFloor(front) && cell.FrontAnimationFrame == 0) DrawTexture(front.Texture, position);
+            var middle = TerrainSprite(cell, false, now, out var middleFloor);
+            if (middle != null && middleFloor) DrawTexture(middle.Texture, position);
+            var front = TerrainSprite(cell, true, now, out var frontFloor);
+            if (front != null && frontFloor)
+            {
+                if ((cell.FrontAnimationFrame & 0x80) != 0) glow.Add((front, position, 1));
+                else DrawTexture(front.Texture, position);
+            }
         }
         for (var y = fromY; y <= bounds.ObjectToY; y++)
         {
-            while (actorIndex < drawActors.Count && drawActors[actorIndex].Location.Y == y && (drawActors[actorIndex].Dead || drawActors[actorIndex].Kind == ObjectType.Item))
-                DrawActor(drawActors[actorIndex++], now);
+            while (actorIndex < drawActors.Count && (int)Math.Floor(drawActors[actorIndex].Depth) == y && (drawActors[actorIndex].Actor.Dead || drawActors[actorIndex].Actor.Kind == ObjectType.Item))
+                DrawActor(drawActors[actorIndex++].Actor, now);
             for (var x = fromX; x <= toX; x++)
             {
                 var cell = Map.MapCells[x, y]; var position = Screen(new Point(x, y)) + new Vector2(0, 32);
-                var middleIndex = cell.MiddleImage - 1;
-                var middleFrames = cell.MiddleAnimationFrame;
-                if (middleFrames is > 0 and < 255)
-                {
-                    var count = (middleFrames & 0x0f) > 0 ? middleFrames & 0x0f : middleFrames;
-                    middleIndex += (int)(now / (100 * (1 + cell.MiddleAnimationTick)) % count);
-                }
-                var mid = Assets.Sprite(MapLibrary(cell.MiddleIndex), middleIndex) ?? Assets.Sprite(MapLibrary(cell.MiddleIndex), cell.MiddleImage - 1);
-                if (mid != null && !IsFloor(mid)) DrawTexture(mid.Texture, position - new Vector2(0, mid.Size.Y));
-                var index = (cell.FrontImage & 0x7FFF) - 1;
-                var animation = cell.FrontAnimationFrame & 0x7F;
-                if (animation > 0) index += (int)(now / (100 * (1 + cell.FrontAnimationTick)) % animation);
-                var front = Assets.Sprite(MapLibrary(cell.FrontIndex), index) ?? Assets.Sprite(MapLibrary(cell.FrontIndex), (cell.FrontImage & 0x7FFF) - 1);
-                if (front == null || (IsFloor(front) && animation == 0)) continue;
+                var mid = TerrainSprite(cell, false, now, out var middleFloor);
+                if (mid != null && !middleFloor) DrawTexture(mid.Texture, position - new Vector2(0, mid.Size.Y));
+                var front = TerrainSprite(cell, true, now, out var frontFloor);
+                if (front == null || frontFloor) continue;
                 if ((cell.FrontAnimationFrame & 0x80) != 0) glow.Add((front, position - new Vector2(0, front.Size.Y), 1));
                 else DrawTexture(front.Texture, position - new Vector2(0, front.Size.Y));
             }
-            while (actorIndex < drawActors.Count && drawActors[actorIndex].Location.Y == y) DrawActor(drawActors[actorIndex++], now);
+            while (actorIndex < drawActors.Count && (int)Math.Floor(drawActors[actorIndex].Depth) == y) DrawActor(drawActors[actorIndex++].Actor, now);
         }
+        HealthBarsDrawn = 0;
         foreach (var actor in State.Actors.Values)
         {
-            if (!NameVisible(actor)) continue;
             if (actor.Hidden && actor.Id != State.User?.ObjectID) continue;
+            DrawHealthBar(actor, now);
+            if (!NameVisible(actor)) continue;
             var p = NameAnchor(actor, now);
             var namePosition = p - new Vector2(ThemeDB.FallbackFont.GetStringSize(actor.Name, fontSize: 12).X / 2, 0);
             if (actor.Kind is ObjectType.Player or ObjectType.Merchant or ObjectType.Monster)
                 namePosition.Y += (ThemeDB.FallbackFont.GetAscent(12) - ThemeDB.FallbackFont.GetDescent(12)) / 2;
             DrawStringOutline(ThemeDB.FallbackFont, namePosition, actor.Name, fontSize: 12, size: 2, modulate: Colors.Black);
             DrawString(ThemeDB.FallbackFont, namePosition, actor.Name,
-                fontSize: 12, modulate: actor.Kind == ObjectType.Monster ? new GColor("f0b09c") : new GColor("f4edca"));
-            if (actor.Id == Selected && actor.Kind == ObjectType.Monster && !actor.Dead)
-            {
-                p = Screen(Visual(actor, now)) + new Vector2(24, -46);
-                DrawRect(new Rect2(p + new Vector2(-25, 5), new Vector2(50, 5)), Colors.Black);
-                DrawRect(new Rect2(p + new Vector2(-24, 6), new Vector2(actor.Health * 0.48f, 3)), Colors.Red);
-            }
+                fontSize: 12, modulate: new GColor(actor.Colour.R / 255f, actor.Colour.G / 255f, actor.Colour.B / 255f, actor.Colour.A / 255f));
+
         }
         DrawSpells(now);
     }
 
-    private static int CompareDrawOrder(Actor left, Actor right)
+    private static int CompareDrawOrder((Actor Actor, float Depth) a, (Actor Actor, float Depth) b)
     {
-        var order = left.Location.Y.CompareTo(right.Location.Y);
+        var order = Math.Floor(a.Depth).CompareTo(Math.Floor(b.Depth));
         if (order != 0) return order;
+        var left = a.Actor; var right = b.Actor;
         order = (right.Dead || right.Kind == ObjectType.Item).CompareTo(left.Dead || left.Kind == ObjectType.Item);
+        if (order != 0) return order;
+        order = a.Depth.CompareTo(b.Depth);
         if (order != 0) return order;
         order = left.Location.X.CompareTo(right.Location.X);
         return order != 0 ? order : left.Id.CompareTo(right.Id);

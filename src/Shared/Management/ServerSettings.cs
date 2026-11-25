@@ -16,6 +16,7 @@ public sealed partial record ServerSettings
     public bool AllowCreateAssassin { get; set; } = true;
     public bool AllowCreateArcher { get; set; } = true;
     public bool RequireStoragePassword { get; set; } = true;
+    public float PublicShopPriceRate { get; set; } = 1.5f;
     public float ExpRate { get; set; } = 1f;
     public float DropRate { get; set; } = 1f;
     public int SaveDelay { get; set; } = 5;

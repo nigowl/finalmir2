@@ -11,8 +11,9 @@ public partial class NativeSmoke
     {
         var panel = SettingsPanel();
         Setting(panel, "自动拣取").ButtonPressed = enabled;
-        SelectSetting((OptionButton)panel.FindChild("PickupMode", true, false), whitelist ? 1 : 0);
-        ((TextEdit)panel.FindChild("PickupNames", true, false)).Text = names;
+        var selected = names.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        foreach (var name in Client.Assets.ItemCatalog.Select(item => item.Name).Append("金币").Distinct())
+            SetLocalItemRule(name, 1, whitelist ? selected.Contains(name) : !selected.Contains(name));
         CloseSettingsPanel(panel);
     }
 

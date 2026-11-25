@@ -45,6 +45,12 @@ namespace Server.MirObjects.Monsters
         }
 
         protected override void ProcessRegen() { }
+        protected override void ProcessTarget()
+        {
+            if (Target == null) return;
+            if (!InAttackRange()) { Target = null; return; }
+            if (CanAttack) Attack();
+        }
         protected override void ProcessRoam()
         {
             if (CanMove)
@@ -67,11 +73,8 @@ namespace Server.MirObjects.Monsters
         {
             if (!Target.IsAttackTarget(this)) return;
 
-            Point target = Target.Back;
-            MirDirection dir = Functions.DirectionFromPoint(target, Target.CurrentLocation);
-
-            Broadcast(new S.ObjectAttack { ObjectID = ObjectID, Direction = dir, Location = target });
-            Broadcast(new S.ObjectTurn { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation });
+            Direction = Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
+            Broadcast(new S.ObjectAttack { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation });
 
             ActionTime = Envir.Time + 500;
             AttackTime = Envir.Time + AttackSpeed;

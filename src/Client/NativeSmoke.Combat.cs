@@ -51,18 +51,19 @@ public partial class NativeSmoke
         var toggle = Setting(panel, "CRT"); var strength = (OptionButton)panel.FindChild("CrtStrength", true, false);
         toggle.ButtonPressed = false; CloseSettingsPanel(panel);
         var layer = new CanvasLayer { Layer = 99 }; Client.AddChild(layer);
-        var sample = new ColorRect { Size = new Vector2(256, 128), Color = new Color(.65f, .65f, .65f), MouseFilter = Control.MouseFilterEnum.Ignore }; layer.AddChild(sample);
+        var sample = new ColorRect { Size = new Vector2(1024, 768), Color = new Color(.65f, .65f, .65f), MouseFilter = Control.MouseFilterEnum.Ignore }; layer.AddChild(sample);
         try
         {
             using var off = await CombatFrame(); var contrasts = new List<float>();
+            var centre = off.GetSize() / 2;
             foreach (var level in new[] { 1, 3, 5 })
             {
                 panel = SettingsPanel(); toggle.ButtonPressed = true; SelectSetting(strength, level - 1); CloseSettingsPanel(panel);
                 using var frame = await CombatFrame(); var rows = new List<float>(); var channels = new HashSet<int>();
-                for (var y = 50; y < 82; y++)
+                for (var y = centre.Y - 16; y < centre.Y + 16; y++)
                 {
                     var sum = 0f;
-                    for (var x = 50; x < 82; x++)
+                    for (var x = centre.X - 16; x < centre.X + 16; x++)
                     {
                         var colour = frame.GetPixel(x, y); sum += (colour.R + colour.G + colour.B) / 3;
                         if (Math.Max(colour.R, Math.Max(colour.G, colour.B)) - Math.Min(colour.R, Math.Min(colour.G, colour.B)) > .035f)
@@ -74,6 +75,16 @@ public partial class NativeSmoke
                 if (contrasts[^1] < .035f || channels.Count != 3) throw new Exception($"CRT{level}没有可见横纹或RGB点阵：contrast={contrasts[^1]}，channels={channels.Count}。");
             }
             if (contrasts[2] <= contrasts[0] * 1.5f) throw new Exception("CRT强度1–5没有递增强度。");
+            var curvature = (OptionButton)panel.FindChild("CrtCurvature", true, false);
+            panel = SettingsPanel(); SelectSetting(curvature, 0); CloseSettingsPanel(panel);
+            using var flat = await CombatFrame();
+            panel = SettingsPanel(); SelectSetting(curvature, 5); CloseSettingsPanel(panel);
+            using var curved = await CombatFrame();
+            var edge = new Vector2I(2, centre.Y / 2);
+            if (flat.GetPixelv(edge).R < .03f || curved.GetPixelv(edge).R > .01f) throw new Exception("弧面0/5级没有独立改变屏幕边缘。");
+            var saved = System.Text.Json.JsonSerializer.Deserialize<ClientPreferences>(File.ReadAllText(Environment.GetEnvironmentVariable("MIR2_CLIENT_SETTINGS")!))!;
+            if (saved.CrtCurvature != 5 || saved.CrtStrength != 5) throw new Exception("CRT两个参数未自动保存。");
+            panel = SettingsPanel(); SelectSetting(curvature, 3); CloseSettingsPanel(panel);
             panel = SettingsPanel(); toggle.ButtonPressed = false; CloseSettingsPanel(panel);
             using var restored = await CombatFrame();
             if (off.GetPixel(70, 70) != restored.GetPixel(70, 70)) throw new Exception("关闭CRT后没有恢复原始像素。");

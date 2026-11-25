@@ -25,7 +25,7 @@ for ((attempt=0; attempt<90; attempt++)); do
   sleep 1
 done
 GODOT="${GODOT_BIN:-/Applications/Godot_mono.app/Contents/MacOS/Godot}"
-if ! "$GODOT" --path "$ROOT/src/Client" --max-fps 60 -- "--mir2-instance=$ROOT:$MIR2_RUNTIME_ROOT:client" --class-combos "--server=http://127.0.0.1:$MIR2_RESOURCE_PORT" "--screenshot=$CLASS_TEST_ROOT/screens" > "$CLASS_TEST_ROOT/client.log" 2>&1; then
+if ! "$GODOT" --path "$ROOT/src/Client" --max-fps 60 -- "--mir2-instance=$ROOT:$MIR2_RUNTIME_ROOT:client" --class-combos --verify-combo-flow "--server=http://127.0.0.1:$MIR2_RESOURCE_PORT" "--screenshot=$CLASS_TEST_ROOT/screens" "$@" > "$CLASS_TEST_ROOT/client.log" 2>&1; then
   cat "$CLASS_TEST_ROOT/client.log"; exit 1
 fi
 cat "$CLASS_TEST_ROOT/client.log"

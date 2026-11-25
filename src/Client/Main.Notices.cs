@@ -18,13 +18,13 @@ public partial class Main
         if (itemNoticeRows.Count == 4)
         { itemNoticeRows[0].Panel.QueueFree(); itemNoticeRows.RemoveAt(0); }
         var panel = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
-        panel.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color(.06f, .05f, .035f, .68f),
-            BorderColor = new Color("786342"), BorderWidthLeft = 1, BorderWidthTop = 1, BorderWidthRight = 1, BorderWidthBottom = 1,
-            ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 4, ContentMarginBottom = 4 });
+        panel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
         itemNotices.AddChild(panel);
-        var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, MaxLinesVisible = 3,
+        var label = new Label { Text = text, HorizontalAlignment = HorizontalAlignment.Right, AutowrapMode = TextServer.AutowrapMode.WordSmart, MaxLinesVisible = 3,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, MouseFilter = MouseFilterEnum.Ignore };
         label.AddThemeFontSizeOverride("font_size", ClientUi.Small); label.AddThemeColorOverride("font_color", ChatColour(type));
+        label.AddThemeColorOverride("font_shadow_color", Colors.Black);
+        label.AddThemeConstantOverride("shadow_offset_x", 1); label.AddThemeConstantOverride("shadow_offset_y", 1);
         panel.AddChild(label); itemNoticeRows.Add((panel, Environment.TickCount64 + 3000));
     }
 

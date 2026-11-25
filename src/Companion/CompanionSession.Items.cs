@@ -14,7 +14,7 @@ public sealed partial class CompanionSession
     private long assetSent;
     private readonly HashSet<ulong> refused = [];
     private static string AssetName(string kind) => kind switch
-    {"buy"=>"购买", "sell"=>"出售", "equip"=>"装备", "remove"=>"卸下", "repair"=>"修理", "use"=>"使用", "quest"=>"任务操作",
+    {"hero-create"=>"创建英雄", "hero-seal"=>"激活英雄", "hero-summon"=>"召唤英雄", "hero-equip"=>"英雄装备", "hero-use"=>"英雄使用", "public-buy"=>"商城购买", "recycle"=>"回收", "buy"=>"购买", "sell"=>"出售", "equip"=>"装备", "remove"=>"卸下", "repair"=>"修理", "use"=>"使用", "quest"=>"任务操作",
         "storage-store"=>"存仓", "storage-take"=>"取回", "storage-split"=>"仓库拆分", "storage-password" or "storage-unlock"=>"仓库认证", "guild-create"=>"建会", "guild-join"=>"入会", _=>"资产操作"};
     private async Task Asset(Packet packet, string kind, ulong id)
     {
@@ -24,12 +24,17 @@ public sealed partial class CompanionSession
     private async Task ApplyAssetResult(Packet packet)
     {
         if (pendingAsset == null) return;
+        if (await PublicServiceResult(packet)) return;
         if(await StorageResult(packet))return;
         bool? success = packet switch
         {
-            S.EquipItem p when pendingAsset=="equip" && p.UniqueID==assetId => p.Success,
-            S.RemoveItem p when pendingAsset=="remove" && p.UniqueID==assetId => p.Success,
-            S.UseItem p when pendingAsset=="use" && p.UniqueID==assetId => p.Success,
+            S.EquipItem p when pendingAsset=="equip" && p.Grid==MirGridType.Inventory && p.UniqueID==assetId => p.Success,
+            S.RemoveItem p when pendingAsset=="remove" && p.Grid==MirGridType.Inventory && p.UniqueID==assetId => p.Success,
+            S.EquipItem p when pendingAsset=="hero-equip" && p.Grid==MirGridType.HeroInventory && p.UniqueID==assetId => p.Success,
+            S.UseItem p when pendingAsset=="hero-use" && p.Grid==MirGridType.HeroInventory && p.UniqueID==assetId => p.Success,
+            S.UseItem p when pendingAsset=="hero-seal" && p.Grid==MirGridType.Inventory && p.UniqueID==assetId => p.Success,
+            S.UpdateHeroSpawnState { State:HeroSpawnState.Summoned } when pendingAsset=="hero-summon" => true,
+            S.UseItem p when pendingAsset is "use" or "route-town" && p.Grid==MirGridType.Inventory && p.UniqueID==assetId => p.Success,
             S.SellItem p when pendingAsset=="sell" && p.UniqueID==assetId => p.Success,
             S.ItemRepaired p when pendingAsset=="repair" && p.UniqueID==assetId => true,
             S.ChangeQuest p when pendingAsset=="quest" && p.Quest.Id==(int)assetId => true,
@@ -45,13 +50,27 @@ public sealed partial class CompanionSession
         }
         if (success == null) return;
         // RepairItem 是原服先发的解锁包，成功还会跟随 ItemRepaired，不能提前当成拒绝。
-        if (!success.Value) refused.Add(assetId);
+        if (!success.Value) (pendingAsset.StartsWith("hero-",StringComparison.Ordinal)?heroRefused:refused).Add(assetId);
         var restoreSlot=pendingAsset=="repair" && success.Value?repairSlot:-1;
         if (pendingAsset=="repair" || pendingAsset=="remove" && !success.Value) {repairItem=0;repairSlot=-1;}
         await report(new("asset",Profile.Id,Text:pendingAsset+":"+(success.Value?"成功":"拒绝")));
         pendingAsset=null;
         if(restoreSlot>=0)
             await Asset(new C.EquipItem{Grid=MirGridType.Inventory,UniqueID=assetId,To=restoreSlot},"equip",assetId);
+    }
+    private long nextRouteTown;
+    private async Task<bool> UseTownOnRoute(long now)
+    {
+        if (now < nextRouteTown || !CompanionSafety.TownAllowed(Knowledge) || Knowledge?.TownOnRoute != true ||
+            state.Trading || state.StorageActive || state.Me?.Dead != false || now-monsterAttackedAt<5000 ||
+            preparedSkill!=null || pendingSkill!=Spell.None) return false;
+        var scrolls = state.User!.Inventory.Where(i => i?.Info is {Type:ItemType.Scroll,Shape:1} &&
+            i.Count>0 && !refused.Contains(i.UniqueID) && Usable(i.Info)).ToArray();
+        if (scrolls.Sum(i => i!.Count) <= 1) return false;
+        var scroll = scrolls[0]!;
+        nextRouteTown=now+60000;
+        await Asset(new C.UseItem{Grid=MirGridType.Inventory,UniqueID=scroll.UniqueID},"route-town",scroll.UniqueID);
+        return true;
     }
     private static int Slot(ItemType type) => type switch
     { ItemType.Weapon=>0, ItemType.Armour=>1, ItemType.Helmet=>2, ItemType.Torch=>3, ItemType.Necklace=>4,

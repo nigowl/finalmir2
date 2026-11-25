@@ -68,6 +68,12 @@ public sealed partial class CompanionStore
                 CompanionValidation.Guilds(record.Profile.Guilds);
                 if(record.RecoveryAttempts is <0 or >1000 || record.SessionDeaths is <0 or >1000)throw new InvalidDataException("陪玩托管恢复或死亡计数无效。");
             }
+            // 校验现有快照后只补缺失的版本默认值，保留未知格式及既有自定义配置。
+            storage.Transaction(() =>
+            {
+                if (!storage.Contains("companions/settings.json")) Write("companions/settings.json", Configuration);
+                if (!storage.Contains("companions/presets.json")) Write("companions/presets.json", CustomPresets.ToArray());
+            });
         }
         catch (Exception e) when (e is JsonException or InvalidDataException or EndOfStreamException)
         { Records.Clear();CustomPresets.Clear();Configuration=new(new(),"",paths.VersionId,default,0);LoadError = "陪玩数据不能读取，已保留原记录并禁止写入：" + e.Message; }

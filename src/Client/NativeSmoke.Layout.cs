@@ -121,7 +121,7 @@ public partial class NativeSmoke
             MouseButtonAt(tab.GetGlobalRect().GetCenter(), true);
             MouseButtonAt(tab.GetGlobalRect().GetCenter(), false);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            if (!tab.ButtonPressed || tabs.Count(button => button.ButtonPressed) != 1 || tabs.Any(button => button.Size != new Vector2(59, ClientUi.TabHeight)))
+            if (!tab.ButtonPressed || tabs.Count(button => button.ButtonPressed) != 1 || tabs.Any(button => button.Size != new Vector2(58, ClientUi.TabHeight)))
                 throw new Exception("真实鼠标往返切换后页签选中状态或尺寸不一致。");
         }
         await MoveMouse(new Vector2(680, 160));

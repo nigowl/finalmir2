@@ -4,6 +4,21 @@ namespace Crystal.Native;
 
 public partial class NativeSmoke
 {
+    private void VerifySharedTabSpacing()
+    {
+        var tabs = Client.FindChildren("*", "Button", true, false).OfType<Button>().Where(button => button.ThemeTypeVariation == "GameTab").ToArray();
+        if (tabs.Length != 20) throw new Exception($"游戏独立页签数量不符：{tabs.Length}。");
+        foreach (var group in tabs.GroupBy(tab => tab.GetParent()))
+        {
+            var row = group.OrderBy(tab => tab.Position.X).ToArray();
+            if (row.Any(tab => tab.Size.Y != ClientUi.TabHeight || tab.Size.X != row[0].Size.X ||
+                tab.GetThemeStylebox("pressed").GetInstanceId() != row[0].GetThemeStylebox("pressed").GetInstanceId()))
+                throw new Exception($"同组选项卡尺寸或选中风格不一致：{row[0].GetParent().Name}，{string.Join(" / ", row.Select(tab => $"{tab.Text} {tab.Size} ({tab.GetThemeStylebox("pressed").GetInstanceId()})"))}。");
+            for (var i = 1; i < row.Length; i++)
+                if (row[i].Position.X - row[i - 1].GetRect().End.X != ClientUi.Gap) throw new Exception($"游戏页签间距没有统一为4px：{row[i - 1].Text} {row[i - 1].GetRect()} / {row[i].Text} {row[i].GetRect()}。");
+        }
+    }
+
     private OriginalButton GameArt(string hint) => Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == hint);
 
     private async Task VerifyTypography()
@@ -60,7 +75,7 @@ public partial class NativeSmoke
         if (task.Size != new Vector2(82, ClientUi.ButtonHeight) || task.Size != warehouse.Size || task.Position.Y != warehouse.Position.Y || warehouse.Position.X - task.GetRect().End.X != ClientUi.Gap)
             throw new Exception($"背包任务/仓库入口的高度、水平基线或4px间距不一致：{task.GetRect()} / {warehouse.GetRect()}。");
         var bagArt = bag.GetChildren().OfType<TextureRect>().Single();
-        if (bag.GetThemeStylebox("panel") is not StyleBoxEmpty || bagArt.Size != bagArt.Texture.GetSize() || bagArt.Size != new Vector2(313, 235))
+        if (bag.GetThemeStylebox("panel") is not StyleBoxEmpty || bagArt.Size != bagArt.Texture.GetSize() || bagArt.Size != new Vector2(313, 235 + ClientUi.InventoryExtraHeight))
             throw new Exception("背包仍在原边框下面叠画通用外框，或拉伸了带透明留白的原图。");
         foreach (var title in new[] { bag.GetNode<Label>("WindowTitle"), journal.GetNode<Label>("QuestWindowTitle"), equipment.GetNode<Label>("WindowTitle") })
             if (title.GetThemeFontSize("font_size") != ClientUi.Title || title.Position.Y != 4 || title.Size.Y != 24 || title.VerticalAlignment != VerticalAlignment.Center)
@@ -77,15 +92,15 @@ public partial class NativeSmoke
                     throw new Exception($"{button.TooltipText}/{state}未使用原版三态或固定内边距。");
             }
         }
-        if (tabs.Length != 4 || tabs.Count(tab => tab.ButtonPressed) != 1 || tabs.Any(tab => tab.Size != new Vector2(59, ClientUi.TabHeight) || tab.Position.Y != 68 || tab.ThemeTypeVariation != "GameTab") ||
+        if (tabs.Length != 4 || tabs.Count(tab => tab.ButtonPressed) != 1 || tabs.Any(tab => tab.Size != new Vector2(58, ClientUi.TabHeight) || tab.Position.Y != 68 || tab.ThemeTypeVariation != "GameTab") ||
             tabs[0].Position.X != 11 || tabs[^1].GetRect().End.X != equipment.Size.X - 11)
             throw new Exception("角色四个页签的尺寸、对齐或选中状态不一致。");
         for (var i = 1; i < tabs.Length; i++)
-            if (tabs[i].Position.X - tabs[i - 1].GetRect().End.X != 2) throw new Exception("角色页签没有保持2px间距或发生重叠。");
+            if (tabs[i].Position.X - tabs[i - 1].GetRect().End.X != ClientUi.Gap) throw new Exception("角色页签没有保持4px间距或发生重叠。");
         var selectedStyle = (StyleBoxTexture)tabs[0].GetThemeStylebox("pressed");
         var normalStyle = (StyleBoxTexture)warehouse.GetThemeStylebox("normal");
         var tabButtons = Client.FindChildren("*", "Button", true, false).OfType<Button>().Where(button => button.ThemeTypeVariation == "GameTab").ToArray();
-        if (tabButtons.Length != 13 || tabButtons.Any(button => button.Size.Y != ClientUi.TabHeight) || selectedStyle.Texture.GetInstanceId() == normalStyle.Texture.GetInstanceId())
+        if (tabButtons.Length != 20 || tabButtons.Any(button => button.Size.Y != ClientUi.TabHeight) || selectedStyle.Texture.GetInstanceId() == normalStyle.Texture.GetInstanceId())
             throw new Exception("人物/任务/仓库/行会页签没有与普通操作按钮区分外观或保持紧凑高度。");
         CheckOriginalTabArtwork(equipment, tabs[0]);
     }
@@ -99,20 +114,17 @@ public partial class NativeSmoke
         using var selectedSource = Client.Assets.Sprite("Title", 500)!.Texture.GetImage();
         using var panelSource = Client.Assets.Sprite("Title", 504)!.Texture.GetImage();
         using var outline = active.Texture.GetImage();
-        foreach (var (style, source, origin, width) in new[] { (active, selectedSource, new Vector2I(1, 0), 60), (inactive, panelSource, new Vector2I(9, 70), 60) })
-        {
-            using var image = style.Texture.GetImage();
-            if (image.GetSize() != new Vector2I(17, 20) || style.TextureMarginLeft != 8 || style.TextureMarginRight != 8)
-                throw new Exception("通用页签没有保留完整高度和独立边饰，或把边框拉进了中间填充区。");
-            for (var y = 0; y < 20; y++)
-            for (var x = 0; x < 8; x++)
-                if (!SamePixel(image.GetPixel(x, y), style == inactive && outline.GetPixel(x, y).A == 0 ? Colors.Transparent : source.GetPixel(origin.X + x, origin.Y + y)) ||
-                    !SamePixel(image.GetPixel(x + 9, y), style == inactive && outline.GetPixel(x + 9, y).A == 0 ? Colors.Transparent : source.GetPixel(origin.X + width - 8 + x, origin.Y + y)) ||
-                    !SamePixel(image.GetPixel(8, y), style == inactive && outline.GetPixel(8, y).A == 0 ? Colors.Transparent : source.GetPixel(origin.X + 8, origin.Y + y)))
-                    throw new Exception("去字损坏了原角色页签的圆角、金边或渐变。");
-            if (Enumerable.Range(0, 17).Any(x => image.GetPixel(x, 10).A != 1))
-                throw new Exception("页签中线仍有状态相关的透明留白，导致选中后可见间隔不同。");
-        }
+        using var plain = inactive.Texture.GetImage();
+        if (outline.GetSize() != new Vector2I(17, 20) || plain.GetSize() != outline.GetSize() ||
+            active.TextureMarginLeft != 8 || active.TextureMarginRight != 8 || inactive.TextureMarginLeft != 8 || inactive.TextureMarginRight != 8)
+            throw new Exception("通用页签没有保留完整高度和独立边饰。");
+        for (var y = 0; y < 20; y++)
+        for (var x = 0; x < 17; x++)
+            if (outline.GetPixel(x, y).A != plain.GetPixel(x, y).A || (x is 0 or 16 &&
+                !SamePixel(outline.GetPixel(x, y), selectedSource.GetPixel(x == 0 ? 1 : 60, y))))
+                throw new Exception("页签状态的轮廓不一致，或原边饰没有保留。");
+        if (plain.GetPixel(16, 10).R >= plain.GetPixel(15, 10).R)
+            throw new Exception("未选中页签右侧仍带有相邻页签的亮边。");
         static bool SamePixel(Color actual, Color expected) => actual == expected || actual.A == 0 && expected.A == 0;
         var background = equipment.GetChildren().OfType<TextureRect>().Single();
         using var clean = background.Texture.GetImage();

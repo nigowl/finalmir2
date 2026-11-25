@@ -22,6 +22,7 @@ public sealed partial class CompanionSession
     {
         var user=state.User!;
         var protectedItems=Knowledge?.Quests.Where(quest=>state.Quests.ContainsKey(quest.Id)).SelectMany(quest=>quest.ItemIds).ToHashSet()??[];
+        ProtectHeroItems(protectedItems);
         var caster=user.Magics.Any(magic=>Crystal.Native.ClientAutomation.IsSingleSkill(magic.Spell)&&magic.Spell!=Spell.None&&!Crystal.Native.ClientAutomation.IsAttackSkill(magic.Spell));
         var spare=CompanionInventoryRules.SurplusArmour(user.Inventory,user.Equipment[1],protectedItems,user.Level)
             .Concat(CompanionInventoryRules.SurplusWeapons(user.Inventory,user.Equipment[0],user.Class,user.Gender,user.Level,caster,protectedItems))

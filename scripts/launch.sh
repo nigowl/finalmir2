@@ -43,7 +43,9 @@ case "$ROLE" in
   *) echo "Unknown role: $ROLE" >&2; exit 1 ;;
 esac
 # Build first, so a compilation failure never stops a working instance.
-dotnet build "$PROJECT" --configuration "$CONFIG" --nologo --verbosity quiet -m:1 --disable-build-servers
+BUILD_ARGS=(--configuration "$CONFIG" --nologo --verbosity quiet -m:1 --disable-build-servers)
+if [ "$ROLE" = client ]; then BUILD_ARGS+=(-p:RequireClientStartupAssets=true); fi
+dotnet build "$PROJECT" "${BUILD_ARGS[@]}"
 owned() {
   local pid="$1" command executable
   [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" != "$$" ] || return 1

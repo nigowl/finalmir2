@@ -19,6 +19,10 @@ public static partial class Settings
     public static float ControlDurationRate = 1f;
     public static float SkillBuffDurationRate = 1f;
     public static int PlayerAttackSpeedBonus = 0;
+    public static int PlayerMoveMilliseconds = PlayerActionTiming.DefaultMoveMilliseconds;
+    public static int PlayerActionSpeedPercent = PlayerActionTiming.DefaultActionSpeedPercent;
+    // 运行值只在引擎重启时切换，已连客户端和服务端始终使用同一组间隔。
+    public static PlayerActionTiming PlayerTiming { get; private set; } = PlayerActionTiming.Default;
 
     private static void LoadBalance()
     {
@@ -38,6 +42,11 @@ public static partial class Settings
         SkillBuffDurationRate = BalanceRate("SkillBuffDurationRate", SkillBuffDurationRate, 0.1f, 10f);
         PlayerAttackSpeedBonus = Reader.ReadInt32("Balance", "PlayerAttackSpeedBonus", PlayerAttackSpeedBonus);
         if (PlayerAttackSpeedBonus is < -20 or > 30) throw new InvalidDataException("玩家基础攻速修正须为-20–30。");
+        PlayerMoveMilliseconds = Reader.ReadInt32("Balance", "PlayerMoveMilliseconds", PlayerActionTiming.DefaultMoveMilliseconds);
+        PlayerActionSpeedPercent = Reader.ReadInt32("Balance", "PlayerActionSpeedPercent", PlayerActionTiming.DefaultActionSpeedPercent);
+        if (!PlayerActionTiming.Valid(PlayerMoveMilliseconds, PlayerActionSpeedPercent))
+            throw new InvalidDataException("走跑间隔须为300–1000毫秒，角色动作速度须为80–150%。");
+        PlayerTiming = new(PlayerMoveMilliseconds, PlayerActionSpeedPercent);
         DropRange = Math.Clamp(Reader.ReadInt32("Game", "DropRange", DropRange), 1, 20);
         DropStackSize = Math.Clamp(Reader.ReadInt32("Game", "DropStackSize", DropStackSize), 1, 100);
     }
@@ -66,6 +75,8 @@ public static partial class Settings
         Reader.Write("Balance", "ControlDurationRate", ControlDurationRate);
         Reader.Write("Balance", "SkillBuffDurationRate", SkillBuffDurationRate);
         Reader.Write("Balance", "PlayerAttackSpeedBonus", PlayerAttackSpeedBonus);
+        Reader.Write("Balance", "PlayerMoveMilliseconds", PlayerMoveMilliseconds);
+        Reader.Write("Balance", "PlayerActionSpeedPercent", PlayerActionSpeedPercent);
         Reader.Write("Game", "DropRange", DropRange); Reader.Write("Game", "DropStackSize", DropStackSize);
     }
 }

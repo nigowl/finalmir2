@@ -17,6 +17,8 @@ public sealed partial record ServerSettings
     public float PoisonDurationRate { get; set; } = 1f;
     public float ControlDurationRate { get; set; } = 1f;
     public float SkillBuffDurationRate { get; set; } = 1f;
+    public int PlayerMoveMilliseconds { get; set; } = PlayerActionTiming.DefaultMoveMilliseconds;
+    public int PlayerActionSpeedPercent { get; set; } = PlayerActionTiming.DefaultActionSpeedPercent;
     public int PlayerAttackSpeedBonus { get; set; } = 0;
     public int MagicResistWeight { get; set; } = 10;
     public int PoisonResistWeight { get; set; } = 10;

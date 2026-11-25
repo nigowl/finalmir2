@@ -53,8 +53,8 @@ internal static class GmCommandSession
             Check(books.Length > 0 && books.All(book => book.Info.Type == ItemType.Book && book.Info.RequiredClass.HasFlag(RequiredClass.Warrior) && book.Count == 1) &&
                 books.Select(book => book.Info.Shape).Distinct().Count() == books.Length && state.User!.Magics.Count == 0, "GM命令没有发放职业书籍或意外自动学习。");
             await Command("@cb", "命令已处理");
-            await Command("@mk NativeEquipFixture 46", "命令已处理");
-            Check(state.User!.Inventory.Count(item => item != null) == 46 && state.User.Inventory.All(item => item.Count == 1), "装备被合成一叠或件数丢失。");
+            await Command($"@mk NativeEquipFixture {Globals.BaseInventorySize}", "命令已处理");
+            Check(state.User!.Inventory.Length == Globals.BaseInventorySize && state.User.Inventory.All(item => item is { Count: 1 }), "装备被合成一叠或件数丢失。");
             var full = Snapshot();
             await Command("@获取职业技能书 法师", "未发放");
             Check(Snapshot() == full && !packets.OfType<S.GainedItem>().Any() && state.User.Magics.Count == 0, "满包拒绝时部分发书或修改了技能。");
@@ -74,6 +74,6 @@ internal static class GmCommandSession
         }
         await connection.Send(new C.LogOut()); await Until(() => packets.OfType<S.LogOutSuccess>().Any());
         Console.WriteLine(args.Contains("--verify-gm") ? "PASS GM original TCP restart: stacked item IDs/counts preserved." :
-            "PASS GM original TCP: class books are inventory items, no automatic learning, atomic full-bag rejection, 46 individual equipment items, 101 stacked meat, detailed errors and name/code map travel.");
+            "PASS GM original TCP: class books are inventory items, no automatic learning, atomic full-bag rejection, 80 individual equipment items, 101 stacked meat, detailed errors and name/code map travel.");
     }
 }

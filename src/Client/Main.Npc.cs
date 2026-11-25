@@ -20,7 +20,7 @@ public partial class Main
         npc = Panel(game, 25, 45, 440, 225); npc.Name = "NpcDialog"; npc.Hide(); npc.ClipContents = true;
         Picture(npc, "Prguse", 995, 0, 0);
         WindowTitle(npc, "NPC对话 / 商店", 370);
-        ArtButton(npc, "Prguse2", 360, 413, 3, "关闭 NPC", () => { npc.Hide(); shopMode = null; InvalidateNpcPurchase(); });
+        ArtButton(npc, "Prguse2", 360, 413, 3, "关闭 NPC", () => { npc.Hide(); shopMode = null; CloseNpcInput(); InvalidateNpcPurchase(); });
         npcScroll = new ScrollContainer { Name = "NpcScroll", Position = new Vector2(12, 33), Size = new Vector2(415, 156),
             ClipContents = true, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         npc.AddChild(npcScroll);
@@ -30,20 +30,21 @@ public partial class Main
         repairPanel = new Control { Name = "NpcRepair", CustomMinimumSize = new Vector2(395, 76) }; content.AddChild(repairPanel); repairPanel.Hide();
         Text(repairPanel, "拖入背包物品或双击选择；已装备物品请先卸下。", 0, 0, 395).AddThemeFontSizeOverride("font_size", 10);
         repairCell = new ItemTipButton { Name = "RepairCell", Position = new Vector2(0, 28), Size = new Vector2(36, 32), ExpandIcon = true, FocusMode = FocusModeEnum.None };
-        CellStyle(repairCell); repairPanel.AddChild(repairCell); repairCell.Pressed += () => { repairItem = 0; RefreshRepair(); };
+        ItemCellStyle(repairCell); repairPanel.AddChild(repairCell); repairCell.Pressed += () => { repairItem = 0; RefreshRepair(); };
         repairInfo = Text(repairPanel, "", 45, 26, 234); repairInfo.Size = new Vector2(234, 44); repairInfo.AddThemeFontSizeOverride("font_size", 10);
         repairConfirm = Button(repairPanel, "修理", 303, 31, 80, SubmitRepair);
-        BuildNpcTransactions();
+        BuildNpcTransactions(); BuildNpcInput();
     }
 
     private void RenderNpc(List<string> page)
     {
         Clear(npcText); ClearNpcGoods(); shopMode = null; repairPanel.Hide(); InvalidateNpcPurchase(); repairItem = pendingRepair = 0;
         npcScroll.ScrollVertical = 0; npc.Visible = page.Count > 0;
+        Control? closeRow = null;
         foreach (var raw in page)
         {
             var line = Regex.Replace(raw, @"\{([^{}]+)/[A-Za-z]+\}", "$1");
-            var links = Regex.Matches(line, @"<([^<>]+)/@([^<>]+)>");
+            var links = Regex.Matches(line, @"<+([^<>]+)/@([^<>]+)>+");
             if (links.Count == 0)
             {
                 var label = new Label { Text = line, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill,
@@ -56,7 +57,8 @@ public partial class Main
             foreach (Match link in links)
             {
                 AddNpcWords(row, line[offset..link.Index]);
-                var key = "[@" + link.Groups[2].Value + "]";
+                var key = "[@" + link.Groups[2].Value.Split('/')[0] + "]";
+                if (link.Groups[1].Value.Replace(" ", "") == "关闭") closeRow ??= row;
                 row.AddChild(NpcLink(link.Groups[1].Value, () => Send(new C.CallNPC { ObjectID = npcDialogueId, Key = key })));
                 offset = link.Index + link.Length;
             }
@@ -64,14 +66,15 @@ public partial class Main
         }
         npcQuestButton = NpcLink("查看 任务", () => OpenQuestJournal(npcDialogueId));
         npcQuestButton.Name = "NpcQuestLink"; npcQuestButton.Visible = State.QuestsAt(npcDialogueId).Any(); npcText.AddChild(npcQuestButton);
+        if (closeRow != null) npcText.MoveChild(npcQuestButton, closeRow.GetIndex());
     }
 
-    private static LinkButton NpcLink(string text, Action action)
+    private LinkButton NpcLink(string text, Action action)
     {
         var button = new LinkButton { Text = text, Underline = LinkButton.UnderlineMode.OnHover, FocusMode = FocusModeEnum.None };
         button.AddThemeFontSizeOverride("font_size", ClientUi.Body); button.AddThemeColorOverride("font_color", new Color("e9c76f"));
         button.AddThemeColorOverride("font_hover_color", new Color("fff1ad")); button.AddThemeColorOverride("font_pressed_color", Colors.White);
-        button.Pressed += action; return button;
+        button.Pressed += () => { action(); _ = PlaySound(10103); }; return button;
     }
 
     private static void AddNpcWords(Control row, string text)

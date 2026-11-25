@@ -18,19 +18,51 @@ public partial class NativeSmoke : Node
 
     public override async void _Ready()
     {
-        Client.PacketReceived += packet => packets.Add(packet);
-        Client.EffectPlayed += id => effectsPlayed.Add(id);
+        Client.PacketReceived += packets.Add;
         try
         {
+            if (OS.GetCmdlineUserArgs().Contains("--verify-default-client"))
+            {
+                try { await VerifyDefaultClient(); }
+                finally { Client.PacketReceived -= packets.Add; }
+                return;
+            }
+            Client.EffectPlayed += id => effectsPlayed.Add(id);
+            if (OS.GetCmdlineUserArgs().Contains("--verify-grid-movement")) { await VerifyGridMovement(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-npc-input")) { await VerifyNpcInput(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-skill-removal")) { await VerifySkillRemoval(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-name-colours")) { await VerifyNameColours(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-object-names")) { await VerifyObjectNames(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-item-owners")) { await VerifyItemOwners(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-guild-creation")) { await VerifyGuildCreation(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-guild-war")) { await VerifyGuildWar(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-movement-state")) { await VerifyMovementState(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-health-display")) { await VerifyHealthDisplay(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-hero-inventory")) { await VerifyHeroInventory(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-hero-recovery")) { await VerifyHeroRecovery(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-gm-login")) { await VerifyGmLogin(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-hero-management")) { await VerifyHeroManagement(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-social")) { await VerifySocial(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-client-polish")) { await VerifyClientPolish(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-city-travel")) { await VerifyCityTravel(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-connection-failures")) { await VerifyConnectionFailures(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-resource-startup")) { await VerifyResourceStartup(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-visual-fixes")) { await VerifyVisualFixes(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-locomotion")) { await VerifyLocomotion(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-action-items")) { await VerifyActionItems(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-audio")) { await VerifyAudioOnly(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-auto-login")) { await VerifyStartupLogin(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-accounts")) { await VerifyAccountForms(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-movement")) { await VerifyMovementOnly(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-combat")) { await VerifyCombatPresentation(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-npc-templates")) { await VerifyNpcTemplatesOnly(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-npc-shop")) { await VerifyNpcShopOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-public-services")) { await VerifyPublicServices(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-shop-catalog")) { await VerifyShopCatalog(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-quest-ui")) { await VerifyQuestUiOnly(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-class-selection")) { await VerifyClassSelectionOnly(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-item-ui")) { await VerifyItemUiOnly(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-inventory")) { await VerifyInventoryOnly(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-item-weight")) { await VerifyItemWeightOnly(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-shadows")) { await VerifyShadowPixelsOnly(); return; }
             if (OS.GetCmdlineUserArgs().Any(flag => flag is "--profile-motion" or "--verify-smooth")) { await VerifySmoothOnly(); return; }
@@ -144,6 +176,7 @@ public partial class NativeSmoke : Node
                 await VerifyItemDrag();
                 stage = "learn spell";
                 Client.UseItem(State.User.Inventory.First(i => i?.Info is { Type: ItemType.Book } info && info.Shape == (short)Spell.FireBall).UniqueID);
+                await ConfirmBookLearning();
                 if (!(await Packet<S.UseItem>()).Success) throw new Exception("Skill book failed.");
                 await Packet<S.NewMagic>();
                 await VerifySkillControls();

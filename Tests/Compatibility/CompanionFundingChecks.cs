@@ -10,7 +10,7 @@ internal static class CompanionFundingChecks
     {
         var world=Envir.Main;
         var oldMaps=world.MapInfoList;var oldLoaded=world.MapList;var oldNpcs=world.NPCs;var oldScripts=world.Scripts;
-        var oldMonsters=world.MonsterInfoList;var oldQuests=world.QuestInfoList;var oldObjects=world.Objects;var oldIndex=world.ScriptIndex;
+        var oldMonsters=world.MonsterInfoList;var oldQuests=world.QuestInfoList;var oldObjects=world.Objects;var oldIndex=world.ScriptIndex;var oldCharacters=world.CharacterList;
         try
         {
             var map=new Map(new MapInfo{Index=701}){Width=5,Height=5,Cells=new Cell[5,5],WalkableCells=[]};
@@ -24,6 +24,7 @@ internal static class CompanionFundingChecks
             var player=new PlayerObject{Info=new CharacterInfo{Level=10},Account=new AccountInfo{Gold=38},
                 Stats=new Stats{[Stat.HP]=100,[Stat.MinDC]=10,[Stat.MaxDC]=10,[Stat.BagWeight]=1000}};
             player.CurrentMap=map;player.CurrentLocation=new(1,1);player.Info.CurrentQuests=[new(1)];
+            player.Info.Index=88;player.Info.Player=player;player.Node=new(player);world.CharacterList=[player.Info];
             player.Info.Equipment[0]=new UserItem(new ItemInfo{Type=ItemType.Weapon});
             var npc=new NPCObject(new NPCInfo{Index=1,Name="筹资检查商人",FileName="FundingChecksAbsent",Rate=100,Location=new(0,0)}){CurrentMap=map};
             var script=NPCScript.Get(npc.ScriptID);script.NPCPages=[new(NPCScript.BuySellKey)];
@@ -59,9 +60,22 @@ internal static class CompanionFundingChecks
             weak.Stats[Stat.HP]=100;check(Choose()?.Kind=="wait","缺药筹资仍选择过长战斗");weak.Stats[Stat.HP]=1;
             weak.Stats[Stat.MaxDC]=11;check(Choose()?.Kind=="wait","缺药筹资没有限制预计承伤");weak.Stats[Stat.MaxDC]=0;
             var threat=MonsterObject.GetMonster(new MonsterInfo{AI=0,ViewRange=8,Stats=new Stats{[Stat.HP]=1000,[Stat.MaxDC]=100}});
-            threat.CurrentMap=map;threat.CurrentLocation=new(3,2);world.Objects.AddLast(threat);
+            threat.CurrentMap=map;threat.CurrentLocation=new(3,2);threat.Node=world.Objects.AddLast(threat);
             check(Choose()?.Kind=="wait","只看筹资弱怪，忽略周围真实强怪围攻");
             world.Objects.Remove(threat);check(Choose()?.Key.StartsWith("fund/")==true,"威胁离开后仍永久阻止原安全筹资点");
+            foreach(var ai in new byte[]{6,57,113})
+            {
+                var guard=MonsterObject.GetMonster(new MonsterInfo{AI=ai,ViewRange=8,Stats=new Stats{[Stat.HP]=10000,[Stat.MaxDC]=10000}});
+                guard.CurrentMap=map;guard.CurrentLocation=new(3,2);guard.Node=world.Objects.AddLast(guard);
+                var record=new CompanionRecord{CharacterId=88,Profile=profile with{AcceptGroup=false}};
+                var white=CompanionKnowledgeReader.Read(record);
+                check(Choose() is {Kind:"hunt",Key:var fundingKey}&&fundingKey.StartsWith("fund/"),$"白名被不会攻击本人的AI{ai}城镇守卫阻断筹资");
+                check(white?.Enemies?.All(enemy=>enemy.ObjectId!=guard.ObjectID)==true,$"友好AI{ai}守卫仍被下发为避险敌人");
+                player.PKPoints=200;
+                check(Choose()?.Kind=="wait",$"红名忽略AI{ai}守卫的真实攻击权限");
+                check(CompanionKnowledgeReader.Read(record)?.Enemies?.Any(enemy=>enemy.ObjectId==guard.ObjectID&&!enemy.Suitable)==true,$"红名的AI{ai}守卫威胁未下发");
+                player.PKPoints=0;world.Objects.Remove(guard);
+            }
             player.Account.Gold=40;check(Choose()?.Key.StartsWith("supply/")==true,"筹资抢占无红药最低一瓶保命采购");
             npc.Info.Rate=200;check(Choose()?.Key.StartsWith("fund/")==true,"筹资忽略当前商人的真实价格倍率");npc.Info.Rate=100;
             player.Account.Gold=1000;check(Choose()?.Key.StartsWith("supply/")==true,"资金足够时仍筹资而不补给");
@@ -74,6 +88,14 @@ internal static class CompanionFundingChecks
             var remote=new Map(new MapInfo{Index=702});world.MapInfoList.Add(remote.Info);world.MapList.Add(remote);
             map.Info.Movements.Add(new MovementInfo{MapIndex=702});npc.CurrentMap=remote;
             check(Choose()?.Key.StartsWith("fund/")==true,"零红药且买不起药仍为了已完成任务跨图送死");
+            var localSpawns=map.Info.Respawns;map.Info.Respawns=[];
+            remote.Info.Respawns=[new RespawnInfo{MonsterIndex=2,Location=new(1,1),Count=1}];
+            var remoteWeak=MonsterObject.GetMonster(weak);remoteWeak.CurrentMap=remote;remoteWeak.CurrentLocation=new(1,1);world.Objects.AddLast(remoteWeak);
+            check(Choose()?.MapId==remote.Info.Index,"安全出口不能正常前往远处低风险筹资点");
+            threat.CurrentLocation=new(0,0);threat.Node=world.Objects.AddLast(threat);
+            check(Choose()?.Kind=="wait","远处金币源安全，却仍穿过当前被强怪围住的出口");
+            world.Objects.Remove(threat);check(Choose()?.MapId==remote.Info.Index,"出口威胁离开后仍永久阻断筹资");
+            world.Objects.Remove(remoteWeak);map.Info.Respawns=localSpawns;
             npc.CurrentMap=map;map.Info.Movements.Clear();world.MapInfoList.Remove(remote.Info);world.MapList.Remove(remote);
             player.CurrentQuests[0].EndDateTime=DateTime.MinValue;
             red.Info.RequiredClass=RequiredClass.Wizard;check(Choose()?.QuestId==1,"不可用药品货架触发错误筹资");
@@ -81,7 +103,7 @@ internal static class CompanionFundingChecks
         finally
         {
             world.MapInfoList=oldMaps;world.MapList=oldLoaded;world.NPCs=oldNpcs;world.Scripts=oldScripts;world.ScriptIndex=oldIndex;
-            world.MonsterInfoList=oldMonsters;world.QuestInfoList=oldQuests;world.Objects=oldObjects;
+            world.MonsterInfoList=oldMonsters;world.QuestInfoList=oldQuests;world.Objects=oldObjects;world.CharacterList=oldCharacters;
         }
     }
 }

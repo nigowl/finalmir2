@@ -46,11 +46,20 @@ public sealed partial class CompanionService(GameRuntime runtime, CompanionStore
     }
     private CompanionLimits Limits()=>new(Settings.MaxUser,Settings.MaxIP,Envir.Main.Connections.Count,Envir.Main.Connections.Count(c=>c.IPAddress==LocalHost()),
         Math.Max(0,Math.Min(store.Settings.MaxOnline,Math.Min(Settings.MaxUser-store.Settings.ReservePlayers,Settings.MaxIP-1))));
-    public CompanionPage List(int page=0,string? search=null)
+    public CompanionPage List(int page=0,string? search=null,int pageSize=20,string? status=null)
     {
-        var values=store.Records.Values.Where(r=>string.IsNullOrWhiteSpace(search)||$"{r.Profile.Name} {r.Profile.Alias} {r.Profile.Tags} {r.Profile.PresetKey}".Contains(search,StringComparison.OrdinalIgnoreCase)).OrderBy(r=>r.Profile.Name).ToArray();
+        if(pageSize is <1 or >50)throw new InvalidDataException("每页条数须为1–50。");
+        if(status is not (null or "" or "online" or "offline" or "queued" or "paused" or "resting" or "error" or "disabled"))throw new InvalidDataException("未知的陪玩状态筛选。");
         var queue=QueuePositions(DateTimeOffset.UtcNow);
-        return new(values.Skip(Math.Clamp(page,0,10000)*20).Take(20).Select(r=>Row(r,queue)).ToArray(),values.Length);
+        bool Matches(CompanionRecord r)=>status switch
+        {
+            "online"=>Envir.Main.CharacterList.Any(c=>c.Index==r.CharacterId&&c.Player!=null),
+            "offline"=>!Envir.Main.CharacterList.Any(c=>c.Index==r.CharacterId&&c.Player!=null),
+            "queued"=>queue.ContainsKey(r.Profile.Id),"paused"=>r.Desired=="pause", "resting"=>r.RestUntil>DateTimeOffset.UtcNow,
+            "error"=>r.Error.Length>0||live.GetValueOrDefault(r.Profile.Id)?.Error.Length>0,"disabled"=>!r.Profile.Enabled,_=>true
+        };
+        var values=store.Records.Values.Where(Matches).Where(r=>string.IsNullOrWhiteSpace(search)||$"{r.Profile.Name} {r.Profile.Alias} {r.Profile.Tags} {r.Profile.PresetKey}".Contains(search,StringComparison.OrdinalIgnoreCase)).OrderBy(r=>r.Profile.Name).ToArray();
+        return new(values.Skip(Math.Clamp(page,0,10000)*pageSize).Take(pageSize).Select(r=>Row(r,queue)).ToArray(),values.Length);
     }
     private Dictionary<Guid,int> QueuePositions(DateTimeOffset now)=>CompanionStore.Waiting(store.Records.Values
         .Where(r=>!live.ContainsKey(r.Profile.Id)&&Eligibility(r,now).Allowed)).Select((r,i)=>(r.Profile.Id,Position:i+1)).ToDictionary(p=>p.Id,p=>p.Position);
@@ -129,6 +138,7 @@ public sealed partial class CompanionService(GameRuntime runtime, CompanionStore
         new("版本隔离/人格/日程",store.LoadError==null?"可用":"阻断",store.LoadError??"全部资料与用量保存在当前版本 SQLite；人格修订固定。"),
         new("独立 TCP 客户端",CompanionWorker.Installed?"可用":"阻断","正常注册、创建角色与登录。"),
         new("真实成长","可用","服务器提供NPC/任务/刷新点与实际掉落来源，规则规划接取、寻怪收集和返回交付；支持战斗、拾取、换装、学书、补给与修理。"),
+        new("英雄","受限","满足当前版本等级、NPC与职业条件后创建首名英雄，原封印激活、召唤及死亡60秒恢复；共用角色背包装备、普通技能书与富余药品。尚不自动切换/封印/删除英雄或操作复杂专属剧情。"),
         new("背包仓库","受限","普通余料及同定义重复防具/首饰经NPC和密码校验暂存；留最好1件备装，戒指/手镯留2件，材料可安全取回至5份；任务/特殊物不动，人工密码不重置。"),
         new("剧情与跨图","受限","按当前版本编号规划公开入口步行路线；支持击杀/掉落收集，隐藏剧情和特殊入口仍需适配。无进度保持在线重新规划。"),
         new("组队/聊天","可用","陪玩自主邀请，优先同行会和互补职业；原队伍回执确认后跟随公开跨图路线、协助合法怪物和治疗队友，补给/筹资及任务交付优先。"),

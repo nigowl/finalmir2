@@ -60,6 +60,11 @@ namespace Server.MirDatabase
         public RequiredClass RequiredClass = RequiredClass.None;
 
         public QuestType Type;
+        public bool MengchongDaily => ClientQuestInfo.IsMengchongDaily(Type, Group);
+        public uint ActualGoldReward => MengchongDaily ? GoldReward : (uint)(GoldReward * Settings.DropRate);
+        public bool CanReceiveRewards(PlayerObject player, UserItem[] items) => !MengchongDaily ? player.CanGainItems(items) :
+            Helpers.InventoryStacks.CanAdd(player.Info.Inventory, items.Where(item => item.Info.Type != ItemType.Quest)) &&
+            Helpers.InventoryStacks.CanAdd(player.Info.QuestInventory, items.Where(item => item.Info.Type == ItemType.Quest));
 
         public int TimeLimitInSeconds = 0;
 
@@ -347,6 +352,11 @@ namespace Server.MirDatabase
         public bool CanAccept(PlayerObject player)
         {
             if (RequiredMinLevel > player.Level || RequiredMaxLevel < player.Level)
+                return false;
+
+            // 跨档升级不重开同种日常；原每日重置清理实际交付编号。
+            if (MengchongDaily && (player.CurrentQuests.Any(q => q.Info.MengchongDaily && q.Info.Group == Group) ||
+                Envir.QuestInfoList.Any(q => q.MengchongDaily && q.Group == Group && player.CompletedQuests.Contains(q.Index))))
                 return false;
 
             if (RequiredQuest > 0 && !player.CompletedQuests.Contains(RequiredQuest))

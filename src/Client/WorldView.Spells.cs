@@ -12,17 +12,18 @@ public partial class WorldView
         var start = Environment.TickCount64;
         var clips = OriginalSpellEffects.Casting(spell, actor.Direction);
         for (var i = 0; i < clips.Length; i++)
-            AddEffect(clips[i], spell is Spell.FlameField or Spell.ThunderStorm or Spell.MoonMist or Spell.OneWithNature ? 0 : caster,
-                actor.Location, start + (spell == Spell.SlashingBurst ? 300 : 0), sound: i == 0 ? CastingSound(spell, actor.Gender) : 0);
-        if (clips.Length == 0 && CastingSound(spell, actor.Gender) is > 0 and var sound) SoundRequested?.Invoke(sound);
+            AddEffect(actor.Kind == ObjectType.Player ? clips[i] with { Duration = actor.PlayerTiming.Scale(clips[i].Duration) } : clips[i],
+                spell is Spell.FlameField or Spell.ThunderStorm or Spell.MoonMist or Spell.OneWithNature ? 0 : caster,
+                actor.Location, start + (spell == Spell.SlashingBurst ? actor.PlayerTiming.Scale(300) : 0), sound: i == 0 ? OriginalSoundRules.CastingSound(spell, actor.Gender) : 0);
+        if (clips.Length == 0) RequestSound(OriginalSoundRules.CastingSound(spell, actor.Gender), actor.Location);
         if (!cast) return;
         var launch = start + ActionDuration(actor);
         if (OriginalSpellEffects.Missile(spell) != null)
         {
-            if (ClientSkillRules.Animation(spell) == MirAction.AttackRange2) launch = start + (spell is Spell.DoubleShot or Spell.DelayedExplosion ? 500 : 700);
-            if (actor.Action == MirAction.AttackRange1) launch = start + 500;
+            if (ClientSkillRules.Animation(spell) == MirAction.AttackRange2) launch = start + actor.PlayerTiming.Scale(spell is Spell.DoubleShot or Spell.DelayedExplosion ? 500 : 700);
+            if (actor.Action == MirAction.AttackRange1) launch = start + actor.PlayerTiming.Scale(500);
             AddMissile(spell, caster, target, actor.Location, destination, launch);
-            if (spell == Spell.Focus) AddEffect(new("Magic3", 2730, 10, 800), caster, actor.Location, start + 600);
+            if (spell == Spell.Focus) AddEffect(new("Magic3", 2730, 10, 800), caster, actor.Location, start + 600, sound: 21215);
             if (spell == Spell.DoubleShot) AddMissile(spell, caster, target, actor.Location, destination, launch + 200);
             if (spell == Spell.MeteorShower)
                 foreach (var id in (secondary ?? []).Distinct().Where(id => id != target).Take(128))
@@ -35,7 +36,7 @@ public partial class WorldView
             {
                 var cell = Functions.PointMove(actor.Location, (MirDirection)(((int)actor.Direction + offset) % 8), step);
                 if (Map != null && (cell.X < 0 || cell.Y < 0 || cell.X >= Map.Width || cell.Y >= Map.Height)) break;
-                AddEffect(new("Magic", 930, 6, 500, Opacity: .7f), 0, cell, launch + (step - 1) * 50, sound: step == 1 && offset == 0 ? ImpactSound(spell) : 0);
+                AddEffect(new("Magic", 930, 6, 500, Opacity: .7f), 0, cell, launch + (step - 1) * 50, sound: step == 1 && offset == 0 ? OriginalSoundRules.ImpactSound(spell) : 0);
             }
         }
         else if (OriginalSpellEffects.Impact(spell, actor.Direction) is { } hit)
@@ -43,9 +44,12 @@ public partial class WorldView
             var ground = spell is Spell.FireBang or Spell.MassHealing or Spell.HealingCircle or Spell.IceStorm;
             var owner = spell is Spell.Lightning or Spell.SummonHolyDeva ? caster : ground ? 0 : target;
             var location = spell == Spell.IceThrust ? Functions.PointMove(actor.Location, actor.Direction, 1) : destination;
-            AddEffect(hit, owner, location, launch, sound: ImpactSound(spell));
-            if (spell == Spell.Vampirism && target != 0) AddEffect(new("Magic2", 1090, 10, 500), caster, actor.Location, launch + 1000);
+            AddEffect(hit, owner, location, launch, sound: OriginalSoundRules.ImpactSound(spell));
+            if (spell == Spell.Vampirism && target != 0) AddEffect(new("Magic2", 1090, 10, 500), caster, actor.Location, launch + 1000, sound: 20452);
         }
+        if (spell is Spell.FireWall or Spell.Blizzard or Spell.MeteorStrike)
+            AddSound(20000 + (int)spell * 10 + 1, destination, launch);
+        if (spell == Spell.MeteorStrike) AddSound(20522, destination, launch);
         if (spell == Spell.UltimateEnhancer && target != caster && target != 0)
             AddEffect(new("Magic2", 160, 15, 1000), target, destination, launch);
     }
@@ -54,12 +58,16 @@ public partial class WorldView
     {
         CombatTextPacket(packet);
         var now = Environment.TickCount64;
+        if (packet is S.ObjectSpell groundSound) RequestSound(OriginalSoundRules.GroundSound(groundSound.Spell, groundSound.Param), groundSound.Location);
         switch (packet)
         {
-            case S.SetConcentration p when p.Enabled && !p.Interrupted: SoundRequested?.Invoke(21290); break;
+            case S.SetConcentration p when p.Enabled && !p.Interrupted && State.Me is { } me: RequestSound(21290, me.Location); break;
             case S.RangeAttack p when State.User != null: ShowSpell(p.Spell, State.User.ObjectID, p.TargetID, p.Target); break;
             case S.ObjectRangeAttack p when p.ObjectID != State.User?.ObjectID && State.Actors.GetValueOrDefault(p.ObjectID)?.Kind == ObjectType.Player:
                 ShowSpell(p.Spell, p.ObjectID, p.TargetID, p.Target, level: p.Level); break;
+            case S.ObjectAttack p when State.Actors.GetValueOrDefault(p.ObjectID) is { IsShinsu: true } shinsu:
+                var interval = Assets.Frames("Monster/080")?.Frames.GetValueOrDefault(MirAction.Attack1)?.Interval ?? 100;
+                AddEffect(OriginalSpellEffects.ShinsuBreath(p.Direction, interval), shinsu.Id, shinsu.Location, now + 3 * interval); break;
             case S.ObjectRangeAttack p when State.Actors.TryGetValue(p.ObjectID, out var guard) && guard.Kind == ObjectType.Monster &&
                 OriginalSpellEffects.GuardMissile((Monster)guard.Image) is { } arrow:
                 var frames = Assets.Frames(ActorLibrary(guard))?.Frames;
@@ -73,7 +81,6 @@ public partial class WorldView
                 PrepareClip(ground.Clip);
                 foreach (var clip in OriginalSpellEffects.GroundOverlay(p.Spell))
                     AddEffect(clip, p.ObjectID, p.Location, now, p.Spell == Spell.MeteorStrike ? 3000 : 0);
-                if (p.Spell == Spell.ExplosiveTrap && p.Param) SoundRequested?.Invoke(21245);
                 break;
             case S.ObjectEffect p when State.Actors.TryGetValue(p.ObjectID, out var actor):
                 if (p.Effect == SpellEffect.MagicShieldDown) break;
@@ -88,7 +95,7 @@ public partial class WorldView
                 for (var i = 0; i < clips.Length; i++)
                     AddEffect(clips[i], p.ObjectID, actor.Location, now + p.DelayTime,
                         p.Effect == SpellEffect.DelayedExplosion && p.EffectType < 2 ? -1 : p.Time > 0 && p.Effect is SpellEffect.Stunned or SpellEffect.FlamingMutantWeb ? (int)Math.Min(p.Time, int.MaxValue) : 0,
-                        p.Effect, i == 0 ? ObjectSound(p.Effect) : 0);
+                        p.Effect, i == 0 ? OriginalSoundRules.ObjectSound(p.Effect) : 0);
                 if (p.Effect == SpellEffect.MPEater && State.Actors.TryGetValue(p.EffectType, out var other))
                     AddEffect(new("Magic2", 2411, 19, 1900), other.Id, other.Location, now);
                 break;
@@ -102,6 +109,14 @@ public partial class WorldView
 
     internal void WarmSkills()
     {
+        _ = Assets.WarmSounds((State.User?.Magics ?? []).SelectMany(magic => new[]
+        {
+            OriginalSoundRules.CastingSound(magic.Spell, State.Me?.Gender ?? MirGender.Male),
+            OriginalSoundRules.MeleeSound(magic.Spell, State.Me?.Gender ?? MirGender.Male),
+            magic.Spell == Spell.DoubleSlash ? 20921 : 0,
+            OriginalSpellEffects.Missile(magic.Spell) != null ? OriginalSoundRules.MissileSound(magic.Spell, ClientSkillRules.Animation(magic.Spell) == MirAction.AttackRange2) : 0,
+            OriginalSpellEffects.Missile(magic.Spell) != null || OriginalSpellEffects.Impact(magic.Spell, MirDirection.Up) != null ? OriginalSoundRules.ImpactSound(magic.Spell) : 0
+        }).Where(id => id > 0));
         effectWarmup.Clear();
         var known = new HashSet<(string Library, int Index)>();
         foreach (var magic in State.User?.Magics ?? [])
@@ -118,36 +133,4 @@ public partial class WorldView
         }
     }
 
-    private static int CastingSound(Spell spell, MirGender gender) => spell switch
-    {
-        Spell.None or Spell.Focus or Spell.ThunderBolt or Spell.FlameDisruptor or Spell.PoisonShot or Spell.Reincarnation => 0,
-        Spell.FireBounce or Spell.MeteorShower => 20340,
-        Spell.LionRoar or Spell.BattleCry or Spell.CrescentSlash or Spell.FlashDash => 20000 + (int)spell * 10 + (gender == MirGender.Female ? 1 : 0),
-        Spell.CounterAttack => 20145,
-        _ => 20000 + (int)spell * 10
-    };
-    private static int MissileSound(Spell spell) => spell switch
-    {
-        Spell.FireBounce or Spell.MeteorShower => 20341,
-        Spell.None or Spell.Focus or Spell.DoubleShot or Spell.DelayedExplosion or Spell.BindingShot or Spell.SummonVampire
-            or Spell.SummonToad or Spell.SummonSnakes or Spell.Stonetrap or Spell.VampireShot or Spell.PoisonShot => 21210,
-        _ => 20000 + (int)spell * 10 + (ClientSkillRules.Animation(spell) == MirAction.AttackRange2 ? 0 : 1)
-    };
-    private static int ImpactSound(Spell spell) => spell switch
-    {
-        Spell.FireBounce or Spell.MeteorShower => 20342,
-        Spell.ThunderBolt or Spell.Lightning or Spell.FlameDisruptor => 20000 + (int)spell * 10,
-        Spell.Healing or Spell.ElectricShock or Spell.Poisoning or Spell.HellFire or Spell.FireBang or Spell.IceStorm
-            or Spell.MassHealing or Spell.HealingCircle or Spell.TurnUndead or Spell.Vampirism or Spell.Revelation => 20000 + (int)spell * 10 + 1,
-        _ => 20000 + (int)spell * 10 + 2
-    };
-    private static int ObjectSound(SpellEffect effect) => effect switch
-    {
-        SpellEffect.FatalSword or SpellEffect.MPEater or SpellEffect.FurbolgWarriorCritical => 20910,
-        SpellEffect.Teleport or SpellEffect.StormEscape => 10110,
-        SpellEffect.Healing => 20611,
-        SpellEffect.Hemorrhage => 21040,
-        SpellEffect.ElementalBarrierDown => 21315,
-        _ => 0
-    };
 }

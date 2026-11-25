@@ -22,6 +22,7 @@ public static class ResourceService
         builder.Services.AddSingleton<GameRuntime>(); builder.Services.AddHostedService(sp => sp.GetRequiredService<GameRuntime>());
         builder.Services.AddSingleton<DevelopmentFiles>();
         builder.Services.AddSingleton<SystemSettings>();
+        builder.Services.AddSingleton<PublicShopSettings>();
         builder.Services.AddSingleton<WorldDefinitions>();
         builder.Services.AddSingleton<MonsterDrops>();
         builder.Services.AddSingleton<MonsterDefinitions>();
@@ -43,7 +44,7 @@ public static class ResourceService
             var management = context.Request.Path.StartsWithSegments("/management");
             if (management && !ProjectPaths.KeyEquals(context.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal), key))
             { context.Response.StatusCode = 401; return; }
-            if ((context.Request.Path.StartsWithSegments("/management/companions") || context.Request.Path.StartsWithSegments("/management/settings") || context.Request.Path.StartsWithSegments("/management/admin/monsters")) && context.Request.Headers["X-Mir2-Version"] != paths.VersionId)
+            if ((context.Request.Path.StartsWithSegments("/management/companions") || context.Request.Path.StartsWithSegments("/management/settings") || context.Request.Path.StartsWithSegments("/management/shop") || context.Request.Path.StartsWithSegments("/management/admin/monsters")) && context.Request.Headers["X-Mir2-Version"] != paths.VersionId)
             { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { error = "此操作必须显式绑定当前版本。" }); return; }
             if (management && context.Request.Headers.TryGetValue("X-Mir2-Version", out var version) && version != paths.VersionId)
             { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { error = "管理端与服务端的版本目录不匹配。" }); return; }
@@ -70,7 +71,8 @@ public static class ResourceService
             finally { lease?.Dispose(); }
         });
         app.MapGet("/health", (GameRuntime runtime) => new { ready = runtime.Ready, gamePort = runtime.GamePort, version = catalog.Version, gameVersion = paths.VersionName });
-        app.MapGet("/assets/manifest", (GameRuntime runtime) => new { version = catalog.Version, gamePort = runtime.GamePort, protocol = "Crystal TCP", frameFormat = 1, checksumAlgorithm = "sha256", characterLocation = true, functionKeys = 12, attackModes = 8 });
+        app.MapGet("/assets/manifest", (GameRuntime runtime) => new { version = catalog.Version, gamePort = runtime.GamePort, protocol = "Crystal TCP", frameFormat = 1, checksumAlgorithm = "sha256", healthDisplay = true, heroRecovery = true, heroDeletion = true, characterLocation = true, publicShop = true, publicShopLayout = true, questNavigation = true, functionKeys = 12, attackModes = 8, playerMoveMilliseconds = Settings.PlayerTiming.MoveMilliseconds, playerActionSpeedPercent = Settings.PlayerTiming.ActionSpeedPercent, itemRecycling = true });
+        app.MapGet("/game/item-catalog", (GameRuntime runtime, CancellationToken token) => runtime.Invoke(() => Server.MirEnvir.Envir.Main.ItemInfoList.Select(item => new ItemCatalogEntry(item.Index, item.FriendlyName, item.Type)).ToArray(), token));
         app.MapGet("/game/storage-unlocks", (GameRuntime runtime, CancellationToken token) => runtime.Invoke(StorageUnlocks.Read, token));
         var assets = app.MapGroup("/assets/{requested}");
         assets.AddEndpointFilter(async (context, next) => context.HttpContext.Request.RouteValues["requested"]?.ToString() == catalog.Version ? await next(context) : Results.StatusCode(410));
@@ -99,7 +101,7 @@ public static class ResourceService
         { catalog.ReadPath("libraries", library + ".Lib"); return Bytes(context, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(catalog.Decoder.Frames(library)), "application/json"); });
         assets.MapGet("/sound/{**name}", (HttpContext context, string name) => Bytes(context, File.ReadAllBytes(catalog.ReadPath("sounds", name))));
         var management = app.MapGroup("/management");
-        management.MapOperations(); management.MapResources(); management.MapDevelopment(); management.MapAdministration(); management.MapCompanions();
+        management.MapOperations(); management.MapPublicShopSettings(); management.MapResources(); management.MapDevelopment(); management.MapAdministration(); management.MapCompanions();
         return app;
     }
 }

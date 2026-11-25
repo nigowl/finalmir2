@@ -51,6 +51,7 @@ public sealed partial class CompanionSession
         var user=state.User!;var source=move.Take?state.Storage:user.Inventory;
         var item=source.FirstOrDefault(item=>item?.UniqueID==move.UniqueId);
         var quests=Knowledge?.Quests.SelectMany(q=>q.ItemIds).ToHashSet()??[];
+        ProtectHeroItems(quests);
         if(item==null||refused.Contains(move.UniqueId))return false;
         var full=CompanionInventoryRules.NeedsSpace(state.InventoryWeight,state.CalculateStats()[Stat.BagWeight],user.Inventory.Count(i=>i==null));
         if(!move.Take)

@@ -16,6 +16,13 @@ public static class CompanionSupplies
         var mp = CompanionSupplyRules.NeedsRefill(player.Info.Inventory, Stat.MP, player.Class, profile.Traits.Frugality);
         var town = !player.CurrentMap.Info.NoTownTeleport && CompanionSupplyRules.TownCount(player.Info.Inventory, player.Class, player.Gender, player.Level)==0;
         if (!hp && !mp && !town) return null;
+        var publicItems = player.PublicShopOffers().Select(offer => Envir.Main.GetItemInfo(offer.ItemIndex))
+            .Where(info => CompanionSupplyRules.Usable(info, player.Class, player.Gender, player.Level)).Select(info => new UserItem(info)).ToArray();
+        // 商城已供应的耗材不再为便宜的NPC报价跨图；不足时先原地回收或低风险筹资。
+        hp &= !publicItems.Any(item => CompanionSupplyRules.IsPotion(item, Stat.HP));
+        mp &= !publicItems.Any(item => CompanionSupplyRules.IsPotion(item, Stat.MP));
+        town &= !publicItems.Any(CompanionSupplyRules.IsTownScroll);
+        if (!hp && !mp && !town) return null;
         var distances = RouteDistances(player, routes);
         bool Eligible(NPCObject npc, UserItem item) => CompanionSupplyRules.Usable(item.Info, player.Class, player.Gender, player.Level) && Affordable(player, profile, npc, item);
         var vendors = npcs.Where(npc => distances.ContainsKey(npc.CurrentMap.Info.Index) && blocked?.Contains($"supply/{npc.ObjectID}") != true)
@@ -55,7 +62,12 @@ public static class CompanionSupplies
     {
         if (!CompanionSupplyRules.NeedsRefill(player.Info.Inventory, Stat.HP, player.Class, profile.Traits.Frugality) ||
             !player.Info.Inventory.Any(item => item == null)) return false;
-        var cheapest = npcs.Select(npc => (npc, script: NPCScript.Get(npc.ScriptID))).Where(pair => Sells(pair.script))
+        var publicPrices = player.PublicShopOffers().Where(offer => Envir.Main.GetItemInfo(offer.ItemIndex) is { } info &&
+                CompanionSupplyRules.IsPotion(new UserItem(info), Stat.HP) &&
+                CompanionSupplyRules.Usable(info, player.Class, player.Gender, player.Level) &&
+                info.UnitWeight <= player.Stats[Stat.BagWeight] - player.CurrentBagWeight)
+            .Select(offer => (double)offer.Price).ToArray();
+        var cheapest = publicPrices.Length > 0 ? publicPrices.Min() : npcs.Select(npc => (npc, script: NPCScript.Get(npc.ScriptID))).Where(pair => Sells(pair.script))
             .SelectMany(pair => pair.script.Goods.Where(item => CompanionSupplyRules.IsPotion(item, Stat.HP) &&
                 CompanionSupplyRules.Usable(item.Info, player.Class, player.Gender, player.Level) &&
                 item.Info.UnitWeight <= player.Stats[Stat.BagWeight] - player.CurrentBagWeight).Select(item => Price(player, pair.npc, item)))

@@ -28,6 +28,8 @@ public partial class Main
     private void OpenCharacterCreation()
     {
         if (pendingCharacterDeletion >= 0) return;
+        if (State.Characters.Count >= Globals.MaxCharacterCount)
+        { selectionNotice.Text = $"该账号最多可创建{Globals.MaxCharacterCount}个角色。"; return; }
         characterCreation.Show();
         if (characterCreateSentAt == 0) { selectionNotice.Text = ""; characterName.GrabFocus(); }
     }

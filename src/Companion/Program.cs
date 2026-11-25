@@ -3,6 +3,12 @@ using System.Text.Json;
 using Mir2.Companions;
 using Mir2.Companion;
 
+var timing = Environment.GetEnvironmentVariable("MIR2_COMPANION_PLAYER_TIMING") is { } configured
+    ? JsonSerializer.Deserialize<PlayerActionTiming>(configured) ?? throw new InvalidDataException("缺少陪玩动作速度。")
+    : PlayerActionTiming.Default;
+if (!PlayerActionTiming.Valid(timing.MoveMilliseconds, timing.ActionSpeedPercent))
+    throw new InvalidDataException("陪玩动作速度超出范围。");
+
 var sessions = new Dictionary<Guid, CompanionSession>();
 var output = new SemaphoreSlim(1);
 async Task Report(WorkerEvent value)
@@ -28,7 +34,7 @@ try
             if (sessions.Remove(start.Profile.Id, out var prior)) await prior.Stop();
             if (start.Protocol != CompanionProtocol.Fingerprint || start.Profile.Id == Guid.Empty || sessions.Count >= 100)
                 throw new InvalidDataException("陪玩协议、编号或会话上限不匹配。");
-            var session = new CompanionSession(start, Report); sessions.Add(start.Profile.Id, session); session.Begin();
+            var session = new CompanionSession(start, Report, timing); sessions.Add(start.Profile.Id, session); session.Begin();
         }
         else if (sessions.TryGetValue(command.Id, out var active))
         {

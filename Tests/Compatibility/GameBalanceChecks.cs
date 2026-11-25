@@ -70,7 +70,7 @@ internal static class GameBalanceChecks
             var client = GameBalance.ClientStats(Settings.ClassBaseStats[0]);
             check(player.Stats[Stat.AttackSpeed] == 5 && client.Stats.Single(stat => stat.Type == Stat.AttackSpeed).Calculate(MirClass.Warrior, player.Level) == 5 &&
                 Settings.ClassBaseStats[0].Stats.All(stat => stat.Type != Stat.AttackSpeed || stat.Base != 5), "攻速修改未同步原基础属性包或污染职业定义");
-            check(player.AttackSpeed == Math.Max(550, 1400 - 300 - Math.Min(370, player.Level * 14)), "玩家真实攻速不符基础修正");
+            check(player.AttackSpeed == (96000 + Settings.PlayerActionSpeedPercent - 1) / Settings.PlayerActionSpeedPercent, "玩家真实攻速不符基础修正及动作速度倍率");
             var magic = new UserMagic(Spell.FireBall) { Level = 2, Info = new MagicInfo { DelayBase = 3000, DelayReduction = 500 } };
             check(magic.GetDelay() == 1000 && magic.CreateClientMagic().Delay == 1000, "冷却未同时应用原施法判断和客户端元数据");
             var poison = new Poison { Owner = player, PType = PoisonType.Green, Value = 10, Duration = 5, TickSpeed = 1000, TickTime = -1 };

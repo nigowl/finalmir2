@@ -18,22 +18,27 @@ public partial class NativeSmoke
             throw new Exception("Body name centres included opaque black shadows/translucent padding or lost the empty-frame fallback.");
         foreach (var actor in new[] { State.Me!, npc, monster })
         {
-            await Until(() => Client.World.ActorBody(actor, Environment.TickCount64) != null);
+            await Until(() => Client.World.NameBody(actor) != null);
             var timestamp = Environment.TickCount64;
-            var body = Client.World.ActorBody(actor, timestamp)!;
-            var motion = ((Client.World.Visual(actor, timestamp) - new Vector2(actor.Location.X, actor.Location.Y)) * new Vector2(48, 32)).Round();
-            var rect = new Rect2(Client.World.Screen(actor.Location) + motion + body.Offset, body.Size);
-            var anchor = Client.World.NameAnchor(actor, timestamp);
-            if (anchor.DistanceTo(rect.Position + body.BodyCentre) > 1 || !rect.HasPoint(anchor))
-                throw new Exception($"{actor.Kind} name did not use its original sprite's body centre: {anchor}, {rect}.");
+            var body = Client.World.NameBody(actor)!;
+            var probe = new Actor { Kind = actor.Kind, Image = actor.Image, Class = actor.Class, Gender = actor.Gender,
+                Armour = actor.Armour, Weapon = actor.Weapon, Location = actor.Location };
+            var expected = Client.World.Screen(probe.Location) + body.Offset + body.BodyCentre;
+            foreach (var action in new[] { MirAction.Standing, MirAction.Attack1, MirAction.Harvest, MirAction.Spell })
+            {
+                probe.Move(probe.Location, MirDirection.Up, action, timestamp);
+                for (var elapsed = 0; elapsed < 1600; elapsed += 50)
+                    if (Client.World.NameAnchor(probe, timestamp + elapsed) != expected)
+                        throw new Exception($"{probe.Kind} {action} 名称随静止动画或朝向变化。");
+            }
         }
-        var probe = new Actor { Kind = monster.Kind, Image = monster.Image, Location = monster.Location };
+        var moving = new Actor { Kind = monster.Kind, Image = monster.Image, Location = monster.Location };
         var now = Environment.TickCount64;
-        probe.Move(new Point(probe.Location.X + 1, probe.Location.Y), MirDirection.Right, MirAction.Walking, now);
-        var duration = Client.World.ActionDuration(probe);
-        await Until(() => new[] { now, now + duration / 2, now + duration }.All(time => Client.World.ActorBody(probe, time) != null));
-        Vector2 Origin(long time) { var body = Client.World.ActorBody(probe, time)!; return Client.World.NameAnchor(probe, time) - body.Offset - body.BodyCentre; }
-        var first = Origin(now); var middle = Origin(now + duration / 2); var end = Origin(now + duration);
+        moving.Move(new Point(moving.Location.X + 1, moving.Location.Y), MirDirection.Right, MirAction.Walking, now);
+        var duration = Client.World.ActionDuration(moving);
+        var first = Client.World.NameAnchor(moving, now);
+        var middle = Client.World.NameAnchor(moving, now + duration / 2);
+        var end = Client.World.NameAnchor(moving, now + duration);
         if ((middle - first).DistanceTo(new Vector2(24, 0)) > 1 || (end - middle).DistanceTo(new Vector2(24, 0)) > 1)
             throw new Exception("Monster name jumped to its destination instead of following its interpolated body.");
         var names = Client.World.ShowMonsterNames; Client.World.ShowMonsterNames = true;

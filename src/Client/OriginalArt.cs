@@ -15,9 +15,16 @@ public partial class OriginalArt : Control
         var border = assets.Sprite("Prguse", 1932);
         if (border != null) control.DrawTextureRectRegion(border.Texture, rect, source);
     }
+    internal static Rect2 SlotIconRect(Vector2 slot, Vector2 source)
+    {
+        var inner = slot - Vector2.One * (2 * ClientUi.SlotInset);
+        var size = (source * Math.Min(inner.X / source.X, inner.Y / source.Y)).Floor().Max(Vector2.One);
+        return new Rect2(((slot - size) / 2).Floor(), size);
+    }
     public ResourceCache Assets = null!;
     public GameState State = null!;
     public string Page = "hud";
+    public bool Hero;
     public SelectInfo? Character;
     private SelectInfo? previewCharacter;
     private SpriteImage? previewImage;
@@ -51,23 +58,28 @@ public partial class OriginalArt : Control
             if (previewImage != null) DrawTexture(previewImage.Texture, new Vector2(260, 420) + previewImage.Offset);
             return;
         }
-        var user = State.User;
+        var user = Page == "equipment" && Hero ? State.Hero : State.User;
         if (user == null) return;
         if (Page == "inventory-grid")
         {
+            var count = GetChildCount();
             if (Assets.Sprite("Title", 196) is { } background)
-                for (var row = 0; row < 6; row++)
-                    DrawTextureRectRegion(background.Texture, new Rect2(0, row * 33, 295, 33), new Rect2(9, 37, 295, 33));
+                for (var slot = 0; slot < count; slot += ClientUi.InventoryColumns)
+                {
+                    var y = slot / ClientUi.InventoryColumns * 33;
+                    var width = Math.Min(295, (count - slot) * 37 - 1);
+                    DrawTextureRectRegion(background.Texture, new Rect2(0, y, width, 33), new Rect2(9, 70, width, 33));
+                }
             return;
         }
         if (Page == "inventory")
         {
             var ratio = Math.Clamp((float)State.InventoryWeight / (float)Math.Max(1, State.CalculateStats()[Stat.BagWeight]), 0, 1);
-            var bar = ratio <= .5f ? Assets.Sprite("Prguse", 24) : Assets.Sprite("UI_32bit", ratio <= .75f ? 471 : 470);
+            var bar = Assets.Sprite("Prguse", 24);
             if (bar != null && ratio > 0)
             {
                 var size = new Vector2((bar.Size.X - 3) * ratio, bar.Size.Y);
-                DrawTextureRectRegion(bar.Texture, new Rect2(new Vector2(182, 217), size), new Rect2(Vector2.Zero, size));
+                DrawTextureRectRegion(bar.Texture, new Rect2(new Vector2(182, 217 + ClientUi.InventoryExtraHeight), size), new Rect2(Vector2.Zero, size), WeightTint(ratio));
             }
             return;
         }
@@ -94,17 +106,19 @@ public partial class OriginalArt : Control
             if (!hpOnly) DrawTextureRectRegion(orb.Texture, new Rect2(51, 646 + 80 * (1 - mp), 50, 80 * mp), new Rect2(51, 80 * (1 - mp), 50, 80 * mp));
         }
         var weightRatio = Math.Clamp((float)State.InventoryWeight / (float)Math.Max(1, stats[Stat.BagWeight]), 0, 1);
-        var weight = weightRatio <= .5f ? Assets.Sprite("Prguse", 76) : Assets.Sprite("UI_32bit", weightRatio <= .75f ? 473 : 472);
+        var weight = Assets.Sprite("Prguse", 76);
         if (weight != null && weightRatio > 0)
         {
             var fill = new Vector2((weight.Size.X - 2) * weightRatio, weight.Size.Y);
-            DrawTextureRectRegion(weight.Texture, new Rect2(new Vector2(919, 719), fill), new Rect2(Vector2.Zero, fill));
+            DrawTextureRectRegion(weight.Texture, new Rect2(new Vector2(919, 719), fill), new Rect2(Vector2.Zero, fill), WeightTint(weightRatio));
         }
         var experience = Assets.Sprite("Prguse", 8);
         var fraction = Math.Clamp(user.Experience / (double)Math.Max(1, user.MaxExperience), 0, 1);
         if (experience != null) DrawTextureRectRegion(experience.Texture,
             new Rect2(9, 759, (float)(1001 * fraction), 8), new Rect2(0, 0, (float)(1001 * fraction), 8));
     }
+
+    private static Color WeightTint(float ratio) => ratio <= .5f ? Colors.White : ratio <= .75f ? new Color("ffcc66") : new Color("ff7777");
 }
 
 public partial class OriginalButton : Button
@@ -112,6 +126,7 @@ public partial class OriginalButton : Button
     public ResourceCache Assets = null!;
     public string Library = "Prguse";
     public int Index, HoverIndex = -1, PressedIndex = -1;
+    public int ArtSize;
     public override void _Ready()
     {
         FocusMode = FocusModeEnum.None;
@@ -126,7 +141,9 @@ public partial class OriginalButton : Button
         if (IsPressed()) index = PressedIndex < 0 ? Index + 2 : PressedIndex;
         else if (IsHovered()) index = HoverIndex < 0 ? Index + 1 : HoverIndex;
         var image = Assets.Sprite(Library, index);
-        if (image != null) { Size = image.Size; DrawTexture(image.Texture, Vector2.Zero, Disabled ? new Color(1, 1, 1, 0.4f) : Colors.White); }
+        if (image == null) return;
+        Size = ArtSize > 0 ? Vector2.One * ArtSize : image.Size;
+        DrawTextureRect(image.Texture, new Rect2(Vector2.Zero, Size), false, Disabled ? new Color(1, 1, 1, .4f) : Colors.White);
     }
 }
 
@@ -142,10 +159,7 @@ public partial class OriginalItemButton : ItemTipButton
         {
             OriginalArt.DrawQuickSlot(this, SlotAssets);
             if (SlotIcon != null)
-            {
-                var size = (SlotIcon.GetSize() * Math.Min((Size.X - 4) / SlotIcon.GetWidth(), (Size.Y - 4) / SlotIcon.GetHeight())).Floor();
-                DrawTextureRect(SlotIcon, new Rect2(((Size - size) / 2).Floor(), size), false, Disabled ? new Color(1, 1, 1, .4f) : Colors.White);
-            }
+                DrawTextureRect(SlotIcon, OriginalArt.SlotIconRect(Size, SlotIcon.GetSize()), false, Disabled ? new Color(1, 1, 1, .4f) : Colors.White);
         }
         if (Count <= 1) return;
         var text = Count.ToString();

@@ -4,7 +4,7 @@
 @inject IDialogService Dialogs
 <PageTitle>系统设置 · Mir2</PageTitle>
 <MudText Typo="Typo.h4" HtmlTag="h1">系统设置</MudText>
-<MudText Color="Color.Secondary" Class="my-3">当前版本的运行与平衡参数；每项注明作用范围。安全区和技能冷却变更需保存并重启引擎。</MudText>
+<MudText Color="Color.Secondary" Class="my-3">当前版本的运行与平衡参数；每项注明作用范围。安全区、技能冷却和角色速度变更会在保存后重启引擎。</MudText>
 @if(error!=null){<MudAlert Severity="Severity.Error" Dense="true" Class="my-2">@error</MudAlert>}
 @if(notice!=null){<MudAlert Severity="Severity.Success" Dense="true" Class="my-2">@notice</MudAlert>}
 @if(document!=null)
@@ -26,7 +26,7 @@
 }
 @if(draft!=null&&document!=null)
 {
-    <AdminDialog Visible="true" Title="编辑系统设置" OnClose="@(()=>draft=null)" OnSave="Save" Busy="busy" Dirty="@(original!=JsonSerializer.Serialize(draft))" SaveConfirmation="@(RestartRequired?"安全区效果或技能冷却变更将保存数据并重启游戏引擎，在线玩家需要重新连接。确认保存？":"保存当前版本系统设置？原配置将保留备份，运行参数立即更新，已有连接不会被强制断开。")">
+    <AdminDialog Visible="true" Title="编辑系统设置" OnClose="@(()=>draft=null)" OnSave="Save" Busy="busy" Dirty="@(original!=JsonSerializer.Serialize(draft))" SaveConfirmation="@(RestartRequired?"本次修改将保存数据并重启游戏引擎，在线玩家需要重新连接。确认保存？":"保存当前版本系统设置？原配置将保留备份，运行参数立即更新，已有连接不会被强制断开。")">
         <DialogContent>
             @if(error!=null){<MudAlert Severity="Severity.Error" Dense="true" Class="my-2">@error</MudAlert>}
             <MudTabs KeepPanelsAlive="true">
@@ -49,7 +49,8 @@
                 </MudTabPanel>
                 <MudTabPanel Text="成长与掉落">
                     <MudGrid Spacing="2" Class="my-2">
-                        <MudItem xs="6"><MudNumericField T="float" Label="经验倍率" Min=".01f" Max="100f" Step=".1f" @bind-Value="draft.ExpRate" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
+                        <MudItem xs="12"><MudNumericField T="float" Label="公共商店价格倍率" Min="1f" Max="10f" Step=".1f" @bind-Value="draft.PublicShopPriceRate" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" HelperText="相对 NPC 最低售价，1.5 表示贵 50%；保存后立即生效" /></MudItem>
+                        <MudItem xs="6"><MudNumericField T="float" Label="经验倍率" Min=".01f" Max="1000f" Step=".1f" @bind-Value="draft.ExpRate" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
                         <MudItem xs="6"><MudNumericField T="float" Label="掉落倍率" Min=".01f" Max="100f" Step=".1f" @bind-Value="draft.DropRate" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
                         <MudItem xs="6"><MudNumericField T="int" Label="普通掉落保留（分钟）" Min="1" Max="1440" @bind-Value="draft.ItemTimeOut" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
                         <MudItem xs="6"><MudNumericField T="int" Label="死亡掉落保留（分钟）" Min="1" Max="1440" @bind-Value="draft.PlayerDiedItemTimeOut" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" /></MudItem>
@@ -83,7 +84,8 @@
     private ServerSettingsDocument? document; private ServerSettings? draft; private string original=""; private string? error,notice; private bool busy;
     protected override Task OnInitializedAsync()=>Load();
     private async Task Load(){try{document=await Api.Get<ServerSettingsDocument>("management/settings");error=null;}catch(Exception e){error=e.Message;}}
-    private bool RestartRequired=>draft!=null&&document!=null&&(draft.SafeZoneBorder!=document.Values.SafeZoneBorder||draft.SafeZoneHealing!=document.Values.SafeZoneHealing||draft.SkillCooldownRate!=document.Values.SkillCooldownRate);
+    private bool RestartRequired=>draft!=null&&document!=null&&(draft.SafeZoneBorder!=document.Values.SafeZoneBorder||draft.SafeZoneHealing!=document.Values.SafeZoneHealing||draft.SkillCooldownRate!=document.Values.SkillCooldownRate ||
+        draft.PlayerMoveMilliseconds!=document.Values.PlayerMoveMilliseconds || draft.PlayerActionSpeedPercent!=document.Values.PlayerActionSpeedPercent);
     private void Edit(){draft=document!.Values with{};original=JsonSerializer.Serialize(draft);error=null;}
     private async Task Reset()
     {

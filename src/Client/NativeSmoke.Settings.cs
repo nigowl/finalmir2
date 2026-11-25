@@ -64,8 +64,8 @@ public partial class NativeSmoke
             Client.Theme.GetIcon("close", "Window").GetInstanceId() != Client.Assets.Sprite("Prguse2", 360)?.Texture.GetInstanceId())
             throw new Exception("Confirmation windows retained duplicate/platform borders or stale close art after reconnect.");
         var tabs = panel.FindChildren("*", "TabContainer", true, false).Cast<TabContainer>().Single();
-        if (!panel.Visible || Client.Theme.DefaultFontSize != ClientUi.Body || tabs.GetTabCount() != 4 || !Enumerable.Range(0, 4).Select(tabs.GetTabTitle).SequenceEqual(new[] { "基础", "保护", "挂机", "职业" }))
-            throw new Exception("The hammer did not open four settings tabs with the smaller font.");
+        if (!panel.Visible || Client.Theme.DefaultFontSize != ClientUi.Body || tabs.GetTabCount() != 5 || !Enumerable.Range(0, 5).Select(tabs.GetTabTitle).SequenceEqual(new[] { "基础", "保护", "挂机", "职业", "物品" }))
+            throw new Exception("游戏设置没有显示五个选项卡。");
         if (panel.FindChildren("*", "Button", true, false).Cast<Button>().Any(button => button.Text is "取消" or "应用") || Setting(panel, "自动喝红").ButtonPressed || Setting(panel, "自动随机").ButtonPressed || Setting(panel, "自动回城").ButtonPressed)
             throw new Exception("Settings retained confirmation buttons or enabled protection without consent.");
         tabs.CurrentTab = 3;
@@ -75,14 +75,14 @@ public partial class NativeSmoke
         await Screenshot("settings-Warrior"); tabs.CurrentTab = 0;
         var slider = panel.FindChildren("*", "HSlider", true, false).Cast<HSlider>().Single();
         var music = Client.FindChildren("*", "AudioStreamPlayer", true, false).Cast<AudioStreamPlayer>().First();
-        var movement = (OptionButton)panel.FindChild("MovementMode", true, false);
+        var movement = (CheckBox)panel.FindChild("MovementMode", true, false);
         var strength = (OptionButton)panel.FindChild("CrtStrength", true, false);
         if (strength.ItemCount != 5 || strength.Selected != 2) throw new Exception("CRT strength lost its five levels or compatible default.");
         var checkbox = Setting(panel, "显示怪物");
         if (checkbox.GetThemeIcon("checked").GetSize() != checkbox.GetThemeIcon("unchecked").GetSize() || new[] { "normal", "hover", "pressed", "hover_pressed" }.Select(state => checkbox.GetThemeStylebox(state).GetMinimumSize()).Distinct().Count() != 1)
             throw new Exception("Checkbox selection changes its icon width or text inset.");
         await Screenshot("checkbox-off");
-        slider.Value = 40; SelectSetting(movement, 1);
+        slider.Value = 40; movement.ButtonPressed = true;
         Setting(panel, "显示 NPC").ButtonPressed = false; Setting(panel, "显示怪物").ButtonPressed = true;
         Setting(panel, "显示物品").ButtonPressed = true;
         Setting(panel, "CRT").ButtonPressed = true;
@@ -101,7 +101,7 @@ public partial class NativeSmoke
         tabs.CurrentTab = 1; await VerifyProtectionAlignment(tabs.GetChild<Control>(1));
         await Screenshot("settings-protection"); tabs.CurrentTab = 2; await Screenshot("settings-battle");
         CloseSettingsPanel(panel); panel = SettingsPanel();
-        if (slider.Value != 40 || movement.Selected != 1 || strength.Selected != 4 || Setting(panel, "显示 NPC").ButtonPressed || !Setting(panel, "显示怪物").ButtonPressed || !Setting(panel, "显示物品").ButtonPressed || !Setting(panel, "CRT").ButtonPressed)
+        if (slider.Value != 40 || !movement.ButtonPressed || strength.Selected != 4 || Setting(panel, "显示 NPC").ButtonPressed || !Setting(panel, "显示怪物").ButtonPressed || !Setting(panel, "显示物品").ButtonPressed || !Setting(panel, "CRT").ButtonPressed)
             throw new Exception("Reopening settings lost automatically saved values.");
         var backup = path + ".test-backup"; var saved = File.ReadAllText(path);
         File.Move(path, backup); Directory.CreateDirectory(path);
@@ -113,7 +113,7 @@ public partial class NativeSmoke
                 throw new Exception("A failed autosave changed applied preferences or discarded the saved file.");
         }
         finally { Directory.Delete(path); File.Move(backup, path); }
-        slider.Value = 100; SelectSetting(movement, 0); Setting(panel, "显示 NPC").ButtonPressed = true; Setting(panel, "显示怪物").ButtonPressed = false;
+        slider.Value = 100; movement.ButtonPressed = false; Setting(panel, "显示 NPC").ButtonPressed = true; Setting(panel, "显示怪物").ButtonPressed = false;
         Setting(panel, "CRT").ButtonPressed = false;
         Setting(panel, "显示物品").ButtonPressed = false;
         CloseSettingsPanel(panel);
@@ -127,7 +127,7 @@ public partial class NativeSmoke
         if (chat.GetThemeFontSize("font_size") != ClientUi.Small || messages.GetThemeFontSize("normal_font_size") != ClientUi.Small || !Client.FindChildren("*", "Panel", true, false).Cast<Panel>().Any(frame => frame.GetRect().Encloses(chat.GetRect()) && frame.Position == new Vector2(230, 668) && frame.Size == new Vector2(629, 68)))
             throw new Exception("Chat font/frame did not shrink inside the original HUD.");
         ToggleBattleMenu();
-        var menuButton = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "游戏菜单 Ctrl+E");
+        var menuButton = GameArt("菜单 Ctrl+E");
         using (var input = new InputEventMouseButton { Position = menuButton.GetGlobalRect().GetCenter(), ButtonIndex = MouseButton.Left, Pressed = true }) Client._Input(input);
         menuButton.EmitSignal(BaseButton.SignalName.Pressed);
         var menu = (PopupMenu)Client.FindChild("GameMenu", true, false);
@@ -147,7 +147,7 @@ public partial class NativeSmoke
 
     private void ToggleBattleMenu()
     {
-        var button = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "游戏菜单 Ctrl+E");
+        var button = GameArt("菜单 Ctrl+E");
         button.EmitSignal(BaseButton.SignalName.Pressed);
         var menu = (PopupMenu)Client.FindChild("GameMenu", true, false);
         menu.EmitSignal(PopupMenu.SignalName.IdPressed, 7L); menu.Hide();

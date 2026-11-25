@@ -45,8 +45,9 @@ public partial class NativeSmoke
         GameArt("背包 I").EmitSignal(BaseButton.SignalName.Pressed);
         var bag = GameArt("关闭背包").GetParent<Control>();
         await Until(() => bag.GetChildren().OfType<TextureRect>().Single().Texture != null);
-        if (bag.FindChildren("InventorySlot*", "Button", true, false).Count != 46) throw new Exception("背包没有完整46格，过滤装备后会隐藏旧物品。");
-        await VisibleBagCell(0); await VisibleBagCell(45);
+        if (State.User.Inventory.Length != Globals.BaseInventorySize || bag.FindChildren("InventorySlot*", "Button", true, false).Count != ItemPresentation.BagSlots(State.User.Inventory).Length)
+            throw new Exception("背包格位没有与服务端的80格一致。");
+        await VisibleBagCell(6); await VisibleBagCell(85);
         await VerifyQuickItemFiltering();
         var sample = new UserItem(new ItemInfo { Name = "详情检查", Type = ItemType.Weapon,
             Stats = new Stats { [Stat.MinDC] = 3, [Stat.MaxDC] = 9 } });
@@ -59,7 +60,7 @@ public partial class NativeSmoke
         await CombatScreenshot("item-ui-translucent"); wrapper.QueueFree();
         await VerifyItemTooltipScroll(sample);
         bag.Hide();
-        GD.Print("PASS focused native item UI: captionless compact minimap, 46 accessible inventory cells, equipment shortcut rejection, actual potion drag/key/click, translucent comparison, durability/category text and bounded tooltip wheel.");
+        GD.Print("PASS focused native item UI: captionless compact minimap, 80 accessible inventory cells, equipment shortcut rejection, actual potion drag/key/click, translucent comparison, durability/category text and bounded tooltip wheel.");
         await Client.Quit();
     }
 

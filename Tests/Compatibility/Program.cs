@@ -8,14 +8,27 @@ using S = ServerPackets;
 using Mir2.Hosting;
 using Mir2.Management;
 
+if (args.Contains("--guild-war-soak"))
+{ var at = Array.IndexOf(args, "--guild-war-soak"); await GuildWarSoak.Run(int.Parse(args[at + 1]), int.Parse(args[at + 2]), args[at + 3]); return; }
 if (args.Contains("--fixture"))
 {
-    Fixture.Create(args[Array.IndexOf(args, "--fixture") + 1], args.Contains("--trade-fixture"), args.Contains("--guild-fixture"), args.Contains("--catalog-fixture"), args.Contains("--guided-companions"), args.Contains("--gm-fixture"), args.Contains("--skill-fixture"), args.Contains("--companion-fixture"));
+    Fixture.Create(args[Array.IndexOf(args, "--fixture") + 1], args.Contains("--trade-fixture"), args.Contains("--guild-fixture"), args.Contains("--catalog-fixture"), args.Contains("--guided-companions"), args.Contains("--gm-fixture"), args.Contains("--skill-fixture"), args.Contains("--companion-fixture"), args.Contains("--public-services-fixture"), args.Contains("--action-items-fixture"), args.Contains("--social-fixture"), args.Contains("--movement-state-fixture"), args.Contains("--guild-war-fixture"), args.Contains("--guild-creation-fixture"), args.Contains("--object-name-fixture"), args.Contains("--item-owner-fixture"), args.Contains("--health-display-fixture"));
     return;
 }
 if (args.Contains("--admin-session")) { await AdminSession.Run(args); return; }
+if (args.Contains("--city-travel-tcp")) { await CityTravelSession.Run(args); return; }
+if (args.Contains("--city-travel-fixture")) { CityTravelFixture.Prepare(new ProjectPaths()); return; }
+if (args.Contains("--city-travel-regression-fixture")) { CityTravelFixture.Prepare(new ProjectPaths(), true); return; }
+if (args.Contains("--recycle-save")) { var at = Array.IndexOf(args, "--recycle-save"); await ItemRecycleChecks.VerifySaved(int.Parse(args[at + 1]), args[at + 2]); return; }
 if (args.Contains("--storage-pages-saved")) { StoragePagesScenario.Verify(new ProjectPaths(), int.Parse(args[Array.IndexOf(args, "--storage-pages-saved") + 1])); return; }
 if (args.Contains("--skill-assets")) { SkillAssetChecks.Run(); return; }
+if (args.Contains("--hero-shared-fixture")) { HeroFixture.PrepareShared(new ProjectPaths()); return; }
+if (args.Contains("--hero-fixture")) { HeroFixture.Prepare(new ProjectPaths()); return; }
+if (args.Contains("--hero-movement-fixture")) { HeroFixture.PrepareMovement(new ProjectPaths()); return; }
+if (args.Contains("--hero-archer-fixture")) { HeroFixture.Prepare(new ProjectPaths(), true); return; }
+if (args.Contains("--quest-navigation-fixture")) { QuestNavigationChecks.Prepare(new ProjectPaths()); return; }
+if (args.Contains("--public-services-session")) { await PublicServicesSession.Run(args); return; }
+if (args.Contains("--mengchong-daily-fixture")) { MengchongDailyChecks.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args, "--mengchong-daily-fixture") + 1]), args.Contains("--daily-travel")); return; }
 if (args.Contains("--gm-checks")) { await GmCommandSession.Run(args); return; }
 if (args.Contains("--auto-learn-session")) { await AutoLearnSession.Run(args); return; }
 if (args.Contains("--companion-supplies")) { CompanionScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-supplies")+1])); return; }
@@ -26,8 +39,8 @@ if (args.Contains("--companion-running")) { CompanionMovementScenario.Prepare(ne
 if (args.Contains("--companion-repair")) { CompanionRepairScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-repair")+1])); return; }
 if (args.Contains("--companion-quests")) { CompanionQuestScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-quests")+1]),args.Contains("--travel-threat"),args.Contains("--full-bag"),args.Contains("--blocked-reward"),args.Contains("--reward-room")); return; }
 if (args.Contains("--companion-progression")) { CompanionProgressionScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-progression")+1])); return; }
-if (args.Contains("--companion-funding")) { CompanionFundingScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-funding")+1]),args.Contains("--no-source"),args.Contains("--harvest-source"),args.Contains("--evasive-source"),args.Contains("--harvest-ground"),args.Contains("--remote-delivery"),args.Contains("--unarmed"),args.Contains("--crowded-source")); return; }
-if (args.Contains("--companion-supply-priority")) { CompanionSupplyPriorityScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-supply-priority")+1]),args.Contains("--emergency-gold")?uint.Parse(args[Array.IndexOf(args,"--emergency-gold")+1]):null,args.Contains("--vendor-routes")); return; }
+if (args.Contains("--companion-funding")) { CompanionFundingScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-funding")+1]),args.Contains("--no-source"),args.Contains("--harvest-source"),args.Contains("--evasive-source"),args.Contains("--harvest-ground"),args.Contains("--remote-delivery"),args.Contains("--unarmed"),args.Contains("--crowded-source"),args.Contains("--caster"),args.Contains("--blocked-exit"),args.Contains("--blocked-route"),args.Contains("--friendly-guard")); return; }
+if (args.Contains("--companion-supply-priority")) { CompanionSupplyPriorityScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-supply-priority")+1]),args.Contains("--emergency-gold")?uint.Parse(args[Array.IndexOf(args,"--emergency-gold")+1]):null,args.Contains("--vendor-routes"),args.Contains("--threat-route"),args.Contains("--crowded-route"),args.Contains("--handoff-threat")); return; }
 if (args.Contains("--companion-harvest")) { CompanionHarvestScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-harvest")+1]),args.Contains("--needed")); return; }
 if (args.Contains("--companion-storage")) { CompanionStorageScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-storage")+1]),args[^1]); return; }
 if (args.Contains("--companion-dispatch")) { CompanionDispatchScenario.Prepare(new ProjectPaths()); return; }
@@ -36,30 +49,72 @@ if (args.Contains("--companion-town")) { CompanionScenario.PrepareTown(new Proje
 if (args.Contains("--companion-protection")) { var i=Array.IndexOf(args,"--companion-protection");CompanionProtectionScenario.Prepare(new ProjectPaths(),int.Parse(args[i+1]),args[i+2]);return; }
 if (args.Contains("--companion-tree")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-tree")+1]),true); return; }
 if (args.Contains("--companion-guild")) { var i=Array.IndexOf(args,"--companion-guild"); CompanionGuildScenario.Run(new ProjectPaths(),int.Parse(args[i+1]),int.Parse(args[i+2]),args[i+3]); return; }
-if (args.Contains("--companion-ranged")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-ranged")+1]),false,args.Contains("--empty-mana"),args.Contains("--retire-threat"),args.Contains("--persistent-threat"),args.Contains("--penalty-mana"),args.Contains("--amulet-case")?args[Array.IndexOf(args,"--amulet-case")+1]:""); return; }
+if (args.Contains("--companion-ranged")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-ranged")+1]),false,args.Contains("--empty-mana"),args.Contains("--retire-threat"),args.Contains("--persistent-threat"),args.Contains("--penalty-mana"),args.Contains("--amulet-case")?args[Array.IndexOf(args,"--amulet-case")+1]:"",args.Contains("--retreat-corner")); return; }
 if (args.Contains("--companion-variant")) { CompanionScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-variant")+1]),true); return; }
 if (args.Contains("--companion-social")) { await CompanionSocialSession.Run(args); return; }
-if (args.Contains("--companion-development")) { CompanionDevelopmentScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-development")+1]));return; }
+if (args.Contains("--companion-development")) { CompanionDevelopmentScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-development")+1]),args.Contains("--blocked-supply"),args.Contains("--switching-shops"),args.Contains("--public-companions"));return; }
+if (args.Contains("--companion-heroes-fixture")) { var i=Array.IndexOf(args,"--companion-heroes-fixture"); CompanionHeroScenario.Run(new ProjectPaths(),int.Parse(args[i+1]),args[i+2]);return; }
+if (args.Contains("--open-companion-supply")) { CompanionDevelopmentScenario.OpenSupply(new ProjectPaths());return; }
 if (args.Contains("--companion-classes")) { CompanionClassScenario.Prepare(new ProjectPaths(),args[(Array.IndexOf(args,"--companion-classes")+1)..].Select(int.Parse).ToArray());return; }
+if (args.Contains("--companion-travel-shield")) { CompanionTravelShieldScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-travel-shield")+1]),args.Contains("--quiet"));return; }
 if (args.Contains("--companion-party")) { CompanionPartyScenario.Prepare(new ProjectPaths(),args[(Array.IndexOf(args,"--companion-party")+1)..].Select(int.Parse).ToArray());return; }
 if (args.Contains("--trade-recovery")) { await TradeRecoverySession.Run(args); return; }
 if (args.Contains("--chinese-checks")) { ChineseTranslationChecks.Run(new ProjectPaths()); return; }
 if(args.Contains("--companion-supervision-setup")){CompanionSupervisionChecks.Prepare(new ProjectPaths());return;}
 
 var checks = 0;
+if (args.Contains("--hero-combat-fixture")) { HeroCombatFixture.Prepare(new ProjectPaths()); return; }
+if (args.Contains("--hero-combat-session")) { await HeroCombatSession.Run(args); return; }
+if (args.Contains("--shop-catalog-session")) { await ShopCatalogSession.Run(args); return; }
 void Check(bool result, string message)
 {
     if (!result) throw new Exception(message);
     checks++;
 }
+if (args.Contains("--client-polish-checks"))
+{ ClientPolishChecks.Run(Check); ClassSkillChecks.Run(Check); ClassCombatChecks.Run(Check); ClassComboEdgeChecks.Run(Check); ClientMovementChecks.Run(Check); CompanionKnowledgeSchedulingChecks.Run(Check); CompanionPlanningChecks.Run(Check); Console.WriteLine($"PASS {checks} keyboard/organization/class combo/planning checks."); return; }
+if (args.Contains("--town-combat-checks"))
+{ TownCombatChecks.Run(Check); Console.WriteLine($"PASS {checks} town guard and revival checks."); return; }
+if (args.Contains("--action-item-checks"))
+{ ClientActionItemsChecks.Run(Check); ClientMovementChecks.Run(Check); ItemRecycleChecks.Run(Check); Console.WriteLine($"PASS {checks} action/target/items/movement checks."); return; }
+if (args.Contains("--audio-checks"))
+{
+    AudioChecks.Run(Check);
+    if (args.Contains("--audio-report")) AudioChecks.Audit(args[Array.IndexOf(args, "--audio-report") + 1]);
+    Console.WriteLine($"PASS {checks} focused audio checks."); return;
+}
+if (args.Contains("--public-services-checks"))
+{ PublicServicesChecks.Run(Check); ShopCatalogChecks.Run(Check); QuestNavigationChecks.Run(Check); PublicSupplyChecks.Run(Check); CompanionPublicServicesChecks.Run(Check); ClientNoticeChecks.Run(Check); Console.WriteLine($"PASS {checks} public shop/navigation/experience checks."); return; }
+if (args.Contains("--shop-catalog-checks"))
+{ ShopCatalogChecks.Run(Check); Console.WriteLine($"PASS {checks} shop catalog/settings/protocol checks."); return; }
+if (args.Contains("--health-display-checks"))
+{ HealthDisplayChecks.Run(Check); DamageIndicatorChecks.Run(Check); Console.WriteLine($"PASS {checks} health display/settings/actual damage checks."); return; }
+if (args.Contains("--hero-recovery-fixture")) { HeroRecoveryFixture.Prepare(new ProjectPaths()); return; }
+if (args.Contains("--hero-recovery-audit")) { HeroRecoveryFixture.Audit(new ProjectPaths()); return; }
+if (args.Contains("--gm-login-checks")) { HeroRecoveryFixture.CheckLogin(new ProjectPaths()); return; }
+if (args.Contains("--hero-recovery-checks"))
+{ HeroRecoveryChecks.Run(Check); Console.WriteLine($"PASS {checks} hero recovery/state/legacy-save checks."); return; }
+if (args.Contains("--hero-inventory-checks"))
+{ HeroInventoryChecks.Run(Check); Console.WriteLine($"PASS {checks} hero shared inventory/migration/skills checks."); return; }
+if (args.Contains("--hero-combat-checks"))
+{ HeroCombatChecks.Run(Check); Console.WriteLine($"PASS {checks} hero automatic class combo checks."); return; }
+if (args.Contains("--city-travel-checks"))
+{ CityTravelChecks.Run(Check); Console.WriteLine($"PASS {checks} city travel permission/overlap/asset checks."); return; }
+if (args.Contains("--guild-creation-checks"))
+{ GuildCreationChecks.Run(Check); Console.WriteLine($"PASS {checks} original guild creation checks."); return; }
+if (args.Contains("--guild-war-checks"))
+{ GuildWarChecks.Run(Check); Console.WriteLine($"PASS {checks} original guild war checks."); return; }
+if (args.Contains("--pet-ownership-checks"))
+{ PetOwnershipChecks.Run(Check); Console.WriteLine($"PASS {checks} original pet ownership checks."); return; }
 if (args.Contains("--client-checks"))
 {
-    ClientAnimationChecks.Run(Check); ClientMovementChecks.Run(Check); ActorFrameChecks.Run(Check); ShadowPixelChecks.Run(Check); ClientAutomationChecks.Run(Check); ClientPickupChecks.Run(Check); ClientNoticeChecks.Run(Check);
-    ClientSkillChecks.Run(Check); ClassSkillChecks.Run(Check); ClassCombatChecks.Run(Check); BuffDataChecks.Run(Check); CombatPresentationChecks.Run(Check); SkillEffectChecks.Run(Check); SkillDamageChecks.Run(Check);
+    ItemOwnerChecks.Run(Check); ObjectNameChecks.Run(Check); NameColourChecks.Run(Check);
+    ClientAnimationChecks.Run(Check); ClientMovementChecks.Run(Check); MovementStateChecks.Run(Check); ActorFrameChecks.Run(Check); ShadowPixelChecks.Run(Check); ClientAutomationChecks.Run(Check); ClientPickupChecks.Run(Check); ClientNoticeChecks.Run(Check);
+    ClientSkillChecks.Run(Check); ClassSkillChecks.Run(Check); ClassCombatChecks.Run(Check); ClassComboEdgeChecks.Run(Check); BuffDataChecks.Run(Check); CombatPresentationChecks.Run(Check); SkillEffectChecks.Run(Check); SkillDamageChecks.Run(Check);
     Console.WriteLine($"PASS {checks} focused client animation/class/combat checks."); return;
 }
 if (args.Contains("--movement-checks"))
-{ ClientMovementChecks.Run(Check); Console.WriteLine($"PASS {checks} client movement/run checks."); return; }
+{ ClientMovementChecks.Run(Check); MovementStateChecks.Run(Check); Console.WriteLine($"PASS {checks} client movement/run/push/trap/door checks."); return; }
 if (args.Contains("--supplies-storage-checks"))
 { SuppliesStorageChecks.Run(Check); BasicDropBalanceChecks.Run(Check); Console.WriteLine($"PASS {checks} supplies/storage/equipment checks."); return; }
 if (args.Contains("--item-ui-checks"))
@@ -82,6 +137,8 @@ if(args.Contains("--companion-logout-checks"))
 {await CompanionLogoutChecks.Run(Check);Console.WriteLine($"PASS {checks} companion logout acknowledgement checks.");return;}
 if(args.Contains("--companion-protection-checks"))
 {BindLocationChecks.Run(Check);await CompanionProtectionChecks.Run(Check);Console.WriteLine($"PASS {checks} companion protection checks.");return;}
+if(args.Contains("--companion-hero-checks"))
+{await CompanionHeroChecks.Run(Check);Console.WriteLine($"PASS {checks} companion hero creation/shared inventory/recovery checks.");return;}
 if(args.Contains("--companion-party-checks"))
 {CompanionPartyChecks.Run(Check);CompanionFundingChecks.Run(Check);Console.WriteLine($"PASS {checks} companion party/funding checks.");return;}
 if(args.Contains("--companion-knowledge-checks"))
@@ -201,7 +258,7 @@ try
     CompanionPartyChecks.Run(Check);
     MapDoorChecks.Run(Check,temporary);
     ClientAnimationChecks.Run(Check);
-    ClientMovementChecks.Run(Check);
+    ClientMovementChecks.Run(Check); MovementStateChecks.Run(Check);
     ActorFrameChecks.Run(Check);
     ClientAutomationChecks.Run(Check);
     ClientPickupChecks.Run(Check);

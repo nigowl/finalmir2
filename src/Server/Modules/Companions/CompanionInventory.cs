@@ -6,11 +6,12 @@ namespace Server.ConsoleHost;
 
 public static class CompanionInventory
 {
-    public static KnownGoal? Choose(PlayerObject player, NPCObject[] npcs, Dictionary<int, KnownExit?> routes, ISet<string>? blocked)
+    public static KnownGoal? Choose(PlayerObject player, NPCObject[] npcs, Dictionary<int, KnownExit?> routes, ISet<string>? blocked, bool recycleOnly = false)
     {
-        if (!CompanionInventoryRules.NeedsSpace(player.CurrentBagWeight, player.Stats[Stat.BagWeight], player.Info.Inventory.Count(item => item == null))) return null;
+        if (!recycleOnly && !CompanionInventoryRules.NeedsSpace(player.CurrentBagWeight, player.Stats[Stat.BagWeight], player.Info.Inventory.Count(item => item == null))) return null;
         var protectedItems = Envir.Main.QuestInfoList.SelectMany(quest => quest.ItemTasks.Concat(quest.CarryItems)).Select(task => task.Item.Index)
             .Concat(Envir.Main.RecipeInfoList.SelectMany(recipe => (recipe.Ingredients ?? []).Concat(recipe.Tools ?? [])).Select(item => item.ItemIndex)).ToHashSet();
+        CompanionHeroes.ProtectInventory(player, protectedItems);
         var caster = player.Info.Magics.Any(magic => magic.Info.Spell is Spell.FireBall or Spell.GreatFireBall or Spell.ThunderBolt or Spell.SoulFireBall);
         var spare = CompanionInventoryRules.SurplusArmour(player.Info.Inventory,player.Info.Equipment[(int)EquipmentSlot.Armour],protectedItems,player.Level)
             .Concat(CompanionInventoryRules.SurplusWeapons(player.Info.Inventory, player.Info.Equipment[(int)EquipmentSlot.Weapon],
@@ -20,6 +21,13 @@ public static class CompanionInventory
                 .Select(item=>new KnownSale(item.UniqueID,item.Count))).ToArray();
         if (spare.Length == 0) return null;
         var inventory = player.Info.Inventory.Where(item => item != null).ToDictionary(item => item.UniqueID);
+        if (recycleOnly)
+        {
+            var allowed = spare.Where(sale => ItemRecycling.Rejection(inventory[sale.UniqueId]).Length == 0).ToArray();
+            return allowed.Length == 0 || blocked?.Contains("public-recycle") == true ? null :
+                new("service", player.CurrentMap.Info.Index, player.CurrentLocation.X, player.CurrentLocation.Y,
+                    "原地回收普通余货，保留任务、配方、备装及基础储备", Key: "public-recycle", SellItems: allowed);
+        }
         var vendor = npcs.Where(npc => blocked?.Contains($"unload/{npc.ObjectID}") != true)
             .Select(npc =>
             {

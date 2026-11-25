@@ -6,6 +6,12 @@ namespace Crystal.Native;
 
 public partial class NativeSmoke
 {
+    private async Task ConfirmBookLearning()
+    {
+        var dialog = (ConfirmationDialog)Client.FindChild("LearnSkillConfirmation", true, false);
+        await Until(() => dialog.Visible);
+        await ClickSelectionControl(dialog.GetOkButton());
+    }
     private async Task VerifyUiOnly()
     {
         stage = "focused UI check using existing disposable smoke character";
@@ -15,10 +21,11 @@ public partial class NativeSmoke
         tabs[0].EmitSignal(BaseButton.SignalName.Pressed);
         await Until(() => equipment.GetChildren().OfType<TextureRect>().Single().Texture != null && tabs[0].GetThemeStylebox("pressed") is StyleBoxTexture);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        if (equipment.GetThemeStylebox("panel") is not StyleBoxEmpty || tabs.Any(tab => tab.Size != new Vector2(59, ClientUi.TabHeight)) ||
+        if (equipment.GetThemeStylebox("panel") is not StyleBoxEmpty || tabs.Any(tab => tab.Size != new Vector2(58, ClientUi.TabHeight)) ||
             tabs[0].Position.X != 11 || tabs[^1].GetRect().End.X != equipment.Size.X - 11)
             throw new Exception($"人物面板重复绘框或页签整组越界：{equipment.GetThemeStylebox("panel").GetClass()}，{equipment.Size}，{string.Join(';', tabs.Select(tab => tab.GetRect()))}，min={tabs[0].GetCombinedMinimumSize()}。");
         CheckOriginalTabArtwork(equipment, tabs[0]);
+        VerifySharedTabSpacing();
         await VerifyTabMouseStates(tabs); await Screenshot("character-tabs-clean");
         OpenSkills();
         var row = SkillRow(Spell.FireBall); var icon = row.GetNode<SkillIconButton>("SkillIcon");
@@ -30,7 +37,7 @@ public partial class NativeSmoke
         GameArt("背包 I").EmitSignal(BaseButton.SignalName.Pressed);
         var bag = GameArt("关闭背包").GetParent<Control>();
         await Until(() => bag.GetChildren().OfType<TextureRect>().Single().Texture != null);
-        if (bag.GetThemeStylebox("panel") is not StyleBoxEmpty || bag.GetChildren().OfType<TextureRect>().Single().Size != new Vector2(313, 235))
+        if (bag.GetThemeStylebox("panel") is not StyleBoxEmpty || bag.GetChildren().OfType<TextureRect>().Single().Size != new Vector2(313, 235 + ClientUi.InventoryExtraHeight))
             throw new Exception("背包仍存在重复边框或底图被拉伸。");
         await MoveMouse(new Vector2(600, 400)); await Screenshot("bag-single-frame");
         bag.Hide(); Client.OpenGuild();
@@ -52,13 +59,20 @@ public partial class NativeSmoke
         var path = Environment.GetEnvironmentVariable("MIR2_CLIENT_SETTINGS")!;
         var panel = SettingsPanel();
         var tabs = panel.GetChildren().OfType<TabContainer>().Single(); tabs.CurrentTab = 2;
+        var tabBar = tabs.GetTabBar();
+        for (var i = 1; i < tabBar.TabCount; i++)
+            if (tabBar.GetTabRect(i).Position.X - tabBar.GetTabRect(i - 1).End.X != ClientUi.Gap)
+                throw new Exception("设置页签没有保持4px间距。");
         if (panel.FindChild("SingleSkill", true, false) != null || panel.FindChild("AreaSkill", true, false) != null) throw new Exception("挂机页还保留单体/群攻技能选择。");
-        var pickup = Setting(panel, "自动拣取"); var names = (TextEdit)panel.FindChild("PickupNames", true, false); var mode = (OptionButton)panel.FindChild("PickupMode", true, false);
-        if (pickup.ButtonPressed || names.GetParent<Control>().Visible) throw new Exception("自动拣取默认开启或关闭后仍显示名单。");
-        pickup.ButtonPressed = true; names.Text = "鲜鹿肉\n金币"; SelectSetting(mode, 1);
-        await Until(() => System.Text.Json.JsonSerializer.Deserialize<ClientPreferences>(File.ReadAllText(path)) is { AutoPickup: true, PickupWhitelist: true, PickupNames.Length: 2 });
+        tabs.CurrentTab = 4;
+        var pickup = Setting(panel, "自动拣取");
+        if (pickup.ButtonPressed) throw new Exception("自动拣取默认开启。");
+        pickup.ButtonPressed = true;
+        SetLocalItemRule("鲜鹿肉", 0, true); SetLocalItemRule("金币", 1, false);
+        await Until(() => System.Text.Json.JsonSerializer.Deserialize<ClientPreferences>(File.ReadAllText(path)) is { AutoPickup: true, ItemRules.Count: 2 });
         await Screenshot("pickup-settings"); CloseSettingsPanel(panel); panel = SettingsPanel();
-        if (!pickup.ButtonPressed || !names.GetParent<Control>().Visible || names.Text != "鲜鹿肉\n金币" || mode.Selected != 1) throw new Exception("拣取名单没有保存或重开丢失。");
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<ClientPreferences>(File.ReadAllText(path))!;
+        if (!pickup.ButtonPressed || !loaded.ForItem("鲜鹿肉").HasFlag(ItemActions.Display) || loaded.ForItem("金币").HasFlag(ItemActions.Pickup)) throw new Exception("逐物品勾选没有保存。");
         pickup.ButtonPressed = false; tabs.CurrentTab = 3;
         if (!Setting(panel, "智能组合").ButtonPressed) throw new Exception("默认职业智能组合未开启。");
         var manual = (Control)panel.FindChild("ManualClassSkills", true, false);

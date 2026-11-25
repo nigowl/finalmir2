@@ -7,7 +7,7 @@ using Server.MirEnvir;
 internal static class Fixture
 {
     // Keep deterministic gameplay changes in disposable data, never in the reference world.
-    public static void Create(string destination, bool tradeAccounts = false, bool guildAccount = false, bool catalog = false, bool guidedCompanions = false, bool gmAccount = false, bool skillEffects = false, bool companionRespawns = false)
+    public static void Create(string destination, bool tradeAccounts = false, bool guildAccount = false, bool catalog = false, bool guidedCompanions = false, bool gmAccount = false, bool skillEffects = false, bool companionRespawns = false, bool publicServices = false, bool actionItems = false, bool social = false, bool movementStates = false, bool guildWars = false, bool guildCreation = false, bool objectNames = false, bool itemOwners = false, bool healthDisplay = false)
     {
         var reference = new Mir2.Hosting.ProjectPaths().Data;
         var root = Path.GetFullPath(destination);
@@ -130,7 +130,7 @@ internal static class Fixture
             File.WriteAllText(Path.Combine("Envir", "NPCs", "00Default.txt"), "[@_CustomCommand(UiCommand)]\n#SAY\n自定义命令检查。\n");
             File.WriteAllText(Path.Combine("Envir", "Drops", "NativeTarget.txt"), $"1/1 Gold 1000\n1/1 {potion.Name}\n");
             File.WriteAllText(Path.Combine("Envir", "NPCs", "NativeShop.txt"),
-                $"[@MAIN]\n#ACT\nMOV A10 7\nMOV A11 \"\"\n#SAY\n{{<$USERNAME>/KHAKI}}，来啦！我就是{{<$NPCNAME>/KHAKI}}。\n生命：{{<$HP>/<$MAXHP>/RED}}　魔力：{{<$MP>/<$MAXMP>/ROYALBLUE}}\n当前佩戴：{{左：<$RING_L>　右：<$RING_R>/CORAL}}\n变量：<$OUTPUT(A10)>|<$OUTPUT(A11)>|<$OUTPUT(a10)>\n<购买/@BUY> <出售/@SELL> <仓库/@STORAGE> <修理/@REPAIR>\n\n[@SELL]\n#SAY\nSell supplies.\n<Back/@MAIN>\n\n[@REPAIR]\n#SAY\nRepair supplies.\n<Back/@MAIN>\n\n[@STORAGE]\n#SAY\nAccount storage.\n<Back/@MAIN>\n\n[Quests]\n1\n2\n3\n\n[Types]\n{(int)ItemType.Potion}\n{(int)ItemType.Weapon}\n{(int)ItemType.Armour}\n\n[Trade]\n{potion.Name} 1\n" +
+                $"[@MAIN]\n#ACT\nMOV A10 7\nMOV A11 \"\"\n#SAY\n{{<$USERNAME>/KHAKI}}，来啦！我就是{{<$NPCNAME>/KHAKI}}。\n生命：{{<$HP>/<$MAXHP>/RED}}　魔力：{{<$MP>/<$MAXMP>/ROYALBLUE}}\n当前佩戴：{{左：<$RING_L>　右：<$RING_R>/CORAL}}\n变量：<$OUTPUT(A10)>|<$OUTPUT(A11)>|<$OUTPUT(a10)>\n<购买/@BUY> <出售/@SELL> <仓库/@STORAGE> <修理/@REPAIR> <<输入检查/@@INPUT/Green>>\n\n[@@INPUT]\n#ACT\nMOV A12 %INPUTSTR\n#SAY\n输入结果：|<$OUTPUT(A12)>|\n<返回/@MAIN>\n\n[@@HIDDEN]\n#SAY\n不应执行的页面。\n\n[@SELL]\n#SAY\nSell supplies.\n<Back/@MAIN>\n\n[@REPAIR]\n#SAY\nRepair supplies.\n<Back/@MAIN>\n\n[@STORAGE]\n#SAY\nAccount storage.\n<Back/@MAIN>\n\n[Quests]\n1\n2\n3\n\n[Types]\n{(int)ItemType.Potion}\n{(int)ItemType.Weapon}\n{(int)ItemType.Armour}\n\n[Trade]\n{potion.Name} 1\n" +
                 string.Join("\n", world.ItemInfoList.Where(item => item.Type == ItemType.Weapon).Take(20).Select(item => $"{item.Name} 1")) + "\n");
             File.WriteAllText(Path.Combine("Configs", "WorldMap.ini"), "[Setup]\nEnabled=False\n\n[Layout]\n");
             if (catalog)
@@ -162,6 +162,10 @@ internal static class Fixture
                 second.Respawns.Clear();
                 SkillEffectFixture.Configure(world, first, start, skillSummons);
             }
+            if (healthDisplay) HealthDisplayFixture.Configure(world, first, start, root);
+            if (publicServices) PublicServicesFixture.Configure(world, potion, sword);
+            if (actionItems) ClientActionItemsFixture.Configure(world);
+            if (movementStates) MovementStateFixture.Configure(world, map, root);
             world.SaveDB();
             if (tradeAccounts)
             {
@@ -170,6 +174,12 @@ internal static class Fixture
                 {
                     var account = new AccountInfo { Index = ++world.NextAccountID, AccountID = name, Password = "Trade123", Gold = 1000, CreationIP = "127.0.0.1", CreationDate = DateTime.UtcNow };
                     var character = new CharacterInfo { Index = ++world.NextCharacterID, Name = name, AccountInfo = account, Class = MirClass.Warrior, Gender = MirGender.Male, CreationIP = "127.0.0.1", CreationDate = DateTime.UtcNow, Heroes = new HeroInfo[1] };
+                    if (social && name == "TradeLeft")
+                    {
+                        var hero = new HeroInfo(new ClientPackets.NewHero { Name = "回归英雄", Class = MirClass.Warrior, Gender = MirGender.Male })
+                            { Index = ++world.NextHeroID, Level = 50 };
+                        world.HeroList.Add(hero); character.Heroes[0] = hero; character.CurrentHeroIndex = hero.Index; character.HeroSpawned = true;
+                    }
                     account.Characters.Add(character); world.AccountList.Add(account); world.CharacterList.Add(character);
                 }
                 world.SaveAccounts();
@@ -190,6 +200,10 @@ internal static class Fixture
                 ini.Write("Guilds", "MinimumLevel", 1); ini.Save();
                 world.SaveAccounts();
             }
+            if (guildWars) GuildWarFixture.Configure(world, first, start, root);
+            if (guildCreation) GuildCreationFixture.Configure(world, first, start, root);
+            if (objectNames) ObjectNameFixture.Configure(world, first, start, root);
+            if (itemOwners) ItemOwnerFixture.Configure(world, first, start, root);
             Console.WriteLine($"Created isolated native fixture at {root}; start {start.X},{start.Y}.");
         }
         finally { Directory.SetCurrentDirectory(previous); }

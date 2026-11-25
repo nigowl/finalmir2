@@ -64,11 +64,21 @@ public sealed partial class CompanionSession
         if (preparedSkill==null && pendingSkill==Spell.None && await ImproveEquipment()) return;
         var stats = state.CalculateStats();
         var low = CompanionSafety.LowHealth(user.HP,stats[Stat.HP],Profile.Traits.Risk);
+        // 低血或围攻先尝试原撤退，普通补货不能驻足压过保命。
+        if (!low && !Crowded(now) && Knowledge.Goal?.Key == "public-supply" && preparedSkill == null && pendingSkill == Spell.None && await PublicServices(now)) return;
+        // 在威胁接近前开盾，已经承伤或低血时不驻足抢占原撤离。
+        if(!low&&now-monsterAttackedAt>=5000&&now>=aggressorUntil&&!skillsPaused&&preparedSkill==null&&pendingSkill==Spell.None&&now>=nextSkill&&
+            CompanionSafety.NeedsTravelShield(state,Knowledge,preferences,now))
+        {await SendSkill(Spell.MagicShield,state.Me!,true,now);await Status("护盾中","赶路前使用已学魔法盾防护附近危险怪物");return;}
         if(await Defend(now,stats))return;
         if(await PrepareSkill(now))return;
         if(await AwaitSkill(now))return;
+        if (await PublicServices(now)) return;
+        if (await UseTownOnRoute(now)) return;
+        if (!low && await MaintainHero(now)) return;
         if (await TasksAndSupplies(now)) return;
         if (Knowledge.Goal?.Kind == "service" && await FollowObjective(now)) return;
+        if (!low && Knowledge.Goal?.Kind == "guild-create" && await FollowObjective(now)) return;
         if(!Funding&&!low&&await InviteParty(now))return;
         if (Knowledge.Goal?.Kind == "wait")
         { await Status("待规划", Knowledge.Goal.Reason); nextAction = now + 3000; return; }
@@ -127,7 +137,7 @@ public sealed partial class CompanionSession
             nextAction=now+Math.Max(750,1600-Math.Min(370,user.Level*14)-stats[Stat.AttackSpeed]*60);return true;
         }
         var thrusting=ClassSkillRules.Thrusting(state,preferences,target,true,now);
-        if (!thrusting && Distance(user.Location,target.Location)>1) return await MoveTo(target.Location,1);
+        if (!thrusting && Distance(user.Location,target.Location)>1) return await MoveTo(target.Location,1,avoidThreats:Funding);
         var spell=ClassSkillRules.Melee(state,direction,thrusting?Spell.Thrusting:Spell.None,preferences.SmartBattle);
         await connection.Send(new C.Attack { Direction=direction, Spell=spell });
         if(spell is Spell.Slaying or Spell.FlamingSword or Spell.TwinDrakeBlade)state.ActiveSkills.Remove(spell);
@@ -142,7 +152,7 @@ public sealed partial class CompanionSession
         if(loot==null)return false;
         await Status("拾取中","拾取实际地面物品");
         if(Distance(user.Location,loot.Location)==0){await connection.Send(new C.PickUp());nextAction=now+900;return true;}
-        return await MoveTo(loot.Location);
+        return await MoveTo(loot.Location,avoidThreats:Funding);
     }
     private int TaskPriority(Crystal.Native.Actor actor) => Knowledge?.Quests.Where(q => state.Quests.ContainsKey(q.Id))
         .Any(q => q.MonsterIds.Contains(MonsterId(actor))) == true ? 20 : 0;

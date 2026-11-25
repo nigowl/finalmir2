@@ -12,7 +12,10 @@ travel_threat=os.environ.get('MIR2_COMPANION_QUEST_TRAVEL')=='1'
 full_bag=os.environ.get('MIR2_COMPANION_QUEST_FULL_BAG')=='1'
 blocked_reward=os.environ.get('MIR2_COMPANION_QUEST_BLOCKED_REWARD')=='1'
 storage_pages=os.environ.get('MIR2_COMPANION_QUEST_STORAGE_PAGES')=='1'
+half_items=os.environ.get('MIR2_COMPANION_QUEST_HALF_ITEMS')=='1'
+assert not half_items or not (travel_threat or full_bag or blocked_reward or storage_pages)
 server_dll=pathlib.Path(os.environ.get('MIR2_COMPANION_SERVER_DLL',str(repo/'src/Server/bin/Release/net8.0/Mir2.Server.dll')))
+compat=repo/'tests/Compatibility/bin'/server_dll.parent.parent.name/'net8.0/Compatibility.dll'
 def call(path,body=None,method=None):
     headers={'Authorization':'Bearer '+key,'X-Mir2-Version':version}
     if body is not None:headers['Content-Type']='application/json'
@@ -39,7 +42,7 @@ def stop():
     process.terminate();process.wait(60);assert process.returncode==0,pathlib.Path(log.name).read_text()
     process=None;log.close();log=None
 try:
-    subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--fixture',str(data)],cwd=repo,env=os.environ|{'MIR2_DATA_ROOT':str(repo/'data/versions/default')},check=True)
+    subprocess.run(['dotnet',str(compat),'--fixture',str(data)],cwd=repo,env=os.environ|{'MIR2_DATA_ROOT':os.environ.get('MIR2_DATA_ROOT',str(repo/'data/versions/default'))},check=True)
     start();base='/management/companions';overview=call(base+'/overview')
     call(base+'/settings',{'settings':overview['settings']|{'enabled':True}},'PUT')
     profile=call(base,{'name':'QuestPlanner','class':0,'gender':0,'enabled':True,'acceptGroup':False,'llmMode':0,
@@ -51,7 +54,12 @@ try:
     row=wait(entered);cid=row['characterId'];aid=row['accountId']
     call(base+'/'+ident+'/command',{'action':'stop','version':row['profile']['version']})
     wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
-    subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--companion-quests',str(cid)]+(['--travel-threat'] if travel_threat else [])+(['--full-bag'] if full_bag else [])+(['--blocked-reward'] if blocked_reward else []),cwd=root,env=env,check=True)
+    subprocess.run(['dotnet',str(compat),'--companion-quests',str(cid)]+(['--travel-threat'] if travel_threat else [])+(['--full-bag'] if full_bag else [])+(['--blocked-reward'] if blocked_reward else []),cwd=root,env=env,check=True)
+    if half_items:
+        script=data/'world/Envir/Quests/NativeQuestOrder2.txt'
+        original=script.read_text()
+        assert original.count('NativeQuestRemainder 10')==1
+        script.write_text(original.replace('NativeQuestRemainder 10','NativeQuestRemainder 5'))
     fixture=json.loads((data/'runtime/companion-quests-fixture.json').read_text())
     if storage_pages:
         setup=data/'world/Configs/Setup.ini';text=setup.read_text()
@@ -82,7 +90,7 @@ try:
         (root/'blocked-reward.json').write_text(json.dumps({'detail':detail,'character':character},ensure_ascii=False))
         row=call(base+'/'+ident)['row'];call(base+'/'+ident+'/command',{'action':'stop','version':row['profile']['version']})
         wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
-        subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--companion-quests',str(cid),'--reward-room'],cwd=root,env=env,check=True)
+        subprocess.run(['dotnet',str(compat),'--companion-quests',str(cid),'--reward-room'],cwd=root,env=env,check=True)
         start();row=call(base+'/'+ident)['row'];call(base+'/'+ident+'/command',{'action':'start','version':row['profile']['version']})
     if travel_threat:
         row=call(base+'/'+ident)['row'];call(base+'/'+ident+'/command',{'action':'pause','version':row['profile']['version']})
@@ -114,9 +122,9 @@ try:
                 # 已实际打开仓库时允许原安全回补至5份，核对守恒而非要求仓库源堆叠不拆分。
                 assert sum(i['count'] for i in character['inventory']+account['storage'] if i['itemId']==fixture['reserve'])==42
             else:assert any(int(i['uniqueId'])==fixture['storedId'] and i['count']==40 for i in account['storage']),account
-        if goal.get('questId')==2 and goal.get('kind')==('turn-in' if full_bag or blocked_reward else 'hunt'):local_goal=True
+        if goal.get('questId')==2 and goal.get('kind')==('turn-in' if full_bag or blocked_reward or half_items else 'hunt'):local_goal=True
         items=[i for i in character['inventory'] if i['itemId']==fixture['token']]
-        if sum(i['count'] for i in items)==10 and any(int(i['uniqueId'])==fixture['tokenId'] for i in items):collected=True
+        if sum(i['count'] for i in items)==(9 if half_items else 10) and any(int(i['uniqueId'])==fixture['tokenId'] for i in items):collected=True
         if travel_threat:
             assert character['experience']<800,('任务途中先杀了无关攻击者',character)
             assert collected or 2 in character['completedQuests'] or time.monotonic()-resumed<12,('近期受击后仍未优先取得同图任务物',character,runtime)
@@ -156,9 +164,10 @@ try:
         print('PASS 满46格且任务可交时，先按服务器计划跨图存仓3件普通重复备装，再交任务取得真实奖励；任务/原物品编号守恒且重启保持。',flush=True)
     stop()
     if storage_pages:
-        subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--storage-pages-saved',str(aid)],cwd=root,env=env,check=True)
+        subprocess.run(['dotnet',str(compat),'--storage-pages-saved',str(aid)],cwd=root,env=env,check=True)
     with sqlite3.connect(data/'runtime/mir2.sqlite3') as db:assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
     if not full_bag:print(f'PASS 原TCP多任务：原材料编号/数量不变，无抢先存取，交付顺序2→1、真实333金币、任务物移除；仅剩1格奖励恰好1件（编号{reward_id}），完整重启同编号/数量及SQLite完整性。',flush=True)
+    if half_items:print('PASS 正常重启加载收集需求10→5，原进行中的任务用已有9份材料完成，无需再击杀收集。',flush=True)
 finally:
     if process is not None and process.poll() is None:process.terminate();process.wait(60)
     if log is not None:log.close()

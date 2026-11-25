@@ -80,9 +80,25 @@ async function api(method = 'GET', body) {
         assert.equal(saved.values.maxUser, 50); assert.equal(saved.values.maxIP, 5); assert.equal(saved.values.expRate, 1);
         assert.equal(saved.values.playerPhysicalDamageRate, 1); assert.equal(saved.values.magicResistWeight, 10);
         for (const role of ['Warrior', 'Wizard', 'Taoist', 'Assassin', 'Archer']) assert.equal(saved.values['allowCreate' + role], true);
+        await page.getByRole('button', { name: '编辑', exact: true }).click();
+        await edit.getByRole('tab', { name: '战斗平衡', exact: true }).click();
+        await edit.getByLabel('走跑间隔（毫秒）', { exact: true }).fill('650');
+        await edit.getByLabel('角色动作速度（%）', { exact: true }).fill('90');
+        await edit.getByRole('button', { name: '保存', exact: true }).click();
+        await expect(prompt()).toContainText('重启游戏引擎');
+        await prompt().getByRole('button', { name: '保存', exact: true }).click();
+        await expect(edit).toHaveCount(0);
+        await page.getByRole('tab', { name: '战斗平衡', exact: true }).click();
+        const speed = table().locator('tr').filter({ has: page.getByRole('cell', { name: '走跑间隔', exact: true }) });
+        await expect(speed.locator('td').nth(1)).toHaveText('650 毫秒');
+        await expect(speed.locator('td').nth(2)).toHaveText('500 毫秒');
+        const manifest = await (await fetch(server + '/assets/manifest')).json();
+        assert.equal(manifest.playerMoveMilliseconds, 650);
+        assert.equal(manifest.playerActionSpeedPercent, 90);
+        await page.screenshot({ path: path.join(root, 'settings-player-timing.png') });
         assert(!/原客户端|原版|原引擎|原服/.test(await page.locator('.admin-page').innerText()));
         assert.deepEqual(errors, []);
-        console.log('PASS focused settings browser: default values in six tabs; five class switches; reset cancel/draft/save and discard protection; persisted defaults, concise copy, no browser errors.');
+        console.log('PASS focused settings browser: defaults, reset, five class switches, timing edit and restart, updated manifest, no browser errors.');
     } finally {
         try { const latest = await api(); await api('PUT', { values: original.values, version: latest.version }); }
         finally { await browser.close(); }

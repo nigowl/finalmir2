@@ -115,6 +115,7 @@ namespace Server
         public static List<long> OrbsDmgList = new List<long>();
 
         public static float DropRate = 1F, ExpRate = 1F;
+        public static float PublicShopPriceRate = 1.5F;
         public static int[] StorageQuestIds = new int[3];
         public static int TeleportToNPCCost = 3000;
 
@@ -323,7 +324,7 @@ namespace Server
         public static bool[] Hero_CanCreateClass = new bool[0];
         public static string HeroSealItemName = "SealedHero";
         public static ushort HeroMaximumSealCount = 5;
-        public static byte MaximumHeroCount = 9;
+        public const byte MaximumHeroCount = 5;
 
         public static bool AllowObserve;
 
@@ -447,6 +448,8 @@ namespace Server
             //Game
             DropRate = Reader.ReadSingle("Game", "DropRate", DropRate);
             ExpRate = Reader.ReadSingle("Game", "ExpRate", ExpRate);
+            PublicShopPriceRate = Math.Clamp(Reader.ReadSingle("Game", "PublicShopPriceRate", 1.5F), 1F, 10F);
+            if (!float.IsFinite(PublicShopPriceRate)) PublicShopPriceRate = 1.5F;
             ItemTimeOut = Reader.ReadInt32("Game", "ItemTimeOut", ItemTimeOut);
             PlayerDiedItemTimeOut = Reader.ReadInt32("Game", "PlayerDiedItemTimeOut", PlayerDiedItemTimeOut);
             PetSave = Reader.ReadBoolean("Game", "PetSave", PetSave);
@@ -739,6 +742,7 @@ namespace Server
             //Game
             Reader.Write("Game", "DropRate", DropRate);
             Reader.Write("Game", "ExpRate", ExpRate);
+            Reader.Write("Game", "PublicShopPriceRate", PublicShopPriceRate);
             Reader.Write("Game", "ItemTimeOut", ItemTimeOut);
             Reader.Write("Game", "PlayerDiedItemTimeOut", PlayerDiedItemTimeOut);
             Reader.Write("Game", "PetSave", PetSave);
@@ -1334,7 +1338,6 @@ namespace Server
             InIReader reader = new InIReader(Path.Combine(ConfigPath, "HeroSettings.ini"));
             AllowNewHero = reader.ReadBoolean("Hero", "AllowNewHero", AllowNewHero);
             Hero_RequiredLevel = reader.ReadByte("Hero", "MinimumLevel", Hero_RequiredLevel);
-            MaximumHeroCount = reader.ReadByte("Hero", "MaximumCount", MaximumHeroCount);
             for (int i = 0; i < Hero_CanCreateClass.Length; i++)
                 Hero_CanCreateClass[i] = reader.ReadBoolean("Hero", $"CanCreate{Enum.GetName(typeof(MirClass), i)}", true);
             HeroSealItemName = reader.ReadString("Hero", "SealItemName", HeroSealItemName);

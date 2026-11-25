@@ -29,8 +29,8 @@ public partial class Main
         Picture(guild, "Prguse", 180, 0, 0, nativeFrame: true); WindowTitle(guild, "行会", 520);
         ArtButton(guild, "Prguse2", 360, 565, 4, "关闭行会 H", CloseGuild);
         guildTabs.Add(ArtButton(guild, "Title", 93, 20, 34, "公告", () => SelectGuildPage(0), "公告"));
-        guildTabs.Add(ArtButton(guild, "Title", 99, 91, 34, "成员", () => SelectGuildPage(1), "成员"));
-        guildTabs.Add(ArtButton(guild, "Title", 101, 162, 34, "职位与权限", () => SelectGuildPage(2), "权限"));
+        guildTabs.Add(ArtButton(guild, "Title", 99, 92, 34, "成员", () => SelectGuildPage(1), "成员"));
+        guildTabs.Add(ArtButton(guild, "Title", 101, 164, 34, "职位与权限", () => SelectGuildPage(2), "权限"));
         guild.AddChild(new VSeparator { Position = new Vector2(355, 62), Size = new Vector2(1, 336), MouseFilter = MouseFilterEnum.Ignore });
         Text(guild, "行会信息", 370, 64, 202).AddThemeFontSizeOverride("font_size", ClientUi.Title);
         guildSummary = Text(guild, "", 370, 94, 202); guildSummary.Size = new Vector2(202, 175); guildSummary.VerticalAlignment = VerticalAlignment.Top; guildSummary.AutowrapMode = TextServer.AutowrapMode.WordSmart;
@@ -179,7 +179,7 @@ public partial class Main
             guildTabs[page].SetPressedNoSignal(guildPage == page);
         }
         guildNoticePage.Visible = State.InGuild && guildPage == 0; guildMembersPage.Visible = State.InGuild && guildPage == 1; guildRanksPage.Visible = State.InGuild && guildPage == 2;
-        guildSummary.Text = State.Guild is { } g ? $"{g.GuildName}\n职位：{g.GuildRankName}\n等级：{g.Level}\n成员：{g.MemberCount}/{g.MaxMembers}\n经验：{g.Experience}/{g.MaxExperience}\n资金：{g.Gold:N0}\n\n!~内容 发送行会聊天" : "尚未加入行会。\n允许邀请后，由有招收权限的成员邀请你。\n\n行会可由管理台创建。";
+        guildSummary.Text = State.Guild is { } g ? $"{g.GuildName}\n职位：{g.GuildRankName}\n等级：{g.Level}\n成员：{g.MemberCount}/{g.MaxMembers}\n经验：{g.Experience}/{g.MaxExperience}\n资金：{g.Gold:N0}\n\n!~内容 发送行会聊天" : "尚未加入行会。\n允许邀请后，由有招收权限的成员邀请你。\n\n满足原服条件后，可向行会管理员申请建会。";
         guildRecruit.Editable = State.HasGuildPermission(GuildRankOptions.CanRecruit);
         guildInviteToggle.Text = State.AllowGuildInvitations ? "拒绝新的行会邀请" : "允许行会邀请";
         if (!editingGuildNotice) guildNotice.Text = string.Join('\n', State.GuildNotice);

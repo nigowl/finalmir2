@@ -38,7 +38,7 @@ namespace Server.MirObjects
                     Info.CurrentHeroIndex = currentHero.Index;
                     for (int i = 0; i < Info.Heroes.Length; i++)
                     {
-                        if (Info.Heroes[i].Index != currentHero.Index) continue;
+                        if (Info.Heroes[i]?.Index != currentHero.Index) continue;
                         CurrentHeroIndex = i;
                         break;
                     }
@@ -111,7 +111,9 @@ namespace Server.MirObjects
         public int FishingChance, FishingChanceCounter, FishingProgressMax, FishingProgress, FishingAutoReelChance = 0, FishingNibbleChance = 0;
         public bool Fishing, FishingAutocast, FishFound, FishFirstFound;
 
-        public const long TurnDelay = 350, HarvestDelay = 350, FishingCastDelay = 750, FishingDelay = 200, MovementDelay = 2000;
+        public static int TurnDelay => Settings.PlayerTiming.TurnMilliseconds;
+        public static int HarvestDelay => TurnDelay;
+        public const long FishingCastDelay = 750, FishingDelay = 200, MovementDelay = 2000;
         public long ChatTime, ShoutTime, FishingTime, FishingFoundTime, CreatureTimeLeftTicker, RestedTime, MovementTime;
 
         public byte ChatTick;
@@ -216,6 +218,7 @@ namespace Server.MirObjects
 
             Connection = connection;
             Info = info;
+            EnsureHeroCapacity();
             Account = Connection.Account;
 
             Stats = new Stats();
@@ -237,6 +240,9 @@ namespace Server.MirObjects
 
             if (info.CurrentHeroIndex > 0)
                 CurrentHero = Envir.GetHeroInfo(info.CurrentHeroIndex);
+
+            foreach (var hero in Info.Heroes ?? Array.Empty<HeroInfo>())
+                if (hero != null) RestoreHeroInventory(hero, false);
 
             RefreshStats();
 
@@ -483,6 +489,8 @@ namespace Server.MirObjects
                 GroupInvitation = null;
 
             base.Process();
+
+            ProcessMagicBloodStone();
 
             if (Settings.RestedPeriod > 0 && Envir.Time > RestedTime)
             {
@@ -1181,6 +1189,7 @@ namespace Server.MirObjects
 
             SetLevelEffects();
 
+            Info.ResizeInventory();
             Helpers.InventoryStacks.Compact(Info.Inventory);
             OrganizeQuestInventory(false);
             GetItemInfo(Connection);
@@ -1322,8 +1331,18 @@ namespace Server.MirObjects
                 }
             }
 
-            if (HasHero && Info.HeroSpawned)
-                SummonHero();
+            if (HasHero)
+            {
+                Connection.HeroStorageSent = false;
+                ManageHeroes();
+                if (CurrentHero.HP == 0)
+                {
+                    Info.HeroSpawned = false;
+                    Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Dead });
+                }
+                else if (Info.HeroSpawned) SummonHero();
+                else Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Unsummoned });
+            }
 
             // **** NEW: apply map entry rules on login (NoPets/NoGroup/NoHero + MapEnter + party UI) ****
             // This ensures pets unfreeze if the current map allows pets, disbands on NoGroup, and despawns hero on NoHero.
@@ -1396,6 +1415,7 @@ namespace Server.MirObjects
             GroupMemberMapNameChanged();
             GetPlayerLocation();
         }
+        internal long LastTownRevive { get; private set; } = -1;
         public void TownRevive()
         {
             if (!Dead) return;
@@ -1418,10 +1438,13 @@ namespace Server.MirObjects
             if (temp?.GetBindLocation(bindLocation) is not Point validBind) return;
             bindLocation = validBind;
 
+            Target = LastHitter = null;
+            LastHitTime = BrownTime = LastTownRevive = Envir.Time;
             Dead = false;
-            SetHP(Stats[Stat.HP]);
-            SetMP(Stats[Stat.MP]);
             RefreshStats();
+            SetHP(Math.Max(1, Stats[Stat.HP] / 10));
+            SetMP(Stats[Stat.MP]);
+            RefreshNameColour();
 
             CurrentMap.RemoveObject(this);
             Broadcast(new S.ObjectRemove { ObjectID = ObjectID });
@@ -3704,19 +3727,9 @@ namespace Server.MirObjects
                         break;
                     case "ADDINVENTORY":
                         {
-                            int openLevel = (int)((Info.Inventory.Length - 46) / 4);
-                            uint openGold = (uint)(1000000 + openLevel * 1000000);
-                            if (Account.Gold >= openGold)
-                            {
-                                Account.Gold -= openGold;
-                                Enqueue(new S.LoseGold { Gold = openGold });
+                            if (Info.Inventory.Length < Globals.BaseInventorySize)
                                 Enqueue(new S.ResizeInventory { Size = Info.ResizeInventory() });
-                                ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.InventoryIncreased), ChatType.System);
-                            }
-                            else
-                            {
-                                ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.LowGold), ChatType.System);
-                            }
+                            ReceiveChat($"背包已开放 {Math.Max(0, Info.Inventory.Length - BeltSize)} 格，另有 {BeltSize} 格快捷栏。", ChatType.System);
                             ChatTime = 0;
                         }
                         break;
@@ -3761,7 +3774,7 @@ namespace Server.MirObjects
                         {
                             if (!HasHero) return;
 
-                        if (!HeroSpawned)
+                            if (!HeroSpawned || Hero.Dead)
                                 SummonHero();
                         else if (Hero != null)
                         {
@@ -4269,7 +4282,7 @@ namespace Server.MirObjects
                     case MirGridType.HeroInventory:
                         if (!HasHero || !HeroSpawned)
                             return text;
-                        array = CurrentHero.Inventory;
+                        array = Info.Inventory;
                         break;
                     default:
                         continue;
@@ -4396,7 +4409,9 @@ namespace Server.MirObjects
             Direction = dir;
 
             Enqueue(new S.UserLocation { Direction = Direction, Location = CurrentLocation });
-            Broadcast(new S.ObjectHarvest { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation });
+            var harvest = new S.ObjectHarvest { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation };
+            Enqueue(harvest);
+            Broadcast(harvest);
 
             Point front = Front;
             bool send = false;
@@ -4578,9 +4593,6 @@ namespace Server.MirObjects
 
                 if (temp == null || !temp.ValidPoint(info.Destination)) continue;
 
-                CurrentMap.RemoveObject(this);
-                Broadcast(new S.ObjectRemove { ObjectID = ObjectID });
-
                 CompleteMapMovement(temp, info.Destination, CurrentMap, CurrentLocation);
                 return true;
             }
@@ -4598,7 +4610,7 @@ namespace Server.MirObjects
 
             if (CurrentMap != checkmap || CurrentLocation != checklocation) return;
 
-            // --- RG pre-gate (deny before leaving source) ---
+            // 入口拒绝必须回原坐标，角色仍留在原地图和格子里。
             if (temp.Info.RequiredGroup && !IsGM)
             {
                 int required = Math.Max(2, temp.Info.RequiredGroupSize);
@@ -4606,6 +4618,7 @@ namespace Server.MirObjects
                 if (have < required)
                 {
                     ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.MustBeInGroupMembers, required), ChatType.System);
+                    Enqueue(new S.UserLocation { Direction = Direction, Location = CurrentLocation });
                     return; // stay on source
                 }
             }
@@ -4619,15 +4632,8 @@ namespace Server.MirObjects
 
             bool mapChanged = temp != CurrentMap;
 
-            // --- Detach from source AFTER gate (no broadcast here) ---
-            if (checkmap != null && checkmap.ValidPoint(checklocation))
-            {
-                var srcCell = checkmap.GetCell(checklocation);
-                if (srcCell != null && srcCell.Objects != null && srcCell.Objects.Contains(this))
-                {
-                    checkmap.RemoveObject(this);
-                }
-            }
+            CurrentMap.RemoveObject(this);
+            Broadcast(new S.ObjectRemove { ObjectID = ObjectID });
 
             // Switch to destination
             CurrentMap = temp;
@@ -4754,6 +4760,7 @@ namespace Server.MirObjects
         {
             if (attacker == null || attacker.Node == null) return false;
             if (Dead || attacker.Master == this || GMGameMaster) return false;
+            if (attacker.IsTownGuard) return PKPoints >= 200 && (LastTownRevive < 0 || Envir.Time > LastTownRevive + 1000);
             if (attacker.Info.AI == 6 || attacker.Info.AI == 58 || attacker.Info.AI == 113) return PKPoints >= 200;
             if (attacker.Master == null) return true;
             if (InSafeZone || attacker.InSafeZone || attacker.Master.InSafeZone) return false;
@@ -5131,6 +5138,8 @@ namespace Server.MirObjects
         public void RemoveItem(MirGridType grid, ulong id, int to)
         {
             S.RemoveItem p = new S.RemoveItem { Grid = grid, UniqueID = id, To = to, Success = false };
+            if (grid == MirGridType.HeroInventory && !CanManageHeroItems) { Enqueue(p); return; }
+
             UserItem[] toArray, fromArray;
             MirGridType fromGrid;
             switch (grid)
@@ -5182,7 +5191,7 @@ namespace Server.MirObjects
                         Enqueue(p);
                         return;
                     }
-                    toArray = CurrentHero.Inventory;
+                    toArray = Info.Inventory;
                     fromArray = CurrentHero.Equipment;
                     fromGrid = MirGridType.HeroEquipment;
                     break;
@@ -5191,7 +5200,7 @@ namespace Server.MirObjects
                     return;
             }
 
-            if (to < 0 || to >= toArray.Length) return;
+            if (to < 0 || to >= toArray.Length) { Enqueue(p); return; }
 
             UserItem temp = null;
             int index = -1;
@@ -5230,7 +5239,7 @@ namespace Server.MirObjects
                 return;
             }
 
-            if (!CanRemoveItem(grid, temp)) return;
+            if (!CanRemoveItem(grid, temp)) { Enqueue(p); return; }
 
             if (temp.Cursed)
                 UnlockCurse = false;
@@ -5244,8 +5253,8 @@ namespace Server.MirObjects
                 Enqueue(p);
                 if (grid == MirGridType.HeroInventory)
                 {
+                    RefreshBagWeight();
                     Hero.RefreshStats();
-                    Hero.Broadcast(GetUpdateInfo());
                 }
                 else
                 {
@@ -5467,7 +5476,7 @@ namespace Server.MirObjects
                         Enqueue(p);
                         return;
                     }
-                    array = CurrentHero.Inventory;
+                    array = Info.Inventory;
                     break;
                 default:
                     Enqueue(p);
@@ -5661,6 +5670,8 @@ namespace Server.MirObjects
                 return;
             }
 
+            if (grid == MirGridType.HeroInventory && !CanManageHeroItems) { Enqueue(p); return; }
+
             UserItem[] toArray = null;
             MirGridType toGrid = MirGridType.Equipment;
             HumanObject actor = this;
@@ -5724,7 +5735,7 @@ namespace Server.MirObjects
                         Enqueue(p);
                         return;
                     }
-                    array = CurrentHero.Inventory;
+                    array = Info.Inventory;
                     break;
                 default:
                     Enqueue(p);
@@ -5783,6 +5794,9 @@ namespace Server.MirObjects
                 return;
             }
 
+            if (grid == MirGridType.HeroInventory && (temp.Info.Bind.HasFlag(BindMode.NoHero) ||
+                temp.RentalInformation != null && temp.RentalInformation.BindingFlags != BindMode.None)) { Enqueue(p); return; }
+
             if (actor.CanEquipItem(temp, to))
             {
                 if (temp.Info.NeedIdentify && !temp.Identified)
@@ -5810,7 +5824,10 @@ namespace Server.MirObjects
                 p.Success = true;
                 Enqueue(p);
                 if (toGrid == MirGridType.HeroEquipment)
+                {
+                    RefreshBagWeight();
                     Hero.RefreshStats();
+                }
                 else
                     RefreshStats();
 
@@ -5821,109 +5838,11 @@ namespace Server.MirObjects
         }
         public void TakeBackHeroItem(int from, int to)
         {
-            S.TakeBackHeroItem p = new S.TakeBackHeroItem { From = from, To = to, Success = false };
-
-            if (!HasHero || !HeroSpawned || Hero.Dead)
-            {
-                Enqueue(p);
-                return;
-            }
-
-            if (from < 0 || from >= CurrentHero.Inventory.Length)
-            {
-                Enqueue(p);
-                return;
-            }
-
-            if (to < 0 || to >= Info.Inventory.Length)
-            {
-                Enqueue(p);
-                return;
-            }
-
-            UserItem temp = CurrentHero.Inventory[from];
-
-            if (temp == null)
-            {
-                Enqueue(p);
-                return;
-            }
-
-            if (Info.Inventory[to] == null)
-            {
-                Info.Inventory[to] = temp;
-                CurrentHero.Inventory[from] = null;
-
-                Report.ItemMoved(temp, MirGridType.HeroInventory, MirGridType.Inventory, from, to);
-
-                p.Success = true;
-                RefreshBagWeight();
-                Hero.RefreshBagWeight();
-                Enqueue(p);
-
-                return;
-            }
-            Enqueue(p);
+            Enqueue(new S.TakeBackHeroItem { From = from, To = to, Success = false });
         }
         public void TransferHeroItem(int from, int to)
         {
-            S.TransferHeroItem p = new S.TransferHeroItem { From = from, To = to, Success = false };
-
-            if (!HasHero || !HeroSpawned || Hero.Dead)
-            {
-                Enqueue(p);
-                return;
-            }
-
-            if (from < 0 || from >= Info.Inventory.Length)
-            {
-                Enqueue(p);
-                return;
-            }
-
-            if (to < 0 || to >= CurrentHero.Inventory.Length)
-            {
-                Enqueue(p);
-                return;
-            }
-
-            UserItem temp = Info.Inventory[from];
-
-            if (temp == null)
-            {
-                Enqueue(p);
-                return;
-            }
-
-            if (temp.Info.Bind.HasFlag(BindMode.NoHero) ||
-                (temp.RentalInformation != null && temp.RentalInformation.BindingFlags != BindMode.None))
-            {
-                Enqueue(p);
-                return;
-            }
-
-            if (temp.Weight + Hero.CurrentBagWeight > Hero.Stats[Stat.BagWeight])
-            {
-                ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.TooHeavyToTransfer), ChatType.System);
-                Enqueue(p);
-                return;
-            }
-
-            if (CurrentHero.Inventory[to] == null)
-            {
-                CurrentHero.Inventory[to] = temp;
-                Info.Inventory[from] = null;
-
-                Report.ItemMoved(temp, MirGridType.Inventory, MirGridType.HeroInventory, from, to);
-
-                p.Success = true;
-                RefreshBagWeight();
-                Hero.RefreshBagWeight();
-                Enqueue(p);
-
-                return;
-            }
-            Enqueue(p);
+            Enqueue(new S.TransferHeroItem { From = from, To = to, Success = false });
         }
         public override void UseItem(ulong id)
         {
@@ -6462,8 +6381,11 @@ namespace Server.MirObjects
         }
         public void HeroUseItem(ulong id)
         {
-            if (!HasHero || !HeroSpawned)
+            if (!HasHeroItemSession)
+            {
+                Enqueue(new S.UseItem { Grid = MirGridType.HeroInventory, UniqueID = id, Success = false });
                 return;
+            }
             Hero.UseItem(id);
         }
         public void SplitItem(MirGridType grid, ulong id, ushort count)
@@ -6656,7 +6578,7 @@ namespace Server.MirObjects
                         Enqueue(p);
                         return;
                     }
-                    arrayFrom = CurrentHero.Inventory;
+                    arrayFrom = Info.Inventory;
                     break;
                 case MirGridType.HeroEquipment:
                     if (!HasHero || !HeroSpawned)
@@ -6720,7 +6642,7 @@ namespace Server.MirObjects
                         Enqueue(p);
                         return;
                     }
-                    arrayTo = CurrentHero.Inventory;
+                    arrayTo = Info.Inventory;
                     break;
                 case MirGridType.HeroEquipment:
                     if (!HasHero || !HeroSpawned)
@@ -6841,7 +6763,7 @@ namespace Server.MirObjects
                     break;
                 case MirGridType.HeroInventory:
                     if (HasHero && HeroSpawned)
-                        array = CurrentHero.Inventory;
+                        array = Info.Inventory;
                     break;
             }
 
@@ -7513,7 +7435,7 @@ namespace Server.MirObjects
         public void DropItem(ulong id, ushort count, bool isHeroItem)
         {
             S.DropItem p = new S.DropItem { UniqueID = id, Count = count, HeroItem = isHeroItem, Success = false };
-            if (Dead)
+            if (Dead || isHeroItem && !CanManageHeroItems)
             {
                 Enqueue(p);
                 return;
@@ -7528,37 +7450,12 @@ namespace Server.MirObjects
 
             UserItem temp = null;
             int index = -1;
-            HeroObject currentHero = null;
-
-            if (!isHeroItem)
+            for (int i = 0; i < Info.Inventory.Length; i++)
             {
-                for (int i = 0; i < Info.Inventory.Length; i++)
-                {
-                    temp = Info.Inventory[i];
-                    if (temp == null || temp.UniqueID != id) continue;
-                    index = i;
-                    break;
-                }
-            }
-            else
-            {
-                currentHero = Envir.Heroes.FirstOrDefault(h => h.Info.Index == Info.CurrentHeroIndex);
-
-                if (currentHero != null)
-                {
-                    for (int i = 0; i < currentHero.Info.Inventory.Length; i++)
-                    {
-                        temp = currentHero.Info.Inventory[i];
-                        if (temp == null || temp.UniqueID != id) continue;
-                        index = i;
-                        break;
-                    }
-                }
-                else
-                {
-                    Enqueue(p);
-                    return;
-                }
+                temp = Info.Inventory[i];
+                if (temp == null || temp.UniqueID != id) continue;
+                index = i;
+                break;
             }
 
             if (temp == null || index == -1 || count > temp.Count || count < 1 ||
@@ -7589,14 +7486,7 @@ namespace Server.MirObjects
                         return;
                     }
 
-                if (p.HeroItem)
-                {
-                    currentHero.Info.Inventory[index] = null;
-                }
-                else
-                {
-                    Info.Inventory[index] = null;
-                }
+                Info.Inventory[index] = null;
 
             }
             else
@@ -7615,16 +7505,8 @@ namespace Server.MirObjects
             p.Success = true;
             Enqueue(p);
 
-            if (p.HeroItem)
-            {
-                currentHero.RefreshBagWeight();
-                currentHero.Report.ItemChangedHero(temp, count, 1);
-            }
-            else
-            {
-                RefreshBagWeight();
-                Report.ItemChanged(temp, count, 1);
-            }
+            RefreshBagWeight();
+            Report.ItemChanged(temp, count, 1);
         }
         public void DropGold(uint gold)
         {
@@ -7867,7 +7749,7 @@ namespace Server.MirObjects
                     array = Account.Storage;
                     break;
                 case MirGridType.HeroInventory:
-                    array = CurrentHero.Inventory;
+                    array = Info.Inventory;
                     break;
                 default:
                     return false;
@@ -9789,11 +9671,17 @@ namespace Server.MirObjects
         #region Heroes
         public void NewHero(C.NewHero p)
         {
+            var npc = CurrentMap?.NPCs.FirstOrDefault(n => n.ObjectID == NPCObjectID);
+            if (!CanCreateHero || Level < Settings.Hero_RequiredLevel || !IsAtNPC(NPCScript.HeroCreateKey) || npc == null ||
+                !npc.Visible || !npc.VisibleLog.TryGetValue(Info.Index, out var visible) || !visible)
+            { Enqueue(new S.NewHero { Result = 7 }); return; }
             if (!Envir.CanCreateHero(p, Connection, IsGM))
                 return;
 
-            int heroCount = Info.Heroes.Count(x => x != null);
-            if (heroCount >= Info.MaximumHeroCount)
+            int heroCount = Info.Heroes.Count(x => x != null) + Info.Inventory
+                .Where(item => item?.Info?.Type == ItemType.SealedHero && item.AddedStats[Stat.Hero] > 0)
+                .Select(item => item.AddedStats[Stat.Hero]).Where(index => !Info.Heroes.Any(hero => hero?.Index == index)).Distinct().Count();
+            if (heroCount >= Math.Min(Info.MaximumHeroCount, Settings.MaximumHeroCount))
             {
                 Enqueue(new S.NewHero { Result = 4 });
                 return;
@@ -9801,7 +9689,7 @@ namespace Server.MirObjects
 
             bool passedItemCheck = true;
             ItemInfo itemInfo = Envir.GetItemInfo(Settings.HeroSealItemName);
-            if (itemInfo != null && FreeSpace(Info.Inventory) == 0)
+            if (itemInfo != null && (!CanGainItem(new UserItem(itemInfo)) || CurrentBagWeight + itemInfo.UnitWeight > Stats[Stat.BagWeight]))
                 passedItemCheck = false;
 
             if (!passedItemCheck)
@@ -9811,6 +9699,7 @@ namespace Server.MirObjects
             }
 
             var info = new HeroInfo(p) { Index = ++Envir.NextHeroID };
+            CanCreateHero = false;
             Envir.HeroList.Add(info);
 
             if (itemInfo != null)
@@ -9864,6 +9753,7 @@ namespace Server.MirObjects
 
         public void SetHeroBehaviour(HeroBehaviour behaviour)
         {
+            if (!Enum.IsDefined(behaviour)) return;
             if (!HeroSpawned) return;
             if (Info.HeroBehaviour == behaviour) return;
 
@@ -9876,7 +9766,13 @@ namespace Server.MirObjects
 
         public void ChangeHero(int index)
         {
-            if (Info.Heroes.Length <= index) return;
+            var npc = CurrentMap?.NPCs.FirstOrDefault(n => n.ObjectID == NPCObjectID);
+            if (index <= 0 || Info.Heroes.Length <= index || Info.Heroes[index] == null || !IsAtNPC(NPCScript.HeroManageKey) ||
+                npc == null || !npc.Visible || !npc.VisibleLog.TryGetValue(Info.Index, out var visible) || !visible || Hero?.LogTime > Envir.Time)
+            {
+                ReceiveChat("无法切换英雄：请靠近英雄使者，并等待英雄脱离战斗。", ChatType.Hint);
+                ManageHeroes(); return;
+            }
             bool respawn = Info.HeroSpawned;
 
             if (Hero != null)
@@ -9895,7 +9791,7 @@ namespace Server.MirObjects
 
             if (Info.Heroes[0] == null || !respawn)
             {
-                Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Unsummoned });
+                Enqueue(new S.UpdateHeroSpawnState { State = CurrentHero?.HP == 0 ? HeroSpawnState.Dead : HeroSpawnState.Unsummoned });
                 return;
             }
 
@@ -10186,35 +10082,32 @@ namespace Server.MirObjects
         }
         public void GuildNameReturn(string Name)
         {
-            if (Name == "") CanCreateGuild = false;
             if (!CanCreateGuild) return;
-            if ((Name.Length < 3) || (Name.Length > 20))
+            // 原命名包没有NPC编号；一次授权只接受当前有效页面内的一次提交。
+            CanCreateGuild = false;
+            var npc = CurrentMap?.NPCs.FirstOrDefault(n => n.ObjectID == NPCObjectID);
+            if (NPCObjectID == 0 || !IsAtNPC(NPCScript.GuildCreateKey) || npc == null || !npc.Visible ||
+                !npc.VisibleLog.TryGetValue(Info.Index, out var visible) || !visible)
+            { ReceiveChat("建会会话已失效，请靠近行会管理员重新申请。", ChatType.System); return; }
+            NPCPage = null;
+            if (string.IsNullOrWhiteSpace(Name) || Name.Length is < 3 or > 20 || Name.Any(char.IsControl) || Name.Contains('\\'))
             {
-                ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.GuildNameTooLong), ChatType.System);
-                CanCreateGuild = false;
-                return;
-            }
-            if (Name.Contains('\\'))
-            {
-                CanCreateGuild = false;
+                ReceiveChat("行会名称须为3–20字，不能包含反斜杠或控制字符。", ChatType.System);
                 return;
             }
             if (MyGuild != null)
             {
                 ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.YouAlreadyInGuild), ChatType.System);
-                CanCreateGuild = false;
                 return;
             }
             GuildObject guild = Envir.GetGuild(Name);
             if (guild != null)
             {
                 ReceiveChat(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.GuildAlreadyExists), Name), ChatType.System);
-                CanCreateGuild = false;
                 return;
             }
 
             CreateGuild(Name);
-            CanCreateGuild = false;
         }
         public void GuildStorageGoldChange(byte type, uint amount)
         {
@@ -10446,6 +10339,14 @@ namespace Server.MirObjects
         }
         public void GuildWarReturn(string Name)
         {
+            var npc = CurrentMap?.NPCs.FirstOrDefault(n => n.ObjectID == NPCObjectID);
+            if (NPCObjectID == 0 || !IsAtNPC(NPCScript.RequestWarKey) || npc == null || !npc.Visible ||
+                !npc.VisibleLog.TryGetValue(Info.Index, out var visible) || !visible)
+            { ReceiveChat("宣战会话已失效，请靠近行会管理员重新申请。", ChatType.System); return; }
+            // 原包没有请求编号，消费当前页面，防止重复确认再次处理行会资产。
+            NPCPage = null;
+            if (string.IsNullOrWhiteSpace(Name) || Name.Length is < 3 or > 20 || Name.Any(char.IsControl) || Name.Contains('\\'))
+            { ReceiveChat("行会名称须为3–20字，不能包含反斜杠或控制字符。", ChatType.System); return; }
             if (MyGuild == null || MyGuildRank != MyGuild.Ranks[0]) return;
 
             GuildObject enemyGuild = Envir.GetGuild(Name);
@@ -10486,6 +10387,7 @@ namespace Server.MirObjects
                 enemyGuild.SendMessage(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.HasStartedWar), MyGuild.Name), ChatType.System);
 
                 MyGuild.Gold -= Settings.Guild_WarCost;
+                MyGuild.NeedSave = true;
                 MyGuild.SendServerPacket(new S.GuildStorageGoldChange() { Type = 2, Name = Info.Name, Amount = Settings.Guild_WarCost });
             }
         }
@@ -11557,6 +11459,12 @@ namespace Server.MirObjects
             if (npc == null || !npc.VisibleLog.TryGetValue(Info.Index, out bool visible) || !visible || !npc.Visible) return;
 
             List<UserItem> rewardItems = new List<UserItem>();
+            var questGold = quest.Info.ActualGoldReward;
+            if (quest.Info.MengchongDaily && !CanGainGold(questGold))
+            {
+                ReceiveChat("金币已接近上限，腾出余额后再领取日常奖励。", ChatType.System);
+                return;
+            }
 
             foreach (var reward in quest.Info.FixedRewards)
             {
@@ -11610,7 +11518,7 @@ namespace Server.MirObjects
                 }
             }
 
-            if (!CanGainItems(rewardItems.ToArray()))
+            if (!quest.Info.CanReceiveRewards(this, rewardItems.ToArray()))
             {
                 ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.CannotHandInQuestBagFull), ChatType.System);
                 return;
@@ -11644,7 +11552,7 @@ namespace Server.MirObjects
 
             RecalculateQuestBag(quest.Info);
 
-            GainGold((uint)(quest.Info.GoldReward * Settings.DropRate));
+            GainGold(questGold);
             GainExp((uint)(quest.Info.ExpReward * Settings.ExpRate));
             GainCredit(quest.Info.CreditReward);
 
@@ -14717,12 +14625,15 @@ namespace Server.MirObjects
         }
         public void SummonHero()
         {
+            if (CurrentHero == null || Dead || CurrentMap == null) return;
             if (CurrentMap.Info.NoHero)
             {
                 ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.CannotSummonHeroOnMap), ChatType.System);
                 return;
             }
-
+            if (Hero is { Dead: false }) return;
+            if (!CanRecoverHero()) return;
+            if (Hero != null) DespawnHero();
             HeroObject hero = CurrentHero.Class switch
             {
                 MirClass.Warrior => new WarriorHero(CurrentHero, this),
@@ -14732,16 +14643,13 @@ namespace Server.MirObjects
                 MirClass.Archer => new ArcherHero(CurrentHero, this),
                 _ => new HeroObject(CurrentHero, this)
             };
-
             hero.ActionTime = Envir.Time + 1000;
             hero.RefreshNameColour();
-
-            if (!hero.Dead)
-                SpawnHero(hero);
-
+            SpawnHero(hero);
             Hero = hero;
             Info.HeroSpawned = true;
-            Enqueue(new S.UpdateHeroSpawnState { State = hero.Dead ? HeroSpawnState.Dead : HeroSpawnState.Summoned });
+            Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Summoned });
+            SendHeroRecovery();
         }
         private void SpawnHero(HeroObject hero)
         {
@@ -14766,35 +14674,14 @@ namespace Server.MirObjects
             Hero.Despawn(true);
             Hero = null;
 
-            Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Unsummoned });
+            Enqueue(new S.UpdateHeroSpawnState { State = CurrentHero?.HP == 0 ? HeroSpawnState.Dead : HeroSpawnState.Unsummoned });
+            SendHeroRecovery();
 
             Console.WriteLine("[Hero] Hero forcibly despawned and removed.");
         }
         public void ReviveHero()
         {
-            if (CurrentMap.Info.NoHero)
-            {
-                ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.HeroCannotReviveOnMap), ChatType.System);
-                return;
-            }
-            if (CurrentHero == null) return;
-            if (CurrentHero.HP != 0) return;
-
-            if (Hero != null)
-            {
-                if (Hero.Node != null)
-                {
-                    Hero.Revive(Hero.Stats[Stat.HP], true);
-                }
-                else
-                {
-                    CurrentHero.HP = Hero.Stats[Stat.HP];
-                    Hero.Dead = false;
-                    SpawnHero(Hero);
-                }
-                Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Summoned });
-            }
-            else CurrentHero.HP = -1;
+            if (CurrentHero?.HP == 0) SummonHero();
         }
 
         public void SealHero()
@@ -14847,9 +14734,10 @@ namespace Server.MirObjects
 
         private bool AddHero(HeroInfo hero)
         {
+            if (hero == null || hero.Deleted) return false;
             int heroCount = Info.Heroes.Count(x => x != null);
 
-            if (heroCount >= Info.MaximumHeroCount)
+            if (heroCount >= Math.Min(Info.MaximumHeroCount, Settings.MaximumHeroCount))
             {
                 ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.YouCannotSummonMoreHeroes), ChatType.Hint);
                 return false;
@@ -14859,11 +14747,13 @@ namespace Server.MirObjects
             {
                 if (Info.Heroes[i] != null) continue;
 
+                RestoreHeroInventory(hero, true);
                 Info.Heroes[i] = hero;
                 if (!HasHero)
                 {
                     CurrentHero = hero;
                     SummonHero();
+                    ManageHeroes();
                 }
                 else
                 {
@@ -14879,7 +14769,7 @@ namespace Server.MirObjects
 
         public void ManageHeroes()
         {
-            S.ManageHeroes p = new S.ManageHeroes() { MaximumCount = Info.MaximumHeroCount, CurrentHero = CurrentHero?.ClientInformation };
+            S.ManageHeroes p = new S.ManageHeroes() { MaximumCount = Settings.MaximumHeroCount, CurrentHero = CurrentHero?.ClientInformation };
 
             if (!Connection.HeroStorageSent)
             {

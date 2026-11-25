@@ -15,8 +15,10 @@ public partial class Main
     private static void TabStyle(Button button, float width)
     {
         button.ThemeTypeVariation = "GameTab"; button.ToggleMode = true; button.ActionMode = BaseButton.ActionModeEnum.Press;
+        button.ClipText = true; button.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
         button.ButtonGroup = button.GetParent().GetChildren().OfType<Button>()
             .FirstOrDefault(sibling => sibling != button && sibling.ThemeTypeVariation == "GameTab")?.ButtonGroup ?? new ButtonGroup();
-        button.Size = new Vector2(width, ClientUi.TabHeight);
+        button.CustomMinimumSize = new Vector2(width, ClientUi.TabHeight);
+        button.SetDeferred(Control.PropertyName.Size, button.CustomMinimumSize);
     }
 }

@@ -16,7 +16,8 @@ public partial class NativeSmoke
         foreach (var spell in new[] { Spell.Thrusting, Spell.Fencing })
         {
             var book = State.User!.Inventory.Single(item => item?.Info is { Type: ItemType.Book } info && info.Shape == (short)spell);
-            Client.UseItem(book.UniqueID); if (!(await Packet<S.UseItem>()).Success) throw new Exception("测试开关/被动技能学习失败。");
+            Client.UseItem(book.UniqueID); await ConfirmBookLearning();
+            if (!(await Packet<S.UseItem>()).Success) throw new Exception("测试开关/被动技能学习失败。");
             await Packet<S.NewMagic>();
         }
         OpenSkills();
@@ -59,7 +60,8 @@ public partial class NativeSmoke
         if (!(await Packet<S.Magic>()).Cast) throw new Exception("F12真实TCP施放没有成功。");
         var castAt = skill.CastTime;
         last.EmitSignal(BaseButton.SignalName.Pressed);
-        if (last.CooldownRemaining <= 0 || skill.CastTime != castAt) throw new Exception("技能格未显示冷却等待或允许冷却中重复施放。");
+        if ((ClientSkillRules.Cooldown(skill) > 0 ? last.CooldownRemaining <= 0 : last.CooldownRemaining != 0) || skill.CastTime != castAt)
+            throw new Exception("技能格自身冷却错误，或公共施法间隔内重复施放。");
         if (Argument("--screenshot") is { Length: > 0 } shot)
         {
             await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
@@ -102,13 +104,17 @@ public partial class NativeSmoke
         {
             var row = SkillRow(magic.Spell); var name = row.GetNode<Label>("SkillName"); var experience = row.GetNode<Label>("SkillExperience");
             var icon = row.GetNode<SkillIconButton>("SkillIcon");
-            if (name.VerticalAlignment != VerticalAlignment.Center || name.Size.Y != 24 || name.GetRect().End.Y > experience.Position.Y ||
-                icon.Size != new Vector2(40, 40) || name.Position.X != experience.Position.X || name.Position.X - icon.GetRect().End.X != 6)
+            if (name.VerticalAlignment != VerticalAlignment.Center || name.Size.Y != 18 || name.GetRect().End.Y > experience.Position.Y ||
+                row.Size.Y != ClientUi.SkillRowHeight || icon.Size != new Vector2(36, 36) || icon.GetRect().GetCenter().Y != row.Size.Y / 2 ||
+                name.Position.X != experience.Position.X || name.Position.X - icon.GetRect().End.X != 6)
                 throw new Exception($"{magic.Name}图标、名称和熟练度没有对齐：{icon.GetRect()} / {name.GetRect()} / {experience.GetRect()}。");
             foreach (var key in row.GetChildren().OfType<OptionButton>())
-                if (key.Size.Y != 24 || key.GetRect().GetCenter().Y != experience.GetRect().GetCenter().Y || key.GetRect().End.Y > row.Size.Y)
-                    throw new Exception($"{magic.Name}快捷键没有与熟练度同高居中：{key.GetRect()} / {experience.GetRect()}。");
+                if (key.Size.Y != 24 || key.GetRect().GetCenter().Y != icon.GetRect().GetCenter().Y || key.GetRect().End.X > row.Size.X)
+                    throw new Exception($"{magic.Name}快捷键没有在技能行居中：{key.GetRect()} / {icon.GetRect()}。");
         }
+        var rows = State.User.Magics.Select(magic => SkillRow(magic.Spell)).ToArray();
+        if (rows.Zip(rows.Skip(1)).Any(pair => pair.Second.Position.Y - pair.First.GetRect().End.Y != ClientUi.SkillRowGap))
+            throw new Exception("技能行间距不统一。");
         await Screenshot("skills-row-alignment");
     }
 }

@@ -21,10 +21,10 @@ public partial class NativeSmoke
         var register = buttons.Single(button => button.Index == 323); var quit = buttons.Single(button => button.Index == 329);
         if (register.Position.Y != quit.Position.Y || register.Position.Y != 176 || register.GetParent<Control>().GetRect().Size.Y < quit.GetRect().End.Y)
             throw new Exception("Login register/quit art did not share a horizontal baseline inside the lower panel.");
-        var connect = Client.FindChildren("*", "Button", true, false).OfType<Button>().Single(button => button.Text == "连接");
-        var address = connect.GetParent().GetChildren().OfType<LineEdit>().Single();
-        if (connect.Size.Y != ClientUi.ButtonHeight || connect.GetRect().GetCenter().Y != address.GetRect().GetCenter().Y)
-            throw new Exception($"连接地址和按钮没有对齐：{address.GetRect()} / {connect.GetRect()}。");
+        var connection = (ConfirmationDialog)Client.FindChild("ConnectionDialog", true, false);
+        if (connection.Visible || connection.GetOkButton().Text != "重试" || connection.GetCancelButton().Text != "退出" ||
+            Client.FindChildren("*", "LineEdit", true, false).OfType<LineEdit>().Any(edit => edit.PlaceholderText == "资源服务地址"))
+            throw new Exception("连接弹窗或移除底部地址栏不符合要求。");
         await Screenshot("login-layout");
         GD.Print("PASS native login: original register/quit actions align horizontally within the login frame.");
     }
@@ -38,8 +38,8 @@ public partial class NativeSmoke
             throw new Exception("任务入口未使用统一字体及原版棕底金边按钮。");
         var weight = bag.GetNode<Label>("BagWeight"); var free = bag.GetNode<Label>("BagFree");
         var expected = $"{State.InventoryWeight:0.##}/{State.CalculateStats()[Stat.BagWeight]}";
-        if (weight.Text != expected || free.Text != State.User!.Inventory.Count(item => item == null).ToString()) throw new Exception("Inventory weight or free-cell count is missing its current value.");
-        var gold = bag.FindChildren("*", "Label", true, false).Cast<Label>().Single(label => label.Position == new Vector2(40, 212));
+        if (weight.Text != expected || free.Text != State.User!.Inventory.Skip(6).Count(item => item == null).ToString()) throw new Exception("Inventory weight or free-cell count is missing its current value.");
+        var gold = bag.FindChildren("*", "Label", true, false).Cast<Label>().Single(label => label.Position == new Vector2(40, 212 + ClientUi.InventoryExtraHeight));
         if (gold.Text != State.User.Gold.ToString() || gold.GetRect().End.X > 151) throw new Exception("Inventory gold overlapped its original icon/field.");
         using var motion = new InputEventMouseMotion { Position = button.GetGlobalRect().GetCenter(), GlobalPosition = button.GetGlobalRect().GetCenter() };
         GetViewport().PushInput(motion, true);

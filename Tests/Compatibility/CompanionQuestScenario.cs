@@ -23,7 +23,7 @@ internal static class CompanionQuestScenario
             foreach(var map in world.MapInfoList)map.NoFight=false;
             world.SaveDB();world.SaveAccounts();Console.WriteLine("隔离夹具将同编号矿石移入仓库，腾出1格奖励空间。");return;
         }
-        character.CurrentMapIndex=character.BindMapIndex;character.CurrentLocation=start;character.Level=10;
+        character.CurrentMapIndex=character.BindMapIndex;character.CurrentLocation=start;character.Level=10;character.HP=1000;
         character.AccountInfo.Gold=0;character.Experience=0;character.CompletedQuests.Clear();
         character.Inventory=new UserItem[46];character.QuestInventory=new UserItem[40];
         foreach(var map in world.MapInfoList){map.Respawns.Clear();map.NoFight=blockedReward;}
@@ -37,6 +37,8 @@ internal static class CompanionQuestScenario
         world.ItemInfoList.Add(reward);
         var filler=new ItemInfo{Index=++world.ItemIndex,Name="NativeQuestProtectedOre",Type=ItemType.Ore,StackSize=1,Weight=1,Bind=BindMode.DontStore};world.ItemInfoList.Add(filler);
         for(var slot=1;slot<45;slot++)character.Inventory[slot]=world.CreateFreshItem(filler);
+        var potion=world.ItemInfoList.First(item=>item.Type==ItemType.Potion&&item.Shape==0&&item.Stats[Stat.HP]>0&&item.StackSize>=15);
+        character.Inventory[1]=world.CreateFreshItem(potion);character.Inventory[1].Count=15;
         var spareIds=new List<ulong>();
         if(fullBag||blockedReward)
         {

@@ -6,7 +6,7 @@ using Server.MirEnvir;
 
 internal static class CompanionCombatScenario
 {
-    public static void Prepare(ProjectPaths paths, int characterId, bool tree, bool emptyMana = false, bool retireThreat = false, bool persistentThreat = false, bool penaltyMana = false, string amuletCase="")
+    public static void Prepare(ProjectPaths paths, int characterId, bool tree, bool emptyMana = false, bool retireThreat = false, bool persistentThreat = false, bool penaltyMana = false, string amuletCase="", bool cornerThreat=false)
     {
         if(!paths.Data.Contains("mir2-companions-",StringComparison.Ordinal))throw new InvalidOperationException("只允许修改本测试创建的隔离世界。");
         using var ownership=new FileStream(Path.Combine(paths.Data,".server.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -57,8 +57,25 @@ internal static class CompanionCombatScenario
         }
         // 起点四格内已由fixture验证连通，不能让退场检查先卡在十二格外的随机追击。
         else map.Respawns.Add(new RespawnInfo{RespawnIndex=++world.RespawnIndex,MonsterIndex=monster.Index,Location=Functions.PointMove(character.BindLocation,MirDirection.Down,tree?2:3),Count=1,Delay=600});
+        if(cornerThreat)
+        {
+            map.FileName="NativeRetreatCorner";map.NoDrug=false;
+            character.CurrentLocation=character.BindLocation=new(10,10);
+            character.Magics.Clear();character.MP=0;
+            monster.ViewRange=16;monster.MoveSpeed=ushort.MaxValue;monster.AttackSpeed=1000;
+            monster.Stats[Stat.HP]=10000;monster.Stats[Stat.MinDC]=monster.Stats[Stat.MaxDC]=1;monster.Stats[Stat.Accuracy]=100;
+            map.Respawns.Clear();map.Respawns.Add(new RespawnInfo{MonsterIndex=monster.Index,Location=new(10,11),Count=1,Delay=600});
+            var cells=new HashSet<System.Drawing.Point>{new(10,10),new(10,11),new(11,10),new(12,9),new(13,8),new(14,7)};
+            var header=new byte[52];BitConverter.GetBytes((short)32).CopyTo(header,0);BitConverter.GetBytes((short)32).CopyTo(header,2);
+            using(var writer=new BinaryWriter(File.Create(Path.Combine(paths.Assets,"maps",map.FileName+".map"))))
+            {
+                writer.Write(header);
+                for(var x=0;x<32;x++)for(var y=0;y<32;y++)
+                {writer.Write((ushort)(cells.Contains(new(x,y))?0:0x8000));writer.Write(new byte[10]);}
+            }
+        }
         world.SaveDB();world.SaveAccounts();
-        Console.WriteLine(taoist?$"已设置隔离道士：60MP、灵魂火符冷却5秒、护身符{amuletCase}、目标240HP，不能无耗材空放。":persistentThreat?"已设置三只400HP/1DC持续追击怪，角色无攻击魔法；单只可猎杀，不应先打完才退场。":
+        Console.WriteLine(cornerThreat?"隔离转角撤离：无红药、金币和法术，首步仅与攻击怪等距，后续有正常可通行的安全格。":taoist?$"已设置隔离道士：60MP、灵魂火符冷却5秒、护身符{amuletCase}、目标240HP，不能无耗材空放。":persistentThreat?"已设置三只400HP/1DC持续追击怪，角色无攻击魔法；单只可猎杀，不应先打完才退场。":
             retireThreat?"已设置退场受击场景：暂停后由原怪物主动攻击，必须自卫收尾并等待原退出确认。":tree?"已设置隔离法师：满160MP、已学火球术、可用武器；独立无NPC地图只有动态编号的10HP原栗树。":$"已设置隔离法师：魔力{character.MP}、火球冷却5秒{(penaltyMana?"、额外耗蓝1000%（基础10/实际110）":"")}、目标240HP，独立无NPC/药品地图。");
     }
 }

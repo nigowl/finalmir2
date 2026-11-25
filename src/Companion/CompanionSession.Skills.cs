@@ -58,6 +58,10 @@ public sealed partial class CompanionSession
         if(await AwaitSkill(now))return true;
         if(await PrepareSkill(now))return true;
         if(skillsPaused||state.Trading||state.StorageActive||retiring)return false;
+        // 筹资已按短时普攻筛选，健康且未被围攻时不再为同一弱怪消耗蓝药/符。
+        if(Funding&&state.User!.Class is MirClass.Wizard or MirClass.Taoist&&
+            Knowledge?.Goal?.MonsterIds?.Contains(MonsterId(target))==true&&!Crowded(now)&&
+            !CompanionSafety.LowHealth(state.User.HP,state.CalculateStats()[Stat.HP],Profile.Traits.Risk))return false;
         var spell=ClassSkillRules.Next(state,preferences,target,true,now);
         if(spell!=Spell.None)
         {
@@ -103,7 +107,7 @@ public sealed partial class CompanionSession
         if(ClientSkillRules.IsTrigger(spell))await connection.Send(new C.SpellToggle{Spell=spell,CanUse=true});
         else await connection.Send(new C.Magic{ObjectID=user.ObjectID,TargetID=target.Id,Location=target.Location,
             Direction=Direction(user.Location,target.Location),Spell=spell});
-        nextSkill=now+ClientSkillRules.GlobalDelay(spell);nextAction=nextSkill;
+        nextSkill=now+state.PlayerTiming.CastDelay(spell);nextAction=nextSkill;
         return true;
     }
 }

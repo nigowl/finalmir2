@@ -35,10 +35,13 @@ public partial class Main
                 PauseClassSkills($"{classPendingSpell.ToLocalizedString()}未确认生效（可能受地图、目标或耗材限制）");
             return true;
         }
-        if (classSkillsPaused || now < nextClassAction || now < spellTime || moving || destination.HasValue && actionTarget == 0 || State.User == null ||
+        if (classSkillsPaused || now < nextClassAction || now < spellTime || now < castPendingUntil || moving || destination.HasValue && actionTarget == 0 || State.User == null ||
             State.Trading || State.StorageActive || npc.Visible || GuildStorageOpen || itemDragIcon.Visible || SkillPreparationBusy) return false;
-        if (State.Me == null || now - State.Me.ActionTime < World.ActionDuration(State.Me) && State.Me.Action != MirAction.Standing) return false;
+        if (State.Me == null || ActionInProgress(State.Me, now) || ClientSkillRules.CastBlocked(State.Me.Poison)) return false;
         var target = State.Actors.GetValueOrDefault(actionTarget);
+        if (target == null && preferences.SmartBattle && now < manualComboUntil &&
+            State.Actors.GetValueOrDefault(manualComboTarget) is { Kind: ObjectType.Monster, Dead: false, Hidden: false } manual)
+            target = manual;
         if (target == null && autoBattleEnabled) target = ClientAutomation.Targets(State).FirstOrDefault(actor => State.User != null && Functions.MaxDistance(State.User.Location, actor.Location) <= 9);
         var spell = ClassSkillRules.Next(State, preferences, target, autoBattleEnabled, now);
         if (spell == Spell.None) return false;
@@ -57,6 +60,8 @@ public partial class Main
 
     private void ClassSkillPacket(Packet packet)
     {
+        if (packet is S.RemoveMagic && State.User?.Magics.Any(magic => magic.Spell == classPendingSpell) != true)
+            classPendingSpell = Spell.None;
         if (packet is S.Magic { Cast: false } result && result.Spell == classPendingSpell)
             PauseClassSkills($"服务端拒绝{result.Spell.ToLocalizedString()}");
         if (packet is S.MapChanged or S.Death) classPendingSpell = Spell.None;

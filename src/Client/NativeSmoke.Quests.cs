@@ -46,6 +46,7 @@ public partial class NativeSmoke
                 throw new Exception("奖励选择未高亮或选中后文字区域移动。");
             foreach (var button in scroll.GetParent().FindChildren("*", "Button", true, false).OfType<Button>().Where(button => button is not OriginalButton))
             {
+                if (button.ThemeTypeVariation == "GameTab") continue;
                 if (button.Text is "接受任务" or "领取奖励" or "关闭")
                 {
                     if (button.GetThemeStylebox("normal") is not StyleBoxTexture || button.GetThemeStylebox("hover") is not StyleBoxTexture ||

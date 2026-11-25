@@ -10,37 +10,43 @@ public partial class Main
     {
         Clear(skillList); skillRows.Clear();
         if (State.User == null) return;
-        var hint = new Label { Text = "点击图标或按快捷键施放；自动技能在职业设置中调整。", AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        var hint = new Label { Text = HeroInventoryContext ? "英雄使用普通技能书，自动组合已学职业技能；快捷键可手动施放。" : "点击图标或按快捷键施放；自动技能在职业设置中调整。", AutowrapMode = TextServer.AutowrapMode.WordSmart,
             SizeFlagsHorizontal = SizeFlags.ExpandFill };
         hint.AddThemeFontSizeOverride("font_size", 9); skillList.AddChild(hint);
-        for (var i = 0; i < State.User.Magics.Count; i++) AddSkillRow(i);
-        if (State.User.Magics.Count == 0) skillList.AddChild(new Label { Text = "尚未学会技能。" });
+        for (var i = 0; i < SubjectMagics.Count; i++) AddSkillRow(i);
+        if (SubjectMagics.Count == 0) skillList.AddChild(new Label { Text = "尚未学会技能。" });
         RefreshSkillRows();
     }
 
     private void AddSkillRow(int index)
     {
-        var magic = State.User!.Magics[index];
-        var row = new Control { Name = $"Skill{magic.Spell}", CustomMinimumSize = new Vector2(0, 56), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        var magic = SubjectMagics[index];
+        const int iconSize = 36, nameX = iconSize + 6, textWidth = 118, keyHeight = 24;
+        var row = new Control { Name = $"Skill{magic.Spell}", CustomMinimumSize = new Vector2(0, ClientUi.SkillRowHeight), SizeFlagsHorizontal = SizeFlags.ExpandFill };
         skillList.AddChild(row);
-        var name = new Label { Name = "SkillName", Text = magic.Name, Position = new Vector2(46, 4),
+        var name = new Label { Name = "SkillName", Text = magic.Name, Position = new Vector2(nameX, 4),
             VerticalAlignment = VerticalAlignment.Center, ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
-        row.AddChild(name); name.Size = new Vector2(176, 24);
+        row.AddChild(name); name.Size = new Vector2(textWidth, 18);
         name.MouseFilter = MouseFilterEnum.Pass;
-        var cast = new SkillIconButton { Name = "SkillIcon", Assets = Assets, Magic = magic, GlobalCooldownUntil = () => spellTime, Position = new Vector2(0, 8), Size = new Vector2(40, 40),
+        var cast = new SkillIconButton { Name = "SkillIcon", Assets = Assets, Magic = magic, Position = new Vector2(0, (ClientUi.SkillRowHeight - iconSize) / 2), Size = Vector2.One * iconSize,
             FocusMode = FocusModeEnum.None };
-        CellStyle(cast); row.AddChild(cast); cast.Pressed += () => Cast(index);
-        var experience = Text(row, "", 46, 28, 118); experience.Name = "SkillExperience";
-        experience.AddThemeFontSizeOverride("font_size", 9); experience.Size = new Vector2(118, 24);
+        CellStyle(cast); row.AddChild(cast); cast.Pressed += () => CastSubjectSkill(SubjectMagics.FindIndex(current => current.Spell == magic.Spell));
+        var experience = Text(row, "", nameX, 24, textWidth); experience.Name = "SkillExperience";
+        experience.AddThemeFontSizeOverride("font_size", ClientUi.Micro); experience.Size = new Vector2(textWidth, 18);
         skillRows[magic.Spell] = (name, experience, cast);
         if (ClientSkillRules.IsPassive(magic.Spell)) return;
-        var key = new OptionButton { Position = new Vector2(168, 28), Size = new Vector2(54, 24), FitToLongestItem = false,
-            ClipText = true, FocusMode = FocusModeEnum.None, TooltipText = $"技能快捷键 · {SkillKeys.Label(magic.Key)}" };
-        key.AddThemeFontSizeOverride("font_size", 9); row.AddChild(key); key.Size = new Vector2(54, 24); key.AddItem("无", 0);
-        for (var k = 1; k <= Assets.FunctionKeys; k++) key.AddItem($"F{k}", SkillKeys.FunctionKey(k));
-        for (var k = 9; k <= 16; k++) key.AddItem(SkillKeys.Label((byte)k), k);
+        var key = new OptionButton { Position = new Vector2(168, (ClientUi.SkillRowHeight - keyHeight) / 2), Size = new Vector2(54, keyHeight), FitToLongestItem = false,
+            ClipText = true, FocusMode = FocusModeEnum.None, TooltipText = $"技能快捷键 · {(HeroInventoryContext && SkillKeys.IsHero(magic.Key) ? $"F{magic.Key - 16}" : SkillKeys.Label(magic.Key))}" };
+        key.AddThemeFontSizeOverride("font_size", ClientUi.Micro); row.AddChild(key); key.Size = new Vector2(54, keyHeight); key.AddItem("无", 0);
+        if (HeroInventoryContext)
+            for (var k = 1; k <= 8; k++) key.AddItem($"F{k}", k + 16);
+        else
+        {
+            for (var k = 1; k <= Assets.FunctionKeys; k++) key.AddItem($"F{k}", SkillKeys.FunctionKey(k));
+            for (var k = 9; k <= 16; k++) key.AddItem(SkillKeys.Label((byte)k), k);
+        }
         key.Select(Math.Max(0, key.GetItemIndex(magic.Key)));
-        key.ItemSelected += selected => { BindMagic(index, (byte)key.GetItemId((int)selected)); RenderSkills(); };
+        key.ItemSelected += selected => { BindMagic(SubjectMagics.FindIndex(current => current.Spell == magic.Spell), (byte)key.GetItemId((int)selected)); RenderSkills(); };
     }
 
     private void SetSkillToggle(int index, bool enabled)
@@ -60,13 +66,13 @@ public partial class Main
     private void RefreshSkillRows()
     {
         if (State.User == null) return;
-        foreach (var magic in State.User.Magics)
+        foreach (var magic in SubjectMagics)
         {
             if (!skillRows.TryGetValue(magic.Spell, out var row)) { if (skills.Visible) RenderSkills(); return; }
             var passive = ClientSkillRules.IsPassive(magic.Spell);
-            var enabled = ClientSkillRules.IsToggle(magic.Spell) ? State.ActiveSkills.Contains(magic.Spell) : !State.DisabledSkills.Contains(magic.Spell);
-            row.name.Modulate = ClientSkillRules.IsToggle(magic.Spell) && enabled ? new Color("78d888") : Colors.White;
-            row.name.TooltipText = row.cast.TooltipText = row.name.GetParent<Control>().TooltipText = ClientSkillRules.Tooltip(magic, enabled);
+            var enabled = HeroInventoryContext || (ClientSkillRules.IsToggle(magic.Spell) ? State.ActiveSkills.Contains(magic.Spell) : !State.DisabledSkills.Contains(magic.Spell));
+            row.name.Modulate = !HeroInventoryContext && ClientSkillRules.IsToggle(magic.Spell) && enabled ? new Color("78d888") : Colors.White;
+            row.name.TooltipText = row.cast.TooltipText = row.name.GetParent<Control>().TooltipText = ClientSkillRules.Tooltip(magic, enabled, State.PlayerTiming);
             row.cast.Disabled = !ClientSkillRules.IsImplemented(magic.Spell) || passive || (!ClientSkillRules.IsToggle(magic.Spell) && !enabled) || State.Me?.Dead != false;
             row.experience.Text = ClientSkillRules.ExperienceText(magic).Replace("熟练度 ", "");
             row.experience.TooltipText = ClientSkillRules.ExperienceText(magic);

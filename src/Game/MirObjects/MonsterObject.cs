@@ -11,6 +11,7 @@ namespace Server.MirObjects
 {
     public class MonsterObject : MapObject
     {
+        internal bool IsTownGuard => Master == null && this is (Guard or (TownArcher and not ConquestArcher));
         public static MonsterObject GetMonster(MonsterInfo info)
         {
             if (info == null) return null;
@@ -1223,6 +1224,7 @@ namespace Server.MirObjects
                 Master.Pets.Remove(this);
                 Master = null;
                 Broadcast(new S.ObjectName { ObjectID = ObjectID, Name = Name });
+                BroadcastInfo();
             }
 
             ProcessAI();
@@ -1314,6 +1316,10 @@ namespace Server.MirObjects
 
         public override void Process(DelayedAction action)
         {
+            // 同图回城也会结束上一场战斗，复活前发出的攻击不能命中复活后的角色。
+            if (action.Type is DelayedType.Damage or DelayedType.RangeDamage or DelayedType.SpellEffect &&
+                action.Params.Length > 0 && action.Params[0] is PlayerObject player && action.StartTime <= player.LastTownRevive) return;
+
             switch (action.Type)
             {
                 case DelayedType.Damage:
@@ -1448,8 +1454,9 @@ namespace Server.MirObjects
 
             if (healthRegen > 0)
             {
+                var healthBeforeChange = Health;
                 ChangeHP(healthRegen);
-                BroadcastDamageIndicator(DamageType.Hit, healthRegen);
+                BroadcastHealthDelta(healthBeforeChange);
             }
             if (HP == Stats[Stat.HP]) HealAmount = 0;
         }
@@ -1509,8 +1516,9 @@ namespace Server.MirObjects
                         }
 
                         //ChangeHP(-poison.Value);
+                        var healthBeforeChange = Health;
                         PoisonDamage(-poison.Value, poison.Owner);
-                        BroadcastDamageIndicator(DamageType.Hit, -poison.Value);
+                        BroadcastHealthDelta(healthBeforeChange);
                         if (PoisonStopRegen)
                             RegenTime = Envir.Time + RegenDelay;
                         if (poison.Owner != null && Target == null)
@@ -2474,17 +2482,10 @@ namespace Server.MirObjects
             if (Dead || attacker == this) return false;
             if (attacker.Race == ObjectType.Creature) return false;
 
-            if (attacker.Info.AI == 6 || attacker.Info.AI == 113) // Guard
-            {
-                if (Info.AI != 1 && Info.AI != 2 && Info.AI != 3 && (Master == null || Master.PKPoints >= 200)) //Not Dear/Hen/Tree/Pets or Red Master 
-                    return true;
-            }
-            else if (attacker.Info.AI == 58) // Tao Guard - attacks Pets
-            {
-                if (Info.AI != 1 && Info.AI != 2 && Info.AI != 3 && (Master == null || Master.AMode != AttackMode.Peace)) //Not Dear/Hen/Tree or Peaceful Master
-                    return true;
-            }
-            else if (Master != null) //Pet Attacked
+            if (attacker.IsTownGuard)
+                return Master != null || Info.AI is not (1 or 2 or 3); // 召唤兽也警戒，保留野生鹿、鸡和树的原免战规则。
+
+            if (Master != null) //Pet Attacked
             {
                 if (attacker.Master == null) //Wild Monster
                     return true;
@@ -2691,9 +2692,9 @@ namespace Server.MirObjects
                 if (IsAttackTarget(ob) && (ob.Target == null)) ob.Target = this;
             }
 
-            BroadcastDamageIndicator(DamageType.Hit, armour - damage);
-
+            var healthBeforeChange = Health;
             ChangeHP(armour - damage);
+            BroadcastHealthDelta(healthBeforeChange);
             return damage - armour;
         }
 
@@ -2731,7 +2732,7 @@ namespace Server.MirObjects
                 OperateTime = 0;
             }
 
-            if (attacker.Info.AI == 6 || attacker.Info.AI == 58 || attacker.Info.AI == 113)
+            if (attacker.IsTownGuard)
                 EXPOwner = null;
 
             else if (attacker.Master != null)
@@ -2756,9 +2757,9 @@ namespace Server.MirObjects
 
             Broadcast(new S.ObjectStruck { ObjectID = ObjectID, AttackerID = attacker.ObjectID, Direction = Direction, Location = CurrentLocation });
 
-            BroadcastDamageIndicator(DamageType.Hit, armour - damage);
-
+            var healthBeforeChange = Health;
             ChangeHP(armour - damage);
+            BroadcastHealthDelta(healthBeforeChange);
             return damage - armour;
         }
 
@@ -2790,8 +2791,9 @@ namespace Server.MirObjects
             if (armour >= damage) return 0;
             Broadcast(new S.ObjectStruck { ObjectID = ObjectID, AttackerID = 0, Direction = Direction, Location = CurrentLocation });
 
-            BroadcastDamageIndicator(DamageType.Hit, armour - damage);
+            var healthBeforeChange = Health;
             ChangeHP(armour - damage);
+            BroadcastHealthDelta(healthBeforeChange);
             return damage - armour;
         }
 
@@ -3511,6 +3513,7 @@ namespace Server.MirObjects
 
         public override void SendHealth(HumanObject player)
         {
+            SendExactHealth(player);
             if (!player.IsMember(Master) && !(player.IsMember(EXPOwner) && AutoRev) && Envir.Time > RevTime) return;
             byte time = Math.Min(byte.MaxValue, (byte)Math.Max(5, (RevTime - Envir.Time) / 1000));
             player.Enqueue(new S.ObjectHealth { ObjectID = ObjectID, Percent = PercentHealth, Expire = time });

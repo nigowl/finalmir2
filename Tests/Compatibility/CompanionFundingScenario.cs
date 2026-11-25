@@ -7,7 +7,7 @@ using Server.MirEnvir;
 
 internal static class CompanionFundingScenario
 {
-    public static void Prepare(ProjectPaths paths,int characterId,bool noSource,bool harvestSource=false,bool evasiveSource=false,bool harvestGround=false,bool remoteDelivery=false,bool unarmed=false,bool crowdedSource=false)
+    public static void Prepare(ProjectPaths paths,int characterId,bool noSource,bool harvestSource=false,bool evasiveSource=false,bool harvestGround=false,bool remoteDelivery=false,bool unarmed=false,bool crowdedSource=false,bool caster=false,bool blockedExit=false,bool blockedRoute=false,bool friendlyGuard=false)
     {
         if(!paths.Data.Contains("mir2-companions-funding-",StringComparison.Ordinal))throw new InvalidOperationException("只允许修改本筹资测试的隔离版本。");
         using var ownership=new FileStream(Path.Combine(paths.Data,".server.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -22,18 +22,32 @@ internal static class CompanionFundingScenario
         foreach(var map in world.MapInfoList){map.Respawns.Clear();map.NoFight=false;}
         var local=world.MapInfoList.Single(map=>map.Index==character.BindMapIndex);
         var remote=world.MapInfoList.Single(map=>map.Index!=local.Index);
-        var red=new ItemInfo{Index=++world.ItemIndex,Name="NativeFundingRed",Type=ItemType.Potion,Shape=0,Price=40,StackSize=20,
+        // 此场景检验实际NPC含税补药。隔离参考世界的商城补给，避免抢占固定货架。
+        foreach (var item in world.ItemInfoList.Where(item => PublicShopRules.Category(item) is 0 or 1)) item.Price=0;
+        var red=new ItemInfo{Index=++world.ItemIndex,Name="NativeFundingRed",Type=ItemType.Potion,Shape=1,Price=40,StackSize=20,
             RequiredClass=RequiredClass.None,RequiredGender=RequiredGender.None,Stats=new Stats{[Stat.HP]=30}};
         var blade=new ItemInfo{Index=++world.ItemIndex,Name="NativeFundingBlade",Type=ItemType.Weapon,Durability=10000,
-            Stats=new Stats{[Stat.MinDC]=100,[Stat.MaxDC]=100,[Stat.Accuracy]=100}};
+            Stats=new Stats{[Stat.MinDC]=100,[Stat.MaxDC]=100,[Stat.MinMC]=caster?100:0,[Stat.MaxMC]=caster?100:0,[Stat.Accuracy]=100}};
         var token=new ItemInfo{Index=++world.ItemIndex,Name="NativeFundingProtectedOre",Type=ItemType.Ore,StackSize=1};
         world.ItemInfoList.AddRange([red,blade,token]);character.Equipment[0]=world.CreateFreshItem(blade);character.Inventory[0]=world.CreateFreshItem(token);
         if(unarmed)character.Equipment[0]=null;
+        if(caster)
+        {
+            var magic=world.MagicInfoList.Single(m=>m.Spell==Spell.FireBall);magic.Level1=1;magic.BaseCost=10;magic.LevelCost=0;magic.Need1=1000;
+            character.Magics.Add(new UserMagic(Spell.FireBall){CastTime=-100000});
+        }
         world.MonsterInfoList=[new MonsterInfo{Index=1,Name="NativeFundingWeak",Image=Monster.Hen,Level=1,AI=(byte)(harvestSource||harvestGround?9:0),ViewRange=0,
             MoveSpeed=ushort.MaxValue,AttackSpeed=2500,Experience=0,Stats=new Stats{[Stat.HP]=1},DropPath="NativeFundingWeak"},
             new MonsterInfo{Index=2,Name="NativeFundingQuest",Image=Monster.Hen,Level=1,AI=0,ViewRange=0,
                 MoveSpeed=ushort.MaxValue,AttackSpeed=2500,Experience=10,Stats=new Stats{[Stat.HP]=400,[Stat.MinDC]=5,[Stat.MaxDC]=5},DropPath="NativeFundingQuest"}];
         world.MonsterIndex=2;
+        if(friendlyGuard)
+        {
+            world.MonsterInfoList[0].AI=2;
+            world.MonsterInfoList.Add(new MonsterInfo{Index=++world.MonsterIndex,Name="隔离友好城镇守卫",Image=Monster.Guard,AI=6,Level=100,ViewRange=8,
+                Stats=new Stats{[Stat.HP]=10000,[Stat.MinDC]=10000,[Stat.MaxDC]=10000}});
+            local.Respawns.Add(new RespawnInfo{MonsterIndex=world.MonsterIndex,Location=Functions.PointMove(start,MirDirection.DownRight,3),Count=1,Delay=600});
+        }
         if(crowdedSource)
         {
             world.MonsterInfoList.Add(new MonsterInfo{Index=++world.MonsterIndex,Name="隔离筹资围攻威胁",Image=Monster.ClZombie,AI=0,Level=30,ViewRange=0,
@@ -62,7 +76,7 @@ internal static class CompanionFundingScenario
         var npc=new NPCInfo{Index=1,Name="Native Funding Shop",FileName="NativeFundingShop",MapIndex=local.Index,Rate=150,
             Location=Functions.PointMove(start,MirDirection.Left,3)};
         world.NPCInfoList=[npc];world.NPCIndex=1;
-        File.WriteAllText(Path.Combine(Settings.NPCPath,npc.FileName+".txt"),"[@MAIN]\n#SAY\n先补药再冒险。\n<购买/@BUYSELL>\n[@BUYSELL]\n#SAY\n含税采购。\n[Quests]\n1\n[Types]\n"+(int)ItemType.Potion+"\n[Trade]\nNativeFundingRed 20\n");
+        File.WriteAllText(Path.Combine(Settings.NPCPath,npc.FileName+".txt"),"[@MAIN]\n#SAY\n先补药再冒险。\n<<购买/@BUYSELL/Green>>\n[@BUYSELL]\n#SAY\n含税采购。\n[Quests]\n1\n[Types]\n"+(int)ItemType.Potion+"\n[Trade]\nNativeFundingRed 20\n");
         if(remoteDelivery)
         {
             character.CurrentQuests[0].KillTaskCount[0].Count=1;
@@ -70,10 +84,33 @@ internal static class CompanionFundingScenario
             world.NPCInfoList.Add(finish);world.NPCIndex=2;
             File.WriteAllText(Path.Combine(Settings.NPCPath,finish.FileName+".txt"),"[@MAIN]\n#SAY\n补足药品之后才跨图交付。\n[Quests]\n-1\n");
         }
+        if(blockedExit || blockedRoute)
+        {
+            character.AccountInfo.Gold=0;
+            local.Respawns.Clear();remote.Respawns.Clear();
+            remote.Respawns.Add(new RespawnInfo{MonsterIndex=1,Location=Functions.PointMove(start,MirDirection.Right,2),Count=1,Delay=600});
+            local.FileName="NativeFundingExit";
+            var header=new byte[52];BitConverter.GetBytes((short)400).CopyTo(header,0);BitConverter.GetBytes((short)640).CopyTo(header,2);
+            var exit=local.Movements.First(m=>m.MapIndex==remote.Index);exit.Source=Functions.PointMove(start,MirDirection.Right,40);
+            var threat = blockedRoute ? new System.Drawing.Point(start.X+12,start.Y-2) : Functions.PointMove(exit.Source,MirDirection.Up,1);
+            using(var writer=new BinaryWriter(File.Create(Path.Combine(paths.Assets,"maps",local.FileName+".map"))))
+            {
+                writer.Write(header);
+                for(var x=0;x<400;x++)for(var y=0;y<640;y++)
+                {
+                    bool walkable = !blockedRoute || y==start.Y || x==threat.X && y==threat.Y;
+                    writer.Write((ushort)(walkable ? 0 : 0x8000));writer.Write(new byte[10]);
+                }
+            }
+            world.MonsterInfoList.Add(new MonsterInfo{Index=++world.MonsterIndex,Name="隔离筹资路线威胁",Image=Monster.ClZombie,AI=(byte)(blockedRoute ? 3 : 0),Level=30,ViewRange=8,
+                MoveSpeed=ushort.MaxValue,AttackSpeed=1000,Stats=new Stats{[Stat.HP]=10000,[Stat.MinDC]=1000,[Stat.MaxDC]=1000}});
+            local.Respawns.Add(new RespawnInfo{MonsterIndex=world.MonsterIndex,Location=threat,Count=1,Delay=600});
+        }
         world.SaveDB();world.SaveAccounts();
         File.WriteAllText(Path.Combine(paths.Runtime,"companion-funding-fixture.json"),JsonSerializer.Serialize(new{origin=local.Index,remote=remote.Index,red=red.Index,
-            tokenId=character.Inventory[0].UniqueID,weaponId=character.Equipment[0]?.UniqueID??0,gold=38,price=60,reward=333,evasiveSource,remoteDelivery,unarmed}));
-        Console.WriteLine(harvestSource?"隔离筹资：采集AI9的分组金币仍只走原割取而不发放，不得误作死亡落金来源。":
+            tokenId=character.Inventory[0].UniqueID,weaponId=character.Equipment[0]?.UniqueID??0,gold=blockedExit||blockedRoute?0:38,price=60,startX=start.X,startY=start.Y,reward=333,evasiveSource,remoteDelivery,unarmed}));
+        Console.WriteLine(blockedRoute?"隔离筹资：出口和金币目标均安全，窄路沿途有可见强怪。":
+            blockedExit?"隔离筹资：零金币/无红药，视野外首出口受堵，应原地保命等待。":harvestSource?"隔离筹资：采集AI9的分组金币仍只走原割取而不发放，不得误作死亡落金来源。":
             noSource?"隔离筹资：38金币/无红药且无金币来源，应保命等待而不硬冲远图任务。":
             "隔离筹资：38金币/无红药，原零经验弱怪掉金币、150%药价，补药后跨图完成原任务并交付333金币。");
     }

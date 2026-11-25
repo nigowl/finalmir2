@@ -8,6 +8,7 @@ internal static class ClientAnimationChecks
 {
     public static void Run(Action<bool, string> check)
     {
+        GridMovement(check);
         var state = new GameState();
         state.Apply(new S.UserInformation { ObjectID = 1, Location = new Point(10, 10), Inventory = [], Equipment = new UserItem[14], QuestInventory = [] });
         var actor = state.Me!;
@@ -21,33 +22,38 @@ internal static class ClientAnimationChecks
         check(actor.Action == MirAction.Walking && actor.Previous == new Point(10, 10), "A changed location failed to start an authoritative walk");
         actor.MotionTime = 2000;
         check(actor.PositionAt(2000, Actor.MoveDuration) == new Vector2(10, 10), "Walk did not begin at the previous tile");
-        check(actor.PositionAt(2300, Actor.MoveDuration) == new Vector2(10.5f, 10), "Walk did not interpolate through the entire server movement period");
-        check(actor.PositionAt(2550, Actor.MoveDuration).X > 10.9f && actor.PositionAt(2550, Actor.MoveDuration).X < 11, "Walk finished early and left an idle gap");
+        check(actor.PositionAt(2000 + actor.MovementDuration(600) / 2, Actor.MoveDuration) == new Vector2(10.5f, 10), "Walk did not interpolate through the entire server movement period");
+        check(actor.PositionAt(2000 + actor.MovementDuration(600) - 20, Actor.MoveDuration).X > 10.9f && actor.PositionAt(2000 + actor.MovementDuration(600) - 20, Actor.MoveDuration).X < 11, "Walk finished early and left an idle gap");
         state.Apply(new S.UserLocation { Location = new Point(11, 10), Direction = MirDirection.Right });
         check(actor.MotionTime == 2000 && actor.Action == MirAction.Walking, "A duplicate movement acknowledgement restarted interpolation");
         var end = actor.PositionAt(2600, Actor.MoveDuration);
         state.Apply(new S.UserLocation { Location = new Point(13, 10), Direction = MirDirection.Right });
         actor.MotionTime = 2600;
         check(actor.Action == MirAction.Running && actor.PositionAt(2600, Actor.MoveDuration) == end, "Walk/run transition jumped between tiles");
-        check(actor.PositionAt(2900, Actor.MoveDuration) == new Vector2(12, 10), "Running failed to interpolate both tiles");
+        check(actor.PositionAt(2600 + actor.MovementDuration(600) / 2, Actor.MoveDuration) == new Vector2(12, 10), "Running failed to interpolate both tiles");
         check(actor.PositionAt(9999, Actor.MoveDuration) == new Vector2(13, 10), "Movement overshot its server-confirmed endpoint");
         var runner = new Actor { Kind = ObjectType.Player, Location = new Point(10, 10) };
         runner.Move(new Point(11, 10), MirDirection.Right, MirAction.Walking, 1000);
         runner.Move(new Point(13, 10), MirDirection.Right, MirAction.Running, 1640);
-        check(runner.MovementDuration(600) == 640 && runner.PositionAt(2250, 600).X is > 12.8f and < 13, "Player stopped before the next normal movement acknowledgement");
+        check(runner.MovementDuration(600) == 640 + Actor.MovementBuffer && runner.PositionAt(2250, 600).X is > 12.8f and < 13, "Player stopped before the next normal movement acknowledgement");
         var visual = runner.PositionAt(2260, 600);
         runner.Move(new Point(15, 10), MirDirection.Right, MirAction.Running, 2260);
         check(runner.PositionAt(2260, 600) == visual, "A player acknowledgement snapped to the previous logical tile");
         check(runner.PositionAt(10000, 600) == new Vector2(15, 10), "Smoothed player moved beyond its authoritative endpoint");
         runner.Poison = PoisonType.Slow;
-        check(runner.MoveDelay == 1200, "A slowed player lost the original doubled movement delay");
+        check(runner.MoveDelay == PlayerActionTiming.DefaultMoveMilliseconds * 2, "A slowed player lost the original doubled movement delay");
         runner.Poison = PoisonType.None;
         runner.Move(new Point(16, 10), MirDirection.Right, MirAction.Walking, 4000);
-        check(runner.MovementDuration(600) == 600, "A stopped player resumed with a stale slow movement interval");
+        check(runner.MovementDuration(600) == PlayerActionTiming.DefaultMoveMilliseconds + Actor.MovementBuffer, "A stopped player resumed with a stale slow movement interval");
         runner.Move(new Point(14, 10), MirDirection.Left, MirAction.Jump, 4500);
-        check(runner.MovementDuration(800) == 800, "Ordinary movement smoothing changed a skill movement duration");
+        check(runner.MovementDuration(800) == PlayerActionTiming.Default.Scale(800), "Ordinary movement smoothing changed a skill movement duration");
         runner.Poison = PoisonType.Slow;
-        check(runner.MovementDuration(800) == 800, "Ordinary slow-walk timing changed a skill movement duration");
+        check(runner.MovementDuration(800) == PlayerActionTiming.Default.Scale(800), "Ordinary slow-walk timing changed a skill movement duration");
+        var configuredTiming = new PlayerActionTiming(650, 90);
+        var configuredRunner = new Actor { Kind = ObjectType.Player, PlayerTiming = configuredTiming, Poison = PoisonType.Slow };
+        configuredRunner.Move(new Point(2, 0), MirDirection.Right, MirAction.Running, 1000);
+        check(configuredRunner.MovementDuration(600) == 1300 + Actor.MovementBuffer && configuredRunner.RunContinuationWindow > 1300 &&
+            configuredTiming.CastDelay(Spell.FireBall) == 2000, "Configured speeds did not reach walk/run interpolation or skill timing");
         check(MapTileLibraries.Resolve(28) == "Map/WemadeMir2/Objects27" && MapTileLibraries.Resolve(100) == "Map/ShandaMir2/Tiles" &&
             MapTileLibraries.Resolve(374) == "" && MapTileLibraries.Resolve(375) == "" && MapTileLibraries.Resolve(-1) == "", "Map library caching changed original indices or bounds");
         check(MapTileLibraries.Resolve(200) == "Map/WemadeMir3/Tilesc" && MapTileLibraries.Resolve(360) == "Map/ShandaMir3/Tilescforest", "Map library caching changed original Mir3 themes");
@@ -101,5 +107,40 @@ internal static class ClientAnimationChecks
             check((short)ServerPacketIds.CharacterLocation == (short)ServerPacketIds.StoragePasswordResult + 1 && (short)ClientPacketIds.CharacterLocationRequest == (short)ClientPacketIds.RemoveStoragePassword + 1, "Optional character-location packets renumbered an existing protocol packet");
         }
         finally { Packet.IsServer = wasServer; }
+    }
+
+    private static void GridMovement(Action<bool, string> check)
+    {
+        foreach(var directions in new[]{(MirDirection.Right,MirDirection.Down),(MirDirection.DownRight,MirDirection.UpRight),
+            (MirDirection.Down,MirDirection.Left),(MirDirection.Right,MirDirection.Left),(MirDirection.Right,MirDirection.Right)})
+        foreach(var slowed in new[]{false,true})
+        {
+            var actor=new Actor{Kind=ObjectType.Player,Location=new(10,10),Poison=slowed?PoisonType.Slow:PoisonType.None};
+            var corner=Functions.PointMove(actor.Location,directions.Item1,1);var end=Functions.PointMove(corner,directions.Item2,2);
+            actor.Move(corner,directions.Item1,MirAction.Walking,1000);
+            var now=1000+PlayerActionTiming.DefaultMoveMilliseconds*(slowed?2:1);var origin=actor.PositionAt(now,600);
+            actor.Move(end,directions.Item2,MirAction.Running,now);
+            check(actor.PositionAt(now,600)==origin,"角色/英雄转弯时回跳了插值起点");
+            for(var elapsed=17;elapsed<actor.MovementDuration(600);elapsed+=71)
+            {
+                var point=actor.PositionAt(now+elapsed,600);
+                check(OnSegment(point,origin,new(corner.X,corner.Y))||OnSegment(point,new(corner.X,corner.Y),new(end.X,end.Y)),
+                    "角色/英雄转弯斜切了服务端确认拐点，画面离开合法格子路径");
+            }
+            check(actor.PositionAt(now+actor.MovementDuration(600),600)==new Vector2(end.X,end.Y),"转弯后未停在确认格");
+        }
+        var state=new GameState();state.Apply(new S.UserInformation{ObjectID=1,Location=new(10,10),Inventory=[],Equipment=new UserItem[14],QuestInventory=[]});
+        state.Me!.Move(new(11,10),MirDirection.Right,MirAction.Walking,Environment.TickCount64-300);
+        state.Apply(new S.UserDash{Location=new(14,10),Direction=MirDirection.Right});
+        check(state.Me.MovementDuration(600)==state.PlayerTiming.Scale(600),"技能冲刺错误继承普通走跑的回执间隔或显示余量");
+        check(state.Me.PositionAt(state.Me.MotionTime,600)==new Vector2(11,10),"技能冲刺从未完成的普通插值点起步");
+        state.Apply(new S.UserLocation{Location=new(30,25),Direction=MirDirection.Down});
+        check(state.Me.PositionAt(state.Me.MotionTime,600)==new Vector2(30,25)&&state.Me.Action==MirAction.Standing,
+            "普通位置纠正被误当成跨越多格的跑步，穿过未确认格子");
+
+        static bool OnSegment(Vector2 point,Vector2 from,Vector2 to) =>
+            Math.Abs((point.X-from.X)*(to.Y-from.Y)-(point.Y-from.Y)*(to.X-from.X))<.0001f&&
+            point.X>=Math.Min(from.X,to.X)-.0001f&&point.X<=Math.Max(from.X,to.X)+.0001f&&
+            point.Y>=Math.Min(from.Y,to.Y)-.0001f&&point.Y<=Math.Max(from.Y,to.Y)+.0001f;
     }
 }

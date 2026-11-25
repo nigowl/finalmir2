@@ -26,7 +26,7 @@ public sealed partial class GameState
 
     private void SkillMove(uint id, Point point, MirDirection direction, MirAction action)
     {
-        if (Actors.TryGetValue(id, out var actor)) actor.Move(point, direction, action);
+        if (Actors.TryGetValue(id, out var actor)) actor.Move(point, direction, action, isSkillMovement: true);
         if (id == User?.ObjectID) { User.Location = point; User.Direction = direction; }
     }
 
@@ -42,6 +42,7 @@ public sealed partial class GameState
                 break;
             case S.ObjectDied p when Actors.TryGetValue(p.ObjectID, out var actor): actor.MagicShield = actor.ElementalBarrier = actor.Concentrating = false; actor.Buffs.Clear(); actor.Elements.Clear(); break;
             case S.ObjectAttack p when p.ObjectID != User?.ObjectID && Actors.TryGetValue(p.ObjectID, out var actor):
+                if (actor.IsShinsu) actor.Image = (int)Monster.Shinsu1;
                 actor.Location = p.Location; StartAttack(actor, p.Direction, p.Spell, p.Level, p.Type); break;
             case S.ObjectMagic p when (p.ObjectID != User?.ObjectID || p.SelfBroadcast || p.Spell == Spell.TwinDrakeBlade) && Actors.TryGetValue(p.ObjectID, out var actor):
                 StartMagic(actor, p.Location, p.Direction, p.Spell, p.Level);
@@ -52,6 +53,11 @@ public sealed partial class GameState
                 if (p.Cast) MarkCast(p.Spell);
                 break;
             case S.MagicCast p: MarkCast(p.Spell); break;
+            case S.ObjectHarvest p when Actors.TryGetValue(p.ObjectID, out var actor) && !actor.Dead:
+                actor.Move(p.Location, p.Direction, MirAction.Harvest); break;
+            case S.Struck when Me is { Dead: false } me: ShowFlinch(me); break;
+            case S.ObjectStruck p when p.ObjectID != User?.ObjectID && Actors.TryGetValue(p.ObjectID, out var actor) && !actor.Dead:
+                ShowFlinch(actor); break;
             case S.RangeAttack p when Me != null:
                 Me.Move(Me.Location, Me.Direction, MirAction.AttackRange1); Me.ActionSpell = p.Spell; Me.Casting = true; break;
             case S.ObjectRangeAttack p when p.ObjectID != User?.ObjectID && Actors.TryGetValue(p.ObjectID, out var actor):
@@ -89,6 +95,7 @@ public sealed partial class GameState
                 if (p.Effect is SpellEffect.ElementalBarrierUp or SpellEffect.ElementalBarrierDown) actor.ElementalBarrier = p.Effect == SpellEffect.ElementalBarrierUp;
                 break;
             case S.AddBuff p:
+                if (p.Buff.ObjectID == Hero?.ObjectID) HeroBuffs[p.Buff.Type] = p.Buff;
                 if (Actors.TryGetValue(p.Buff.ObjectID, out var buffActor)) buffActor.Buffs.Add(p.Buff.Type);
                 if (p.Buff.ObjectID == User?.ObjectID)
                 {
@@ -97,10 +104,22 @@ public sealed partial class GameState
                 }
                 break;
             case S.RemoveBuff p:
+                if (p.ObjectID == Hero?.ObjectID) HeroBuffs.Remove(p.Type);
                 if (Actors.TryGetValue(p.ObjectID, out var removedActor)) removedActor.Buffs.Remove(p.Type);
                 if (p.ObjectID == User?.ObjectID) UserBuffs.Remove(p.Type);
                 break;
             case S.PauseBuff p when p.ObjectID == User?.ObjectID && UserBuffs.TryGetValue(p.Type, out var buff): buff.Paused = p.Paused; break;
         }
+    }
+
+    private static void ShowFlinch(Actor actor)
+    {
+        var now = Environment.TickCount64;
+        // 受击反馈不能重置仍在进行的位移、施法、攻击或割肉。
+        var duration = actor.Action is MirAction.Walking or MirAction.Running ? actor.MovementDuration(Actor.MoveDuration) :
+            actor.Kind == ObjectType.Player ? actor.PlayerTiming.Scale(1000) :
+            actor.IsShinsu && actor.Action is (MirAction.Appear or MirAction.Show or MirAction.Hide) ? 1000 : 650;
+        if (actor.Action is MirAction.Standing or MirAction.Stance || now - actor.ActionTime >= duration)
+            actor.Move(actor.Location, actor.Direction, MirAction.Struck, now);
     }
 }

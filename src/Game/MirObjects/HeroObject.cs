@@ -7,7 +7,7 @@ using Server.MirObjects.Monsters;
 
 namespace Server.MirObjects
 {
-    public class HeroObject : HumanObject
+    public partial class HeroObject : HumanObject
     {
         public override ObjectType Race
         {
@@ -147,23 +147,32 @@ namespace Server.MirObjects
             Stats = new Stats();            
 
             if (Level == 0) NewCharacter();
+            Owner.RestoreHeroInventory(HInfo, true);
 
             RefreshStats();
-            SendInfo();
 
             switch (HP)
             {
                 case 0:
-                    Dead = true;
+                    if (HInfo.RecoveryRemaining(DateTime.UtcNow) > 0) Dead = true;
+                    else
+                    {
+                        SetHP(Math.Max(1, MaxHealth / 10));
+                        HInfo.ReviveAtUtc = DateTime.MinValue;
+                    }
                     break;
                 case -1:
                     SetHP(Stats[Stat.HP]);
                     SetMP(Stats[Stat.MP]);
                     break;
             }
+            SendInfo();
         }
         protected override void NewCharacter()
         {
+            Owner.RestoreHeroInventory(HInfo, true);
+            // 原出生物品先放入临时旧数组，初始化结束即迁回主人；不能向空旧包写入。
+            Info.Inventory = new UserItem[Math.Max(Globals.BaseInventorySize, Envir.StartItems.Count + BeltSize)];
             base.NewCharacter();
             Grade = (byte)Envir.Random.Next(4);
         }
@@ -179,6 +188,9 @@ namespace Server.MirObjects
                 case ServerPacketIds.PauseBuff:
                 case ServerPacketIds.MagicDelay:
                 case ServerPacketIds.MagicLeveled:
+                case ServerPacketIds.DuraChanged:
+                case ServerPacketIds.RefreshItem:
+                case ServerPacketIds.ItemRepaired:
                 case ServerPacketIds.DeleteItem:
                 case ServerPacketIds.UseItem:
                     Owner.Enqueue(p);
@@ -272,9 +284,9 @@ namespace Server.MirObjects
         protected virtual void GetItemInfo()
         {
             UserItem item;
-            for (int i = 0; i < Info.Inventory.Length; i++)
+            for (int i = 0; i < Owner.Info.Inventory.Length; i++)
             {
-                item = Info.Inventory[i];
+                item = Owner.Info.Inventory[i];
                 if (item == null) continue;
 
                 Owner.CheckItem(item);
@@ -300,11 +312,10 @@ namespace Server.MirObjects
         }
         protected bool CanUseMagic(UserMagic magic)
         {
-            if (magic == null) return false;
+            if (magic?.Info == null) return false;
             if (MagicCost(magic) > MP) return false;
-            if (magic.Key <= 0) return false;
-
-            return true;
+            // 自动组合与手动快捷键独立；冷却中的技能不能阻塞后续就绪技能。
+            return Envir.Time >= magic.CastTime + magic.GetDelay();
         }
         protected bool HasMagic(Spell spell) => Info.Magics.Any(x => x.Spell == spell);
         public override bool TryMagic()
@@ -326,17 +337,18 @@ namespace Server.MirObjects
             UserItem item = null;
             int index = -1;
 
-            if (Owner.Hero != null && Owner.Hero.Dead) return;
+            if (Owner.Dead || Owner.TradePartner != null || Owner.ItemRentalPartner != null)
+            { Owner.Enqueue(p); return; }
 
-            for (int i = 0; i < Info.Inventory.Length; i++)
+            for (int i = 0; i < Owner.Info.Inventory.Length; i++)
             {
-                item = Info.Inventory[i];
+                item = Owner.Info.Inventory[i];
                 if (item == null || item.UniqueID != id) continue;
                 index = i;
                 break;
             }
 
-            if (item == null || index == -1 || !CanUseItem(item))
+            if (item == null || index == -1 || item.Info.Bind.HasFlag(BindMode.NoHero) || !CanUseItem(item))
             {
                 Owner.Enqueue(p);
                 return;
@@ -473,24 +485,20 @@ namespace Server.MirObjects
                                 Owner.Enqueue(p);
                                 return;
                             }
+                            if (!Dead || !Owner.CanRecoverHero()) { Owner.Enqueue(p); return; }
                             if (Dead)
                             {
                                 MP = Stats[Stat.MP];
                                 Revive(MaxHealth, true);
                             }
                             break;
-                        case 15: //Increase Hero inventory
-                            if (Info.Inventory.Length >= 42)
-                            {
-                                ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.HeroInventoryMax)
-                                    , ChatType.System);
-                                Owner.Enqueue(p);
-                                return;
-                            }
-                            Enqueue(new S.ResizeInventory { Size = Info.ResizeInventory() });
-                            ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.HeroInventoryIncreased), ChatType.System);
+                        case 15:
+                            ReceiveChat("英雄使用角色背包，无需扩展英雄背包。", ChatType.Hint);
                             Owner.Enqueue(p);
-                            break;
+                            return;
+                        default:
+                            Owner.Enqueue(p);
+                            return;
                     }
                     break;
                 case ItemType.Book:
@@ -597,15 +605,14 @@ namespace Server.MirObjects
                         monster.Spawn(CurrentMap, CurrentLocation);
                     break;
                 case ItemType.SiegeAmmo:
-                    //TODO;
-                    break;
                 default:
+                    Owner.Enqueue(p);
                     return;
             }
 
             if (item.Count > 1) item.Count--;
-            else Info.Inventory[index] = null;
-            RefreshBagWeight();
+            else Owner.Info.Inventory[index] = null;
+            Owner.RefreshBagWeight();
 
             Report?.ItemChanged(item, 1, 1);
 
@@ -614,6 +621,7 @@ namespace Server.MirObjects
         }
         public override void Die()
         {
+            if (Dead) return;
             if (SpecialMode.HasFlag(SpecialItemMode.Revival) && Envir.Time > LastRevivalTime)
             {
                 LastRevivalTime = Envir.Time + 300000;
@@ -647,6 +655,10 @@ namespace Server.MirObjects
 
             HP = 0;
             Dead = true;
+            HInfo.ReviveAtUtc = DateTime.UtcNow.AddMilliseconds(HeroInfo.RecoveryDelay);
+            Owner.Info.HeroSpawned = false;
+            Owner.SendHeroRecovery();
+            SendHealthChanged();
 
             LogTime = Envir.Time;
             BrownTime = Envir.Time;
@@ -683,6 +695,11 @@ namespace Server.MirObjects
             CurrentMap.AddObject(this);
             BroadcastInfo();
             Broadcast(new S.ObjectRevived { ObjectID = ObjectID, Effect = effect });
+            HInfo.ReviveAtUtc = DateTime.MinValue;
+            Owner.Info.HeroSpawned = true;
+            SendInfo();
+            Owner.Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Summoned });
+            Owner.SendHeroRecovery();
         }
 
         public override void LevelUp()
@@ -791,6 +808,7 @@ namespace Server.MirObjects
             if (Owner.PMode == PetMode.MoveOnly || Owner.PMode == PetMode.None)
                 Target = null;
 
+            ProcessMagicBloodStone();
             ProcessAutoPot();
             ProcessStacking();
             ProcessSearch();
@@ -814,9 +832,9 @@ namespace Server.MirObjects
 
         protected void TryAutoPot(int ItemIndex)
         {
-            for (int i = 0; i < Info.Inventory.Length; i++)
+            for (int i = 0; i < Owner.Info.Inventory.Length; i++)
             {
-                UserItem item = Info.Inventory[i];
+                UserItem item = Owner.Info.Inventory[i];
                 if (item == null) continue;
                 if (item.Info.Index != ItemIndex) continue;
 
@@ -838,7 +856,7 @@ namespace Server.MirObjects
         {
             Stacking = CheckStacked();
 
-            if (CanMove && ((Owner != null && Owner.Front == CurrentLocation) || Stacking))
+            if (CanMove && Stacking)
             {
                 if (!Walk(Direction))
                 {
@@ -888,21 +906,23 @@ namespace Server.MirObjects
 
             if (Owner != null)
             {
-                MoveTo(Owner.Back);
+                FollowOwner();
                 return;
             }
 
             RoamTime = Envir.Time + RoamDelay;
         }
+
+        protected void FollowOwner()
+        {
+            if (CanMove && Owner != null && Owner.CurrentMap == CurrentMap &&
+                !Functions.InRange(CurrentLocation, Owner.CurrentLocation, 3)) MoveTo(Owner.CurrentLocation);
+        }
         protected virtual void ProcessFriend() { }
         protected virtual void ProcessAttack() { }
         protected virtual void ProcessTarget()
         {
-            if (CanCast && NextMagicSpell != Spell.None)
-            {
-                Magic(NextMagicSpell, NextMagicDirection, NextMagicTargetID, NextMagicLocation);
-                NextMagicSpell = Spell.None;
-            }
+            if (ProcessQueuedMagic()) return;
 
             if (Target == null || !CanAttack) return;
 
@@ -1212,7 +1232,7 @@ namespace Server.MirObjects
                 Experience = Experience,
                 MaxExperience = MaxExperience,
 
-                Inventory = new UserItem[Info.Inventory.Length],
+                Inventory = Array.Empty<UserItem>(),
                 Equipment = new UserItem[Info.Equipment.Length],
 
                 AutoPot = AutoPot,
@@ -1225,7 +1245,6 @@ namespace Server.MirObjects
             for (int i = 0; i < Info.Magics.Count; i++)
                 packet.Magics.Add(Info.Magics[i].CreateClientMagic());
 
-            Info.Inventory.CopyTo(packet.Inventory, 0);
             Info.Equipment.CopyTo(packet.Equipment, 0);
 
             Owner.Enqueue(packet);
@@ -1235,6 +1254,7 @@ namespace Server.MirObjects
 
         public override void SendHealth(HumanObject player)
         {
+            SendExactHealth(player);
             byte time = Math.Min(byte.MaxValue, (byte)Math.Max(5, (RevTime - Envir.Time) / 1000));
 
             Packet p = new S.ObjectHealth { ObjectID = ObjectID, Percent = PercentHealth, Expire = time };

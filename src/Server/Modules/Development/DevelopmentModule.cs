@@ -8,6 +8,26 @@ public static class DevelopmentModule
     public static void MapDevelopment(this RouteGroupBuilder management)
     {
         var group = management.MapGroup("/development");
+        group.MapPost("/heroes/prepare", async (GameRuntime runtime, WorldDefinitions definitions, CancellationToken token) =>
+        {
+            var count = await runtime.Invoke(definitions.PrepareHeroGuide, token);
+            if (count > 0) await runtime.Restart(CancellationToken.None);
+            return new { npcs = count };
+        });
+        group.MapPost("/public-shop/prepare", (GameRuntime runtime, WorldDefinitions definitions, CancellationToken token) =>
+            runtime.Invoke(definitions.PreparePublicShop, token));
+        group.MapPost("/city-travel/prepare", async (GameRuntime runtime, WorldDefinitions definitions, CancellationToken token) =>
+        {
+            var result = await runtime.Invoke(definitions.PrepareCityTravel, token);
+            if (result.Changed > 0) await runtime.Restart(CancellationToken.None);
+            return result.Details;
+        });
+        group.MapPost("/mengchong-dailies/prepare", async (GameRuntime runtime, WorldDefinitions definitions, CancellationToken token) =>
+        {
+            var count = await runtime.Invoke(definitions.PrepareMengchongDailies, token);
+            if (count > 0) await runtime.Restart(CancellationToken.None);
+            return new { quests = count };
+        });
         group.MapGet("/files", (DevelopmentFiles files, string? search) => files.List(search));
         group.MapGet("/file", (DevelopmentFiles files, string path) => files.Read(path));
         group.MapPut("/file", (DevelopmentFiles files, TextEdit edit) => files.Save(edit));

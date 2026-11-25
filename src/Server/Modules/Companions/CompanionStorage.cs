@@ -10,6 +10,7 @@ public static class CompanionStorage
     {
         // 任务背包与普通背包语义不同，全版本任务物都不入自动仓库；配方材料仅暂存、不出售。
         var quests=Envir.Main.QuestInfoList.SelectMany(quest=>quest.ItemTasks.Concat(quest.CarryItems)).Select(task=>task.Item.Index).ToHashSet();
+        CompanionHeroes.ProtectInventory(player, quests);
         var inventory=player.Info.Inventory;
         var full=CompanionInventoryRules.NeedsSpace(player.CurrentBagWeight,player.Stats[Stat.BagWeight],inventory.Count(item=>item==null));
         var storage=player.Account.Storage.Select((item,slot)=>(item,slot)).Where(pair=>player.Account.IsValidStorageIndex(pair.slot)).ToArray();

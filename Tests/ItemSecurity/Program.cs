@@ -148,7 +148,7 @@ foreach (var restrict in restrictions)
     recipe.Tools = new(); recipe.Ingredients = new();
     recipe.RequiredClass = new(); recipe.RequiredFlag = new(); recipe.RequiredQuest = new();
     script.CraftGoods.Add(recipe);
-    foreach (var slots in new[] { new[] { 46 }, new[] { -1 }, new[] { 0, 0 }, null })
+    foreach (var slots in new[] { new[] { p.Info.Inventory.Length }, new[] { -1 }, new[] { 0, 0 }, null })
     {
         script.Craft(p, 5, 1, slots);
         Check(p.Packets.Last() is S.CraftItem { Success: false } && p.Account.Gold == 1000,
@@ -393,6 +393,100 @@ foreach (int invalid in new[] { int.MinValue, -1, 1000, int.MaxValue })
         partner.Account.Gold == 10 && p.Info.Mail.Single().Items.Single() == item,
         "Full-bag rental cancellation left stale session or lost escrow");
     Envir.Main.CharacterList.Remove(p.Info);
+}
+
+{
+    var p = Player(); var gear = Item(500, 1, new ItemInfo { Name = "卸装检查", Type = ItemType.Weapon });
+    p.Info.Equipment[0] = gear;
+    p.RemoveItem(MirGridType.Inventory, gear.UniqueID, -1);
+    Check(p.Packets.Last() is S.RemoveItem { Success: false, To: -1 } && p.Info.Equipment[0] == gear,
+        "Invalid equipment destination did not return a refusal or changed the item");
+    p.RidingMount = true; p.RemoveItem(MirGridType.Inventory, gear.UniqueID, 6);
+    Check(p.Packets.Count == 2 && p.Packets.Last() is S.RemoveItem { Success: false, To: 6 } && p.Info.Equipment[0] == gear && p.Info.Inventory[6] == null,
+        "Refused mounted unequip silently left the client waiting or moved equipment");
+}
+
+{
+    var p = Player(); var hero = new HeroInfo(new ClientPackets.NewHero { Name = "负重检查" }) { Index = 1 };
+    p.Info.Heroes = [hero]; p.CurrentHero = hero;
+    p.Hero = (HeroObject)RuntimeHelpers.GetUninitializedObject(typeof(HeroObject));
+    var item = Item(501, 1, new ItemInfo { Name = "负重药品", Type = ItemType.Potion, Weight = 1 }); hero.Inventory[0] = item;
+    p.Stats[Stat.BagWeight] = 0; p.TakeBackHeroItem(0, 6);
+    Check(p.Packets.Last() is S.TakeBackHeroItem { Success: false, From: 0, To: 6 } && hero.Inventory[0] == item && p.Info.Inventory[6] == null,
+        "Hero takeback bypassed player weight or lost the original item");
+    var behaviour = p.Info.HeroBehaviour; p.SetHeroBehaviour((HeroBehaviour)255);
+    Check(p.Info.HeroBehaviour == behaviour, "Unknown hero combat mode changed saved behaviour");
+}
+
+{
+    var p = Player(); p.Info.Heroes = new HeroInfo[1];
+    var request = new ClientPackets.NewHero { Name = "创建保护检查", Class = MirClass.Warrior, Gender = MirGender.Male };
+    var count = Envir.Main.HeroList.Count; var counter = Envir.Main.NextHeroID;
+    p.NewHero(request);
+    Check(p.Packets.Last() is S.NewHero { Result: 7 }, "Unsolicited hero creation bypassed the NPC session");
+    AtNPC(p, NPCScript.HeroCreateKey); p.CanCreateHero = true;
+    var npc = p.CurrentMap.NPCs.Single(); npc.Visible = true; npc.VisibleLog = new() { [p.Info.Index] = true };
+    p.Info.Level = 1; p.NewHero(request);
+    Check(p.Packets.Last() is S.NewHero { Result: 7 }, "Underlevel hero creation bypassed server rules");
+    p.Info.Level = 50; p.Info.CurrentLocation = new(100, 100); p.NewHero(request);
+    Check(p.Packets.Last() is S.NewHero { Result: 7 }, "Remote hero creation reused an old NPC session");
+    p.Info.CurrentLocation = new(0, 0); npc.Visible = false; p.NewHero(request);
+    Check(p.Packets.Last() is S.NewHero { Result: 7 }, "Invisible NPC authorized hero creation");
+    npc.Visible = true; npc.VisibleLog[p.Info.Index] = false; p.NewHero(request);
+    Check(p.Packets.Last() is S.NewHero { Result: 7 }, "Player-hidden NPC authorized hero creation");
+    npc.VisibleLog[p.Info.Index] = true;
+    var allow = Server.Settings.AllowNewHero; var jobs = Server.Settings.Hero_CanCreateClass; var sealName = Server.Settings.HeroSealItemName;
+    var seal = new ItemInfo { Index = 999_991, Name = "创建保护封印", Type = ItemType.SealedHero, Weight = 1 };
+    try
+    {
+        Server.Settings.AllowNewHero = true; Server.Settings.Hero_CanCreateClass = Enumerable.Repeat(true, 5).ToArray();
+        Server.Settings.HeroSealItemName = seal.Name; Envir.Main.ItemInfoList.Add(seal);
+        p.Stats[Stat.BagWeight] = 0; p.NewHero(request);
+        Check(p.Packets.Last() is S.NewHero { Result: 6 }, "Hero seal creation bypassed player weight");
+        p.Stats[Stat.BagWeight] = int.MaxValue;
+        for (var slot = 0; slot < p.Info.Inventory.Length; slot++) p.Info.Inventory[slot] = Item((ulong)(990_000 + slot), 1, new ItemInfo { Type = ItemType.Weapon });
+        p.NewHero(request);
+        Check(p.Packets.Last() is S.NewHero { Result: 6 } && Envir.Main.HeroList.Count == count && Envir.Main.NextHeroID == counter,
+            "Full bag hero creation changed hero IDs or saved assets");
+        p.EnsureHeroCapacity();
+        for (var slot = 0; slot < 4; slot++) p.Info.Heroes[slot] = new HeroInfo(new() { Name = "名额检查" + slot }) { Index = slot + 100 };
+        p.Info.Inventory = new UserItem[80];
+        var pendingSeal = Item(990200, 1, seal); pendingSeal.AddedStats[Stat.Hero] = 104; p.Info.Inventory[0] = pendingSeal;
+        p.NewHero(request);
+        Check(p.Packets.Last() is S.NewHero { Result: 4 } && p.Info.Inventory[0] == pendingSeal && Envir.Main.NextHeroID == counter,
+            "五个名额没有计算尚未激活的封印或拒绝创建仍改变资产");
+    }
+    finally { Server.Settings.AllowNewHero = allow; Server.Settings.Hero_CanCreateClass = jobs; Server.Settings.HeroSealItemName = sealName; Envir.Main.ItemInfoList.Remove(seal); }
+}
+
+{
+    var p = Player(); var active = new HeroInfo(new ClientPackets.NewHero { Name = "当前英雄" }) { Index = 701 };
+    var stored = new HeroInfo(new ClientPackets.NewHero { Name = "备用英雄" }) { Index = 702 };
+    p.Info.Heroes = [active]; p.Info.MaximumHeroCount = 1; p.CurrentHero = active;
+    p.EnsureHeroCapacity();
+    Check(p.Info.MaximumHeroCount == 5 && p.Info.Heroes.Length == 5 && ReferenceEquals(p.Info.Heroes[0], active), "旧角色英雄容量未扩至五个或覆盖原英雄");
+    p.Info.Heroes[2] = stored;
+    var request = new ClientPackets.DeleteHeroRequest { HeroIndex = stored.Index };
+    p.DeleteManagedHero(request);
+    Check(p.Packets.Last() is S.DeleteHeroResult { Success: false } && !stored.Deleted, "删除英雄绕过NPC会话");
+    AtNPC(p, NPCScript.HeroManageKey);
+    var npc = p.CurrentMap.NPCs.Single(); npc.Visible = true; npc.VisibleLog = new() { [p.Info.Index] = true };
+    var gear = Item(990100, 1, new ItemInfo { Type = ItemType.Weapon }); stored.Equipment[0] = gear;
+    p.DeleteManagedHero(request);
+    Check(p.Packets.Last() is S.DeleteHeroResult { Success: false } && stored.Equipment[0] == gear && !stored.Deleted, "带装备的英雄被删除或丢失装备");
+    stored.Equipment[0] = null; p.Info.Inventory[0] = gear;
+    p.Info.CurrentLocation = new(100, 100); p.DeleteManagedHero(request);
+    Check(p.Packets.Last() is S.DeleteHeroResult { Success: false } && !stored.Deleted, "远程删除英雄重用旧会话");
+    p.Info.CurrentLocation = new(0, 0); p.DeleteManagedHero(new() { HeroIndex = 999999 });
+    Check(p.Packets.Last() is S.DeleteHeroResult { Success: false } && !stored.Deleted, "非法英雄编号改变英雄");
+    p.DeleteManagedHero(request);
+    Check(p.Packets.Last() is S.DeleteHeroResult { Success: true, HeroIndex: 702 } && stored.Deleted && p.Info.Heroes[2] == null &&
+        p.CurrentHero == active && p.Info.Inventory[0] == gear, "备用英雄删除未生效或误改当前英雄/共用背包");
+    p.DeleteManagedHero(request);
+    Check(p.Packets.Last() is S.DeleteHeroResult { Success: false } && p.Info.Inventory[0] == gear, "重复删除没有按身份拒绝");
+    p.DeleteManagedHero(new() { HeroIndex = active.Index });
+    Check(p.Packets.Last() is S.DeleteHeroResult { Success: true } && active.Deleted && p.CurrentHero == null &&
+        p.Info.CurrentHeroIndex == 0 && p.Info.Inventory[0] == gear, "当前英雄删除残留召唤身份或改变共用背包");
 }
 
 Console.WriteLine($"PASS: {checks} item security regression checks.");

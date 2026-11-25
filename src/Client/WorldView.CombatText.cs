@@ -11,7 +11,7 @@ public partial class WorldView
     internal IReadOnlyList<FloatingText> CombatTexts => combatTexts;
     internal int CombatTextsDrawn { get; private set; }
 
-    private void ClearCombatText() { combatTexts.Clear(); combatBuffs.Clear(); }
+    private void ClearCombatText() { combatTexts.Clear(); combatBuffs.Clear(); chatBubbles.Clear(); }
 
     public void ShowDamage(uint id, int amount, DamageType type = DamageType.Hit)
     {
@@ -45,9 +45,11 @@ public partial class WorldView
         {
             case S.UserInformation or S.MapChanged or S.Disconnect or S.LogOutSuccess or S.ReturnToLogin: ClearCombatText(); break;
             case S.ObjectRemove p:
+                chatBubbles.Remove(p.ObjectID);
                 combatTexts.RemoveAll(text => text.Actor == p.ObjectID);
                 foreach (var key in combatBuffs.Keys.Where(key => key.Actor == p.ObjectID).ToArray()) combatBuffs.Remove(key);
                 break;
+            case S.ObjectChat { Type: ChatType.Normal } p: ShowChatBubble(p.ObjectID, p.Text); break;
             case S.AddBuff p when p.Buff.Visible: CombatBuff(p.Buff.ObjectID, p.Buff.Type, !p.Buff.Paused); break;
             case S.RemoveBuff p:
                 CombatBuff(p.ObjectID, p.Type, false); combatBuffs.Remove((p.ObjectID, p.Type)); break;
@@ -86,6 +88,6 @@ public partial class WorldView
     private partial class CombatTextLayer : Node2D
     {
         internal WorldView View = null!;
-        public override void _Draw() => View.DrawCombatText(this);
+        public override void _Draw() { View.DrawCombatText(this); View.DrawChatBubbles(this); }
     }
 }

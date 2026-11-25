@@ -9,7 +9,7 @@ using Server.MirEnvir;
 namespace Server.ConsoleHost;
 
 // Called only on the game thread; management mutations are serialized by the host.
-public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
+public sealed partial class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
 {
     private static Envir World => Envir.Main;
     private static ItemInfo Item(int id) => World.ItemInfoList.SingleOrDefault(i => i.Index == id) ?? throw new FileNotFoundException("未找到物品。");
@@ -65,6 +65,26 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
         "monsters" => Read(Monster(id)),
         _ => throw new InvalidDataException("未知的物品或怪物定义类型。")
     };
+    public string PreparePublicShop()
+    {
+        var (added, resized) = Server.Helpers.SupplyCatalog.Prepare(World.ItemInfoList, World.ItemIndex);
+        if (added.Count + resized.Count == 0) return "公共商店补给规格已齐全。";
+        var original = resized.Select(change => (change.Item, Count: change.Item.StackSize, change.Item.Weight)).ToArray();
+        var counter = World.ItemIndex;
+        Commit("public-shop", () =>
+        {
+            World.ItemInfoList.AddRange(added); World.ItemIndex = added.Select(item => item.Index).DefaultIfEmpty(counter).Max();
+            foreach (var change in resized) { change.Item.StackSize = change.Count; change.Item.Weight = change.Weight; }
+        }, () =>
+        {
+            foreach (var item in added) World.ItemInfoList.Remove(item); World.ItemIndex = counter;
+            foreach (var change in original) { change.Item.StackSize = change.Count; change.Item.Weight = change.Weight; }
+        });
+        foreach (var connection in World.Connections.Where(connection => connection.Player != null))
+        foreach (var change in resized)
+        { connection.SentItemInfo.Remove(change.Item); connection.CheckItemInfo(change.Item); }
+        return $"已备份并新增 {added.Count}、更新 {resized.Count} 个补给规格，公共商店刷新后可见。";
+    }
     private static DefinitionEdit Read(ItemInfo i) => new("items", i.Index, i.Name, i.RequiredAmount, 0, i.Stats[Stat.HP], i.Stats[Stat.MinDC], i.Stats[Stat.MaxDC], i.Price, i.StackSize, Version(i.Save));
     private static DefinitionEdit Read(MonsterInfo m) => new("monsters", m.Index, m.Name, m.Level, m.Experience, m.Stats[Stat.HP], m.Stats[Stat.MinDC], m.Stats[Stat.MaxDC], 0, 1, Version(m.Save));
     public void Save(DefinitionEdit edit)
@@ -77,6 +97,9 @@ public sealed class WorldDefinitions(ProjectPaths paths, AssetCatalog assets)
         var duplicate = edit.Kind == "items" ? World.ItemInfoList.Any(i => i.Index != edit.Id && i.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) :
             World.MonsterInfoList.Any(i => i.Index != edit.Id && i.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (name != before.Name && duplicate) throw new InvalidOperationException("已有其他定义使用这个名称。");
+        if (edit.Kind == "items" && edit.Price == 0 && World.PublicShopCatalog?.Tabs.SelectMany(tab => tab.Products)
+            .Any(product => product.ItemIndex == edit.Id && product.Price == 0) == true)
+            throw new InvalidDataException("此物品在商城沿用默认价格，请先设置商城单价或移除商品，不能将定义价格改为0。");
         Commit(edit.Kind + "-" + edit.Id, () => Apply(edit with { Name = name }), () => Apply(before));
     }
     private static void Apply(DefinitionEdit edit)

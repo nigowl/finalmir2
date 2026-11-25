@@ -15,19 +15,21 @@ public sealed class GameConnection : IDisposable
     public readonly ConcurrentQueue<string> Errors = new();
     public bool Connected { get { lock (lifecycle) return client?.Connected == true && !cancellation.IsCancellationRequested; } }
 
-    public async Task Connect(string host, int port)
+    public async Task Connect(string host, int port, CancellationToken cancellationToken = default)
     {
         TcpClient socket; CancellationTokenSource source; CancellationToken token;
         lock (lifecycle)
         {
             cancellation.Cancel(); client?.Dispose(); cancellation.Dispose();
-            cancellation = source = new CancellationTokenSource(); token = source.Token;
+            cancellation = source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); token = source.Token;
             client = socket = new TcpClient { NoDelay = true };
             Received.Clear(); Errors.Clear(); Packet.IsServer = false;
         }
         try
         {
-            await socket.ConnectAsync(host, port, token).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+            var connect = socket.ConnectAsync(host, port, token).AsTask();
+            if (cancellationToken.CanBeCanceled) await connect;
+            else await connect.WaitAsync(TimeSpan.FromSeconds(10));
             lock (lifecycle)
             {
                 if (cancellation != source || source.IsCancellationRequested) throw new OperationCanceledException();

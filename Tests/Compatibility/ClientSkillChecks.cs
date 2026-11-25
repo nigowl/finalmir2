@@ -5,6 +5,17 @@ internal static class ClientSkillChecks
 {
     public static void Run(Action<bool, string> check)
     {
+        var firstCooldown = new ClientMagic { Spell = Spell.FireBall, CastTime = 1000, Delay = 3000 };
+        var secondCooldown = new ClientMagic { Spell = Spell.MagicShield, CastTime = -10000, Delay = 1000 };
+        check(ClientSkillRules.CooldownRemaining(firstCooldown, 1500) == 2500 && ClientSkillRules.CooldownRemaining(secondCooldown, 1500) == 0,
+            "使用一个技能时其他技能也进入图标冷却");
+        secondCooldown.CastTime = 1500;
+        check(ClientSkillRules.CooldownRemaining(firstCooldown, 2500) == 1500 && ClientSkillRules.CooldownRemaining(secondCooldown, 2500) == 0,
+            "不同技能的独立冷却未按各自结束时间清除");
+        firstCooldown.Delay = 0;
+        check(ClientSkillRules.CooldownRemaining(firstCooldown, 1000) == 0, "无独立冷却技能被公共施法间隔变暗");
+        firstCooldown.Spell = Spell.Fencing; firstCooldown.Delay = 10000;
+        check(ClientSkillRules.CooldownRemaining(firstCooldown, 1000) == 0, "被动技能出现主动冷却遮罩");
         check(Enumerable.Range(1, 12).Select(number => SkillKeys.FunctionKey(number)).Distinct().Count() == 12 && SkillKeys.FunctionKey(9) == 25 && SkillKeys.FunctionKey(12) == 28,
             "F1–F12映射重复或覆盖英雄键位");
         check(SkillKeys.IsPlayer(28) && !SkillKeys.IsPlayer(17) && SkillKeys.IsHero(17) && SkillKeys.IsHero(24) && !SkillKeys.IsHero(25) && !SkillKeys.IsPlayer(255),
@@ -52,5 +63,30 @@ internal static class ClientSkillChecks
         check(!state.Actors[20].Harvested,"新尸体误判已采集");
         state.Apply(new S.ObjectHarvested {ObjectID=20});
         check(state.Actors[20].Harvested,"采集完成回执没有阻止重复割取");
+        CheckRemoval(check);
+    }
+
+    private static void CheckRemoval(Action<bool, string> check)
+    {
+        var state = new GameState();
+        var first = new ClientMagic { Spell = Spell.Thrusting, Key = 1 };
+        var second = new ClientMagic { Spell = Spell.FireBall, Key = 2, CastTime = 9000 };
+        var last = new ClientMagic { Spell = Spell.MagicShield, Key = 3 };
+        state.Apply(new S.RemoveMagic { PlaceId = 0 });
+        check(state.User == null, "未登录的技能移除包创建了角色状态");
+        state.Apply(new S.UserInformation { ObjectID = 1, HP = 100, Magics = [first, second, last], Equipment = new UserItem[14], Inventory = [], QuestInventory = [] });
+        state.Apply(new S.HeroInformation { ObjectID = 2, Magics = [new ClientMagic { Spell = Spell.FireBall }], Equipment = new UserItem[14], Inventory = [] });
+        state.ActiveSkills.UnionWith([first.Spell, last.Spell]); state.DisabledSkills.UnionWith([first.Spell, last.Spell]);
+        state.UserBuffs[BuffType.MagicShield] = new() { Type = BuffType.MagicShield };
+        var castTime = second.CastTime;
+        foreach (var index in new[] { -1, 3, int.MaxValue }) state.Apply(new S.RemoveMagic { PlaceId = index });
+        check(state.User!.Magics.SequenceEqual([first, second, last]) && state.ActiveSkills.Contains(first.Spell), "无效技能位置改变了原技能或开关");
+        state.Apply(new S.RemoveMagic { PlaceId = 0 });
+        check(state.User.Magics.SequenceEqual([second, last]) && !state.ActiveSkills.Contains(first.Spell) && !state.DisabledSkills.Contains(first.Spell),
+            "技能移除未按原列表下标处理，或保留了已移除技能开关");
+        check(second.Key == 2 && second.CastTime == castTime && last.Key == 3 && state.ActiveSkills.Contains(last.Spell), "移除前项改动了后项快捷键/冷却/开关");
+        check(state.Hero!.Magics.Single().Spell == Spell.FireBall && state.UserBuffs.ContainsKey(BuffType.MagicShield), "本人技能移除误删英雄技能或已生效增益");
+        state.Apply(new S.RemoveMagic { PlaceId = 1 }); state.Apply(new S.RemoveMagic { PlaceId = 0 });
+        check(state.User.Magics.Count == 0 && state.ActiveSkills.Count == 0 && state.DisabledSkills.Count == 0, "连续移除位置未随原列表收缩或遗留开关");
     }
 }

@@ -1,0 +1,37 @@
+原对话框源文件	公开类
+Client/MirScenes/Dialogs/BigMapDialog.cs	BigMapDialog, WorldMapImage, BigMapViewPort, BigMapNPCRow, BigMapRecord
+Client/MirScenes/Dialogs/BuffDialog.cs	BuffDialog, ClientPoisonBuff, PoisonBuffDialog
+Client/MirScenes/Dialogs/CharacterDialog.cs	CharacterDialog
+Client/MirScenes/Dialogs/ChatNoticeDialog.cs	ChatNoticeDialog
+Client/MirScenes/Dialogs/ChatOptionDialog.cs	ChatOptionDialog
+Client/MirScenes/Dialogs/CompassDialog.cs	CompassDialog
+Client/MirScenes/Dialogs/FishingDialog.cs	FishingDialog, FishingStatusDialog
+Client/MirScenes/Dialogs/FriendDialog.cs	FriendDialog, FriendRow, MemoDialog
+Client/MirScenes/Dialogs/GameshopDialog.cs	GameShopDialog
+Client/MirScenes/Dialogs/GroupDialog.cs	GroupDialog
+Client/MirScenes/Dialogs/GuildDialog.cs	GuildDialog, GuildBuffButton
+Client/MirScenes/Dialogs/GuildTerritoryDialog .cs	GTRow, GuildTerritoryDialog
+Client/MirScenes/Dialogs/HelpDialog.cs	HelpDialog, ShortcutPage1, ShortcutPage2, ShortcutPage3, ShortcutInfo, ShortcutInfoPage, HelpPage
+Client/MirScenes/Dialogs/HeroDialogs.cs	HeroInventoryDialog, HeroBeltDialog, HeroMenuPanel, HeroInfoPanel, HeroAutoPotPreview, HeroBehaviourPanel, HeroManageDialog, HeroManageAvatar
+Client/MirScenes/Dialogs/IntelligentCreatureDialogs.cs	IntelligentCreatureDialog, CreatureButton, IntelligentCreatureOptionsDialog, IntelligentCreatureOptionsGradeDialog
+Client/MirScenes/Dialogs/InventoryDialog.cs	InventoryDialog, BeltDialog
+Client/MirScenes/Dialogs/ItemRentDialog.cs	ItemRentDialog, GuestItemRentDialog
+Client/MirScenes/Dialogs/ItemRentalDialog.cs	ItemRentalDialog
+Client/MirScenes/Dialogs/ItemRentingDialog.cs	ItemRentingDialog, GuestItemRentingDialog
+Client/MirScenes/Dialogs/KeyboardLayoutDialog.cs	KeyboardLayoutDialog, KeybindRow, KeybindHeadingRow
+Client/MirScenes/Dialogs/MailDialogs.cs	MailListDialog, MailItemRow, MailComposeLetterDialog, MailComposeParcelDialog, MailReadLetterDialog, MailReadParcelDialog
+Client/MirScenes/Dialogs/MainDialogs.cs	MainDialog, ChatDialog, ChatHistory, ChatControlBar, SkillBarDialog, MiniMapDialog, InspectDialog, OptionDialog, MenuDialog, MagicButton, AssignKeyPanel, DuraStatusDialog, CharacterDuraPanel
+Client/MirScenes/Dialogs/MentorDialog.cs	MentorDialog
+Client/MirScenes/Dialogs/MountDialog.cs	MountDialog
+Client/MirScenes/Dialogs/NPCDialogs.cs	NPCDialog, NPCGoodsDialog, NPCDropDialog, NPCAwakeDialog, CraftDialog, RefineDialog, StorageDialog, BigButtonDialog, BigButton
+Client/MirScenes/Dialogs/NewCharacterDialog.cs	NewCharacterDialog
+Client/MirScenes/Dialogs/NoticeDialog.cs	NoticeDialog
+Client/MirScenes/Dialogs/QuestDialogs.cs	QuestListDialog, QuestDetailDialog, QuestDiaryDialog, QuestTrackingDialog, QuestRow, QuestMessage, QuestRewards, QuestCell, QuestGroupQuestItem, QuestSingleQuestItem
+Client/MirScenes/Dialogs/RankingDialog.cs	RankingDialog, RankingRow
+Client/MirScenes/Dialogs/RelationshipDialog.cs	RelationshipDialog
+Client/MirScenes/Dialogs/ReportDialog.cs	ReportDialog
+Client/MirScenes/Dialogs/RollDialog.cs	RollDialog
+Client/MirScenes/Dialogs/SocketDialog.cs	SocketDialog
+Client/MirScenes/Dialogs/TimerDialog.cs	TimerDialog, ClientTimer
+Client/MirScenes/Dialogs/TradeDialogs.cs	TradeDialog, GuestTradeDialog
+Client/MirScenes/Dialogs/TrustMerchantDialog.cs	TrustMerchantDialog, AuctionRow, Filter

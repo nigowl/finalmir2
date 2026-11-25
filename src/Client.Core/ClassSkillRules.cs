@@ -52,6 +52,15 @@ public static partial class ClassSkillRules
     public static bool HasPet(GameState state) => state.User != null && state.Actors.Values.Any(actor =>
         actor.Kind == ObjectType.Monster && actor.MasterObjectId == state.User.ObjectID && !actor.Dead);
 
+    public static bool HasPet(GameState state, Spell spell) => state.User != null && state.Actors.Values.Any(actor =>
+        actor.Kind == ObjectType.Monster && actor.MasterObjectId == state.User.ObjectID && !actor.Dead && spell switch
+        {
+            Spell.SummonSkeleton => actor.Image == (int)Monster.BoneFamiliar,
+            Spell.SummonShinsu => actor.IsShinsu,
+            Spell.SummonHolyDeva => actor.Image == (int)Monster.HolyDeva,
+            _ => false
+        });
+
     // 原镜像用同名ObjectPlayer同步，而不是带MasterObjectId的ObjectMonster。
     public static bool HasMirror(GameState state) => state.User != null && state.Actors.Values.Any(actor => actor.Kind == ObjectType.Player &&
         actor.Id != state.User.ObjectID && !actor.Dead && actor.Name == state.User.Name && actor.Class == state.User.Class && actor.Gender == state.User.Gender);
@@ -63,7 +72,7 @@ public static partial class ClassSkillRules
         Spell.Healing => target==state.User?.ObjectID ? state.User.HP > previousHp :
             state.Actors.TryGetValue(target,out var ally)&&ally.Health>previousHp,
         Spell.Poisoning => state.Actors.TryGetValue(target, out var actor) && actor.Poison.HasFlag(poisonShape == 2 ? PoisonType.Red : PoisonType.Green),
-        Spell.SummonSkeleton or Spell.SummonShinsu or Spell.SummonHolyDeva => HasPet(state),
+        Spell.SummonSkeleton or Spell.SummonShinsu or Spell.SummonHolyDeva => HasPet(state, spell),
         Spell.Mirroring => HasMirror(state),
         Spell.PetEnhancer => state.Actors.TryGetValue(target, out var pet) && pet.Buffs.Contains(BuffType.PetEnhancer),
         Spell.Purification => state.Me?.Poison == PoisonType.None,
@@ -85,9 +94,10 @@ public static partial class ClassSkillRules
         Spell Summon()
         {
             if (!(user.Class == MirClass.Wizard ? preferences.AutoMirroring || smart : preferences.AutoSummon || smart) ||
-                (user.Class == MirClass.Wizard ? HasMirror(state) : HasPet(state))) return Spell.None;
+                (user.Class == MirClass.Wizard ? HasMirror(state) : state.Actors.Values.Count(actor => actor.Kind == ObjectType.Monster &&
+                    actor.MasterObjectId == user.ObjectID && !actor.Dead) >= 2)) return Spell.None;
             foreach (var spell in Summons(user.Class))
-                if ((smart || user.Class == MirClass.Wizard || preferences.SummonSkill == Spell.None || preferences.SummonSkill == spell) && ReadySpell(spell)) return spell;
+                if (!HasPet(state, spell) && (smart || user.Class == MirClass.Wizard || preferences.SummonSkill == Spell.None || preferences.SummonSkill == spell) && ReadySpell(spell)) return spell;
             return Spell.None;
         }
         if (user.Class == MirClass.Taoist)

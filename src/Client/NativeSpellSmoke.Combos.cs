@@ -16,7 +16,8 @@ public partial class NativeSpellSmoke
 
     private async Task VerifyClassCombosOnly()
     {
-        foreach (var job in Enum.GetValues<MirClass>().Where(job=>!OS.GetCmdlineUserArgs().Contains("--class-extension-only")||job is MirClass.Assassin or MirClass.Archer))
+        var dualSummonsOnly = OS.GetCmdlineUserArgs().Contains("--dual-summons-only");
+        foreach (var job in Enum.GetValues<MirClass>().Where(job => dualSummonsOnly ? job == MirClass.Taoist : !OS.GetCmdlineUserArgs().Contains("--class-extension-only") || job is MirClass.Assassin or MirClass.Archer))
         {
             stage = $"{job}职业挂机组合";
             if (job != MirClass.Warrior) await Client.Connect(Argument("--server"));
@@ -25,6 +26,8 @@ public partial class NativeSpellSmoke
             await Until(() => State.Characters.Any(character => character.Class == job));
             Client.Send(new C.StartGame { CharacterIndex = State.Characters.Single(character => character.Class == job).Index });
             await Until(() => State.User?.Class == job && !Client.World.Loading && ClientAutomation.Targets(State).Any());
+            if (dualSummonsOnly) State.DisabledSkills.Add(Spell.SummonHolyDeva);
+            var expectedSummons = job == MirClass.Taoist ? new[] { Spell.SummonShinsu, dualSummonsOnly ? Spell.SummonSkeleton : Spell.SummonHolyDeva }.Count(spell => !ClassSkillRules.HasPet(State, spell)) : 0;
             // 前一职业的召唤物仍可能停留，隔离场景不能硬走同一个占用格。
             var point = Enumerable.Range(0,8).Select(d=>Functions.PointMove(State.User!.Location,(MirDirection)d,1))
                 .First(p=>Client.World.Walkable(p)&&!State.Actors.Values.Any(actor=>actor.Id!=State.User!.ObjectID&&!actor.Dead&&actor.Location==p&&actor.Kind is not (ObjectType.Item or ObjectType.Spell)));
@@ -60,13 +63,19 @@ public partial class NativeSpellSmoke
             }
             else if(job==MirClass.Taoist)
             {
-                await Until(() => ClassSkillRules.HasPet(State) && new[] { BuffType.SoulShield, BuffType.BlessedArmour, BuffType.UltimateEnhancer, BuffType.EnergyShield }.All(State.UserBuffs.ContainsKey) &&
-                    State.Actors.Values.Any(actor => actor.MasterObjectId == State.User.ObjectID && actor.Buffs.Contains(BuffType.PetEnhancer)) &&
+                await Until(() => ClassSkillRules.HasPet(State, Spell.SummonShinsu) && ClassSkillRules.HasPet(State, dualSummonsOnly ? Spell.SummonSkeleton : Spell.SummonHolyDeva) &&
+                    new[] { BuffType.SoulShield, BuffType.BlessedArmour, BuffType.UltimateEnhancer, BuffType.EnergyShield }.All(State.UserBuffs.ContainsKey) &&
+                    State.Actors.Values.Where(actor => actor.MasterObjectId == State.User.ObjectID && !actor.Dead).All(actor => actor.Buffs.Contains(BuffType.PetEnhancer)) &&
                     target.Poison.HasFlag(PoisonType.Red) && target.Poison.HasFlag(PoisonType.Green) &&
                     packets.OfType<S.Magic>().Any(packet => packet.Cast && packet.Spell is Spell.SoulFireBall or Spell.PoisonCloud));
                 var sequence = packets.OfType<S.Magic>().Where(packet => packet.Cast).Select(packet => packet.Spell).ToList();
-                if (sequence.IndexOf(Spell.Poisoning) < 0 || sequence.IndexOf(Spell.Poisoning) > sequence.IndexOf(Spell.SoulShield))
+                if (sequence.IndexOf(Spell.SoulShield) >= 0 && (sequence.IndexOf(Spell.Poisoning) < 0 || sequence.IndexOf(Spell.Poisoning) > sequence.IndexOf(Spell.SoulShield)))
                     throw new Exception("道士实际施法顺序没有先补毒再加增益。");
+                var summonCount = sequence.Count(spell => ClassSkillRules.Summons(MirClass.Taoist).Contains(spell));
+                await Pause(2100);
+                if (summonCount != expectedSummons || packets.OfType<S.Magic>().Count(packet => packet.Cast && ClassSkillRules.Summons(MirClass.Taoist).Contains(packet.Spell)) != expectedSummons)
+                    throw new Exception("道士未分别补齐两种召唤兽，或已齐后仍重复召唤。");
+                GD.Print("PASS native dual summons: two different living owned pets, individual summon receipts, poison before buffs, both pets enhanced, actual damage and no repeated summon.");
             }
             else
             {
@@ -92,6 +101,7 @@ public partial class NativeSpellSmoke
             await Shot("combo-active-" + job); Battle(false);
             if (!packets.OfType<S.DamageIndicator>().Any(packet => packet.Damage < 0)) throw new Exception($"{job}组合没有真实伤害回执。");
             GD.Print($"PASS native {job} class combo: original TCP preparation/buffs/pets, automatic attacks and actual damage.");
+            if (OS.GetCmdlineUserArgs().Contains("--verify-combo-flow")) await VerifyComboFlow(job, target);
             await LeaveCharacter();
         }
         await Client.Quit();
@@ -110,10 +120,11 @@ public partial class NativeSpellSmoke
         }
         if (!State.ActiveSkills.Contains(Spell.Slaying)) throw new Exception("24次原普通攻击未收到攻杀准备回执。");
         drawn.Clear(); packets.Clear();
-        Client.Attack(direction, Spell.None);
-        if (State.Me!.ActionSpell != Spell.Slaying) throw new Exception("收到准备后挂机普通攻击仍没有选择攻杀。");
+        Client.SelectTarget(target.Id);
         var effect = OriginalSpellEffects.Melee(Spell.Slaying, magic.Level, direction)!.Value;
-        await Until(() => magic.Experience > experience && drawn.Contains((effect.Library, effect.Index + effect.Count - 1)) && packets.OfType<S.DamageIndicator>().Any(packet => packet.Damage < 0));
+        await Until(() => State.Me!.ActionSpell == Spell.Slaying && magic.Experience > experience &&
+            drawn.Contains((effect.Library, effect.Index + effect.Count - 1)) && packets.OfType<S.DamageIndicator>().Any(packet => packet.Damage < 0));
+        Client.SetDestination(State.User.Location);
         await Shot("slaying-original");
         GD.Print("PASS native Slaying: original readiness packet, automatic normal-attack path, complete six-frame effect and actual target damage.");
     }

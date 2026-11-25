@@ -3,6 +3,8 @@ import hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.re
 
 repo=pathlib.Path(__file__).resolve().parents[2]
 root=pathlib.Path(tempfile.mkdtemp(prefix='mir2-companions-guild-')).resolve();data=root/'version-a'
+server=pathlib.Path(os.environ.get('MIR2_COMPANION_SERVER_DLL',str(repo/'src/Server/bin/Release/net8.0/Mir2.Server.dll')))
+compat=repo/'tests/Compatibility/bin'/server.parent.parent.name/'net8.0/Compatibility.dll'
 def port():
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));return sock.getsockname()[1]
 game,http=port(),port();address=f'http://127.0.0.1:{http}'
@@ -24,7 +26,7 @@ def wait(predicate,seconds=60):
 def start():
     global process,log,key,starts
     log=open(root/f'server-{starts}.log','w');starts+=1
-    process=subprocess.Popen(['dotnet',str(repo/'src/Server/bin/Release/net8.0/Mir2.Server.dll'),f'--mir2-instance={repo}:{data/"runtime"}:server'],cwd=root,env=env,stdout=log,stderr=subprocess.STDOUT)
+    process=subprocess.Popen(['dotnet',str(server),f'--mir2-instance={repo}:{data/"runtime"}:server'],cwd=root,env=env,stdout=log,stderr=subprocess.STDOUT)
     def ready():
         try:return call('/health')['ready']
         except OSError:return False
@@ -46,7 +48,7 @@ def configure(profile,preferences):
 def settings(**values):
     overview=call(base+'/overview');call(base+'/settings',{'settings':overview['settings']|values},'PUT')
 try:
-    subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--fixture',str(data)],cwd=repo,env=os.environ|{'MIR2_DATA_ROOT':str(repo/'data/versions/default')},check=True)
+    subprocess.run(['dotnet',str(compat),'--fixture',str(data)],cwd=repo,env=os.environ|{'MIR2_DATA_ROOT':os.environ.get('MIR2_DATA_ROOT',str(repo/'data/versions/default'))},check=True)
     start();settings(enabled=True,maxOnline=3)
     profiles=[]
     for name in ['GuildFounder','GuildJoiner']:
@@ -57,7 +59,7 @@ try:
         command(p,'stop');wait(lambda:call(base+'/overview')['online']==0)
         profiles.append(p)
     founder,joiner=profiles;fid=detail(founder)['row']['characterId'];jid=detail(joiner)['row']['characterId'];stop()
-    def fixture(mode):subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--companion-guild',str(fid),str(jid),mode],cwd=root,env=env,check=True)
+    def fixture(mode):subprocess.run(['dotnet',str(compat),'--companion-guild',str(fid),str(jid),mode],cwd=root,env=env,check=True)
     fixture('prepare');source=json.loads((data/'runtime/companion-guild-fixture.json').read_text());start()
     configure(founder,{'mode':'create','name':'NativeGuild','siege':False});configure(joiner,{'mode':'join','name':'NativeGuild','siege':False})
     command(founder,'start');wait(lambda:detail(founder)['runtime'] is not None)

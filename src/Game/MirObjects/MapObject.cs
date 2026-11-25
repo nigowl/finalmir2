@@ -6,7 +6,7 @@ using S = ServerPackets;
 
 namespace Server.MirObjects
 {
-    public abstract class MapObject
+    public abstract partial class MapObject
     {
         protected static MessageQueue MessageQueue
         {
@@ -295,6 +295,7 @@ namespace Server.MirObjects
             }
 
             player.Enqueue(GetInfo());
+            SendExactHealth(player);
 
             //if (Race == ObjectType.Player)
             //{
@@ -320,20 +321,7 @@ namespace Server.MirObjects
 
         public bool CanFly(Point target)
         {
-            Point location = CurrentLocation;
-
-            while (location != target)
-            {
-                MirDirection dir = Functions.DirectionFromPoint(location, target);
-
-                location = Functions.PointMove(location, dir, 1);
-
-                if (location.X < 0 || location.Y < 0 || location.X >= CurrentMap.Width || location.Y >= CurrentMap.Height) return false;
-
-                if (!CurrentMap.GetCell(location).Valid) return false;
-            }
-
-            return true;
+            return Functions.CanFly(CurrentLocation, target, location => CurrentMap.ValidPoint(location) && CurrentMap.GetCell(location).Valid);
         }
 
         public virtual void Spawned()
@@ -841,6 +829,7 @@ namespace Server.MirObjects
 
         public virtual void BroadcastHealthChange()
         {
+            BroadcastExactHealth();
             if (Race != ObjectType.Player && Race != ObjectType.Monster) return;
 
             byte time = Math.Min(byte.MaxValue, (byte)Math.Max(5, (RevTime - Envir.Time) / 1000));

@@ -194,6 +194,7 @@ namespace Server.MirObjects.Monsters
                     }
 
                     mob.Broadcast(new S.ObjectName { ObjectID = mob.ObjectID, Name = mob.Name });
+                    mob.BroadcastInfo();
                 }
             }
 

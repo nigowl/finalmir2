@@ -31,7 +31,7 @@ internal static class DamageIndicatorChecks
                 player.Packets.Clear(); var before = target.HP;
                 var result = usePet ? target.Attacked(pet, 37) : target.Attacked(player, 37, damageWeapon: false);
                 var hits = player.Packets.OfType<S.DamageIndicator>().ToArray();
-                check(result > 0 && hits.Length == 1 && hits[0].ObjectID == target.ObjectID && hits[0].Damage == -expected && hits[0].Type == DamageType.Hit,
+                check(result > 0 && (ai == 56 ? hits.Length == 0 : hits.Length == 1 && hits[0].ObjectID == target.ObjectID && hits[0].Damage == -expected && hits[0].Type == DamageType.Hit),
                     $"AI{ai} {(usePet ? "宠物" : "人物")}受击未广播唯一真实伤害");
                 check(target.HP == before - (ai == 56 ? 0 : expected), $"AI{ai} 飘字修复改变了原扣血/训练规则");
             }

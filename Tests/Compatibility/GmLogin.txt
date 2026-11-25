@@ -1,0 +1,22 @@
+[@_LOGIN]
+#IF
+ISADMIN
+#INCLUDE [SystemScripts\00Default\Login\[952].txt] @Main
+
+#IF
+ISADMIN
+#ACT
+DELAYGOTO 1 @AdminMapPrompt
+
+#INCLUDE [SystemScripts\00Default\Login\NamelistReset.txt] @Main
+#INCLUDE [SystemScripts\00Default\Login\BWBuff.txt] @Main
+
+[@AdminMapPrompt]
+#IF
+ISADMIN
+#SAY
+是否进入管理员地图？
+<进入管理员地图/@EnterAdminMap>  <留在当前位置/@Exit>
+
+[@EnterAdminMap]
+#INCLUDE [SystemScripts\00Default\Login\r001.txt] @Main

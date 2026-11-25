@@ -11,13 +11,10 @@ public partial class Main
     private Label volumeValue = null!, settingsHint = null!;
     private CheckBox npcNames = null!, monsterNames = null!, autoHp = null!, autoMp = null!, autoRandom = null!, autoTown = null!, noMonsterRandom = null!, autoRoam = null!;
     private CheckBox crtFilter = null!;
+    private CheckBox soundEnabled = null!, healthBars = null!, movementMode = null!;
     private CheckBox itemNames = null!;
-    private CheckBox autoPickup = null!;
-    private Control pickupFilters = null!;
-    private OptionButton pickupMode = null!;
-    private TextEdit pickupNames = null!;
-    private OptionButton crtStrength = null!;
-    private OptionButton movementMode = null!;
+    private CheckBox autoPickup = null!, autoSell = null!;
+    private OptionButton crtStrength = null!, crtCurvature = null!;
     private ConfirmationDialog resetSettingsDialog = null!;
     private SpinBox hpPercent = null!, mpPercent = null!, randomPercent = null!, townPercent = null!;
     private Godot.Timer settingsSaveTimer = null!;
@@ -33,7 +30,7 @@ public partial class Main
         {
             if (File.Exists(settingsFile))
             {
-                if (new FileInfo(settingsFile).Length > 65536) throw new InvalidDataException("设置文件超过 64KB。");
+                if (new FileInfo(settingsFile).Length > 524288) throw new InvalidDataException("设置文件超过 512KB。");
                 preferences = JsonSerializer.Deserialize<ClientPreferences>(File.ReadAllText(settingsFile)) ?? throw new InvalidDataException("设置文件为空。");
                 preferences.Normalize();
             }
@@ -47,22 +44,29 @@ public partial class Main
         settingsTabs = new TabContainer { Position = new Vector2(10, 32), Size = new Vector2(420, 260) }; settingsDialog.AddChild(settingsTabs);
         var basic = SettingsPage("基础"); var protection = SettingsPage("保护"); var battle = SettingsPage("挂机");
         classSettings = SettingsPage("职业");
-        Text(basic, "音量", 12, 14, 70);
-        volumeSlider = new HSlider { Position = new Vector2(85, 15), Size = new Vector2(235, 24), MinValue = 0, MaxValue = 100, Step = 1 }; basic.AddChild(volumeSlider);
-        volumeValue = Text(basic, "", 335, 13, 60);
-        volumeSlider.ValueChanged += value => { volumeValue.Text = value == 0 ? "静音" : $"{value:0}%"; ApplyVolume((int)value); SettingsChanged(); };
-        npcNames = SettingToggle(basic, "显示 NPC 名称", 45);
-        monsterNames = SettingToggle(basic, "显示怪物名称（关闭后仅悬停/选中显示）", 78);
-        itemNames = SettingToggle(basic, "显示物品名称（地面；关闭后悬停仍显示）", 111);
-        Text(basic, "鼠标走跑", 12, 150, 80);
-        movementMode = new OptionButton { Name = "MovementMode", Position = new Vector2(96, 148), Size = new Vector2(294, 28) };
-        movementMode.AddItem("左键行走 / 右键奔跑"); movementMode.AddItem("左键奔跑 / 右键行走"); basic.AddChild(movementMode);
-        movementMode.ItemSelected += _ => SettingsChanged();
-        crtFilter = SettingToggle(basic, "CRT 滤镜", 184);
-        crtFilter.Size = new Vector2(140, 28);
-        crtStrength = new OptionButton { Name = "CrtStrength", Position = new Vector2(213, 184), Size = new Vector2(177, 28) };
-        for (var level = 1; level <= 5; level++) crtStrength.AddItem($"强度 {level} 级");
-        basic.AddChild(crtStrength); crtStrength.ItemSelected += _ => SettingsChanged();
+        var items = SettingsPage("物品");
+        soundEnabled = SettingToggle(basic, "音量", 8); soundEnabled.Name = "SoundEnabled"; soundEnabled.Size = new Vector2(76, 28);
+        soundEnabled.TooltipText = "取消勾选即静音，保留音量以便恢复。";
+        volumeSlider = new HSlider { Position = new Vector2(92, 10), Size = new Vector2(230, 24), MinValue = 0, MaxValue = 100, Step = 1 }; basic.AddChild(volumeSlider);
+        volumeValue = Text(basic, "", 336, 8, 58);
+        soundEnabled.Toggled += _ => RefreshVolume();
+        volumeSlider.ValueChanged += _ => { RefreshVolume(); SettingsChanged(); };
+        npcNames = SettingToggle(basic, "显示 NPC 名称", 38);
+        monsterNames = SettingToggle(basic, "显示怪物名称（关闭后仅悬停/选中显示）", 68);
+        itemNames = SettingToggle(basic, "显示物品名称（地面；关闭后悬停仍显示）", 98);
+        healthBars = SettingToggle(basic, "显示血条", 128); healthBars.Name = "ShowHealthBars";
+        healthBars.TooltipText = "显示可见人物、英雄、怪物及召唤物的血条和实际血量。";
+        movementMode = SettingToggle(basic, "走跑互换", 158); movementMode.Name = "MovementMode";
+        movementMode.TooltipText = "默认左键行走、右键奔跑；选中后左键奔跑、右键行走。";
+        crtFilter = SettingToggle(basic, "CRT 滤镜", 190);
+        crtFilter.TooltipText = "CRT-Mattias：弧面屏、扫描线、RGB色散、荧光晕和暗角。";
+        crtFilter.Size = new Vector2(108, 28);
+        crtCurvature = new OptionButton { Name = "CrtCurvature", FitToLongestItem = false, ClipText = true, Position = new Vector2(124, 190), TooltipText = "弧面强度；0级为平面，1–5级递增。" };
+        for (var level = 0; level <= 5; level++) crtCurvature.AddItem($"弧面 {level} 级");
+        basic.AddChild(crtCurvature); crtCurvature.Size = new Vector2(128, 28); crtCurvature.ItemSelected += _ => SettingsChanged();
+        crtStrength = new OptionButton { Name = "CrtStrength", FitToLongestItem = false, ClipText = true, Position = new Vector2(262, 190), TooltipText = "扫描线强度；1–5级递增，独立于弧面。" };
+        for (var level = 1; level <= 5; level++) crtStrength.AddItem($"扫描线 {level} 级");
+        basic.AddChild(crtStrength); crtStrength.Size = new Vector2(128, 28); crtStrength.ItemSelected += _ => SettingsChanged();
         autoHp = ProtectionRow(protection, "自动喝红", 12, out hpPercent);
         autoMp = ProtectionRow(protection, "自动喝蓝", 51, out mpPercent);
         autoRandom = ProtectionRow(protection, "自动随机", 90, out randomPercent);
@@ -71,20 +75,12 @@ public partial class Main
         noMonsterRandom = SettingToggle(battle, "无怪随机（等待 3 秒，消耗随机卷）", 12);
         autoRoam = SettingToggle(battle, "无怪跑图（当前地图；无随机卷时也可跑图）", 48);
         autoRoam.TooltipText = "探索远处、近期少到访区域，战斗/拣取后继续原路线。技能组合由职业页统一控制。";
-        autoPickup = SettingToggle(battle, "自动拣取（战斗结束后拣取附近物品）", 84);
-        pickupFilters = new Control { Position = new Vector2(0, 121), Size = new Vector2(400, 109) }; battle.AddChild(pickupFilters);
-        Text(pickupFilters, "拣取模式", 12, 0, 80);
-        pickupMode = new OptionButton { Name = "PickupMode", Position = new Vector2(100, 0), Size = new Vector2(288, 26) };
-        pickupMode.AddItem("排除拣取（黑名单）"); pickupMode.AddItem("指定拣取（白名单）"); pickupFilters.AddChild(pickupMode);
-        pickupNames = new TextEdit { Name = "PickupNames", Position = new Vector2(12, 31), Size = new Vector2(376, 52),
-            PlaceholderText = "每行一个完整物品名；金币填“金币”。", WrapMode = TextEdit.LineWrappingMode.Boundary };
-        pickupFilters.AddChild(pickupNames);
-        Text(pickupFilters, "最多64项，每项40字；混合格整格过滤，避免误拣。", 12, 85, 376).AddThemeFontSizeOverride("font_size", ClientUi.Small);
-        pickupMode.ItemSelected += _ => SettingsChanged(); pickupNames.TextChanged += SettingsChanged;
-        autoPickup.Toggled += enabled => pickupFilters.Visible = enabled;
+        autoPickup = SettingToggle(battle, "自动拣取", 84); autoPickup.Name = "AutoPickup";
+        autoPickup.TooltipText = "挂机时自动拣取；在物品页逐项勾选要拣取的物品。";
+        BuildItemSettings(items);
         Button(settingsDialog, "重置", 342, 319, 72, ResetSettingsConfirmation).Name = "ResetSettings";
         resetSettingsDialog = new ConfirmationDialog { Name = "ResetSettingsConfirmation", Title = "重置游戏设置",
-            DialogText = "将所有游戏设置恢复为默认值并自动保存？\n音量、显示、保护和三职业辅助均会重置，当前挂机会停止。" };
+            DialogText = "将所有游戏设置恢复为默认值并自动保存？\n音量、显示、保护、物品和职业辅助均会重置，当前挂机会停止。" };
         game.AddChild(resetSettingsDialog);
         resetSettingsDialog.GetOkButton().Text = "重置"; resetSettingsDialog.GetCancelButton().Text = "取消";
         resetSettingsDialog.Confirmed += ResetSettings;
@@ -146,15 +142,17 @@ public partial class Main
     private void OpenSettings()
     {
         loadingSettings = true;
-        volumeSlider.Value = preferences.Volume; volumeValue.Text = preferences.Volume == 0 ? "静音" : $"{preferences.Volume}%";
-        movementMode.Select(preferences.DefaultRun ? 1 : 0); npcNames.ButtonPressed = preferences.ShowNpcNames; monsterNames.ButtonPressed = preferences.ShowMonsterNames; itemNames.ButtonPressed = preferences.ShowItemNames;
+        soundEnabled.SetPressedNoSignal(preferences.SoundEnabled); volumeSlider.Value = preferences.Volume; RefreshVolume();
+        movementMode.ButtonPressed = preferences.DefaultRun; healthBars.ButtonPressed = preferences.ShowHealthBars;
+        npcNames.ButtonPressed = preferences.ShowNpcNames; monsterNames.ButtonPressed = preferences.ShowMonsterNames; itemNames.ButtonPressed = preferences.ShowItemNames;
         crtFilter.ButtonPressed = preferences.CrtFilter;
         crtStrength.Select(preferences.CrtStrength - 1);
+        crtCurvature.Select(preferences.CrtCurvature);
         autoHp.ButtonPressed = preferences.AutoHp; hpPercent.Value = preferences.HpPercent; autoMp.ButtonPressed = preferences.AutoMp; mpPercent.Value = preferences.MpPercent;
         autoRandom.ButtonPressed = preferences.AutoRandom; randomPercent.Value = preferences.RandomPercent; autoTown.ButtonPressed = preferences.AutoTown; townPercent.Value = preferences.TownPercent;
         noMonsterRandom.ButtonPressed = preferences.NoMonsterRandom; autoRoam.ButtonPressed = preferences.AutoRoam;
-        autoPickup.SetPressedNoSignal(preferences.AutoPickup); pickupFilters.Visible = preferences.AutoPickup;
-        pickupMode.Select(preferences.PickupWhitelist ? 1 : 0); pickupNames.Text = string.Join('\n', preferences.PickupNames);
+        autoPickup.SetPressedNoSignal(preferences.AutoPickup); autoSell.SetPressedNoSignal(preferences.AutoSell);
+        itemRuleDraft = new(preferences.ItemRules, StringComparer.OrdinalIgnoreCase); FillItemRuleRows();
         FillClassSettings();
         loadingSettings = false; settingsDialog.Show(); settingsDialog.MoveToFront();
     }
@@ -168,20 +166,22 @@ public partial class Main
     private void CloseSettings()
     {
         if (settingsSaveTimer != null && !settingsSaveTimer.IsStopped() && !SaveSettings()) return;
-        ApplyVolume(preferences.Volume); settingsDialog.Hide();
+        ApplyVolume(preferences.Volume, preferences.SoundEnabled); settingsDialog.Hide();
     }
 
     private bool SaveSettings()
     {
         settingsSaveTimer.Stop();
-        var names = pickupNames.Text.Split(['\n', '\r', ',', '，', ';', '；'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (names.Length > 64 || names.Any(name => name.Length > 40)) { SettingsNotice("保存失败：拣取名单最多64项，每项不超过40字。"); return false; }
-        var next = new ClientPreferences { Volume = (int)volumeSlider.Value, DefaultRun = movementMode.Selected == 1,
+        var next = new ClientPreferences { Volume = (int)volumeSlider.Value, SoundEnabled = soundEnabled.ButtonPressed,
+            DefaultRun = movementMode.ButtonPressed, ShowHealthBars = healthBars.ButtonPressed,
             ShowNpcNames = npcNames.ButtonPressed, ShowMonsterNames = monsterNames.ButtonPressed, ShowItemNames = itemNames.ButtonPressed, CrtFilter = crtFilter.ButtonPressed, CrtStrength = crtStrength.Selected + 1,
+            CrtCurvature = crtCurvature.Selected,
             AutoHp = autoHp.ButtonPressed, HpPercent = (int)hpPercent.Value, AutoMp = autoMp.ButtonPressed, MpPercent = (int)mpPercent.Value,
             AutoRandom = autoRandom.ButtonPressed, RandomPercent = (int)randomPercent.Value, AutoTown = autoTown.ButtonPressed, TownPercent = (int)townPercent.Value,
             NoMonsterRandom = noMonsterRandom.ButtonPressed, AutoRoam = autoRoam.ButtonPressed,
-            AutoPickup = autoPickup.ButtonPressed, PickupWhitelist = pickupMode.Selected == 1, PickupNames = names };
+            AutoPickup = autoPickup.ButtonPressed, PickupWhitelist = preferences.PickupWhitelist, PickupNames = preferences.PickupNames,
+            AutoSell = autoSell.ButtonPressed, SellWhitelist = preferences.SellWhitelist, SellNames = preferences.SellNames,
+            ItemRules = new(itemRuleDraft, StringComparer.OrdinalIgnoreCase) };
         ReadClassSettings(next);
         return PersistSettings(next);
     }
@@ -199,7 +199,7 @@ public partial class Main
             ApplyPreferences(); SettingsNotice("已自动保存。"); return true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { ApplyVolume(preferences.Volume); SettingsNotice("保存失败，更改尚未生效：" + error.Message); return false; }
+        { ApplyVolume(preferences.Volume, preferences.SoundEnabled); SettingsNotice("保存失败，更改尚未生效：" + error.Message); return false; }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
@@ -222,16 +222,27 @@ public partial class Main
     private void ApplyPreferences()
     {
         if (actionTarget != 0 && !autoBattleEnabled) running = preferences.DefaultRun;
-        ApplyVolume(preferences.Volume);
-        World.ShowNpcNames = preferences.ShowNpcNames; World.ShowMonsterNames = preferences.ShowMonsterNames; World.ShowItemNames = preferences.ShowItemNames;
+        ApplyVolume(preferences.Volume, preferences.SoundEnabled);
+        World.ShowHealthBars = preferences.ShowHealthBars;
+        RequestHealthDisplay();
+        World.ShowNpcNames = preferences.ShowNpcNames; World.ShowMonsterNames = preferences.ShowMonsterNames; World.ShowItemNames = preferences.ShowItemNames; World.ItemPreferences = preferences;
         crtOverlay.Visible = preferences.CrtFilter;
         ((ShaderMaterial)crtOverlay.Material).SetShaderParameter("strength", preferences.CrtStrength);
+        ((ShaderMaterial)crtOverlay.Material).SetShaderParameter("curvature", preferences.CrtCurvature);
     }
 
-    private void ApplyVolume(int volume)
+    private void RefreshVolume()
     {
+        var enabled = soundEnabled.ButtonPressed;
+        volumeSlider.Editable = enabled; volumeValue.Text = !enabled || volumeSlider.Value == 0 ? "静音" : $"{volumeSlider.Value:0}%";
+        ApplyVolume((int)volumeSlider.Value, enabled);
+    }
+
+    private void ApplyVolume(int volume, bool enabled)
+    {
+        AudioServer.SetBusMute(AudioServer.GetBusIndex("Master"), !enabled || volume == 0);
         var db = volume == 0 ? -80 : Mathf.LinearToDb(volume / 100f);
-        music.VolumeDb = -20 + db;
-        foreach (var player in effectPlayers) player.VolumeDb = -12 + db;
+        music.VolumeDb = -18 + db;
+        foreach (var player in effectPlayers) player.VolumeDb = -3 + db;
     }
 }

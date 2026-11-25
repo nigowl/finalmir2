@@ -45,6 +45,7 @@ namespace Server.MirEnvir
 
     public class Envir
     {
+        public PublicShopCatalog PublicShopCatalog;
         public static Envir Main { get; } = new Envir();
 
         public static Envir Edit { get; } = new Envir();
@@ -56,7 +57,7 @@ namespace Server.MirEnvir
 
         public const int MinVersion = 60;
         public const int Version = 117;
-        public const int CustomVersion = 2;
+        public const int CustomVersion = 3;
         public static readonly string DatabasePath = Path.Combine(".", "Server.MirDB");
         public static readonly string AccountPath = Path.Combine(".", "Server.MirADB");
         public static readonly string BackUpPath = Path.Combine(".", "Back Up");
@@ -203,7 +204,8 @@ namespace Server.MirEnvir
         public int MonsterCount;
 
         private long warTime, guildTime, conquestTime, rentalItemsTime, auctionTime, spawnTime, robotTime, timerTime;
-        private int dailyTime = DateTime.UtcNow.Day;
+        private const string DailyQuestDayPath = "Server.MengchongDailyDay";
+        private DateTime dailyDate = DateTime.UtcNow.Date;
         private bool MagicExists(Spell spell)
         {
             for (var i = 0; i < MagicInfoList.Count; i++)
@@ -2330,9 +2332,9 @@ namespace Server.MirEnvir
         public void Process()
         {
             for (var count = 0; count < 16 && HostActions.TryDequeue(out var action); count++) action();
-            if (Now.Day != dailyTime)
+            if (Now.Date != dailyDate)
             {
-                dailyTime = Now.Day;
+                dailyDate = Now.Date;
                 ProcessNewDay();
             }
 
@@ -2599,6 +2601,8 @@ namespace Server.MirEnvir
                     DatabaseStorage.Current.Transaction(() =>
                     {
                         DatabaseStorage.Current.Write(AccountPath, memory.ToArray());
+                        if (QuestInfoList.Any(quest => quest.MengchongDaily))
+                            DatabaseStorage.Current.Write(DailyQuestDayPath, BitConverter.GetBytes(dailyDate.Ticks));
                         SaveGuilds(true);
                     });
                 }
@@ -3016,6 +3020,7 @@ namespace Server.MirEnvir
                         RespawnTick = new RespawnTimer(reader);
                 }
                 Settings.LinkGuildCreationItems(ItemInfoList);
+                PublicShopCatalog = Helpers.PublicShopCatalogRules.Load(this);
             }
 
             return true;
@@ -3519,6 +3524,7 @@ namespace Server.MirEnvir
             Connections.Clear();
 
             LoadAccounts();
+            RestoreMengchongDailyDay();
             LoadGuilds();
 
             // Recovery must retain the guild count and both sides of cross-container assets.
@@ -4101,7 +4107,7 @@ namespace Server.MirEnvir
             }
 
 
-            if (!CharacterReg.IsMatch(p.Name))
+            if (string.IsNullOrWhiteSpace(p.Name) || !CharacterReg.IsMatch(p.Name))
             {
                 c.Enqueue(new ServerPackets.NewCharacter { Result = 1 });
                 return;
@@ -4140,7 +4146,7 @@ namespace Server.MirEnvir
 
             lock (AccountLock)
             {
-                if (CharacterExists(p.Name))
+                if (CharacterExists(p.Name) || HeroList.Any(hero => !hero.Deleted && hero.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase)))
                 {
                     c.Enqueue(new ServerPackets.NewCharacter { Result = 5 });
                     return;
@@ -4163,7 +4169,7 @@ namespace Server.MirEnvir
                 return false;
             }
 
-            if (!CharacterReg.IsMatch(p.Name))
+            if (string.IsNullOrWhiteSpace(p.Name) || !CharacterReg.IsMatch(p.Name))
             {
                 c.Enqueue(new S.NewHero { Result = 1 });
                 return false;
@@ -4187,7 +4193,7 @@ namespace Server.MirEnvir
                 return false;
             }
 
-            if (!Settings.Hero_CanCreateClass[(byte)p.Class])
+            if ((byte)p.Class >= Settings.Hero_CanCreateClass.Length || !Settings.Hero_CanCreateClass[(byte)p.Class])
             {
                 c.Enqueue(new S.NewHero { Result = 3 });
                 return false;
@@ -4195,7 +4201,7 @@ namespace Server.MirEnvir
 
             lock (AccountLock)
             {
-                if (CharacterExists(p.Name))
+                if (CharacterExists(p.Name) || HeroList.Any(hero => !hero.Deleted && hero.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase)))
                 {
                     c.Enqueue(new S.NewHero { Result = 5 });
                     return false;
@@ -4956,6 +4962,17 @@ namespace Server.MirEnvir
 
                 c.Player?.CallDefaultNPC(DefaultNPCType.Daily);
             }
+        }
+
+        private void RestoreMengchongDailyDay()
+        {
+            if (DatabaseStorage.Current == null || !DatabaseStorage.Exists(DailyQuestDayPath)) return;
+            using var day = new BinaryReader(DatabaseStorage.OpenRead(DailyQuestDayPath));
+            if (day.ReadInt64() == dailyDate.Ticks) return;
+            // 停服跨天时，按与账户同事务保存的结算日恢复，不清普通任务或在途日常。
+            var daily = QuestInfoList.Where(quest => quest.MengchongDaily).Select(quest => quest.Index).ToHashSet();
+            foreach (var character in CharacterList)
+                character.CompletedQuests.RemoveAll(daily.Contains);
         }
 
         private void ProcessRentedItems()

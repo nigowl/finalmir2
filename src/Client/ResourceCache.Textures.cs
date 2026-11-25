@@ -4,6 +4,12 @@ namespace Crystal.Native;
 
 public sealed partial class ResourceCache
 {
+    internal SpriteImage? CachedSprite(string library, int index)
+    {
+        if (!textures.TryGetValue((library, index), out var image) || image == null) return null;
+        TouchTexture((library, index)); return image;
+    }
+
     internal static Vector2 MeasureBodyCentre(byte[] pixels, int width, int height)
     {
         long xTotal = 0, yTotal = 0, count = 0;
@@ -18,6 +24,24 @@ public sealed partial class ResourceCache
     }
 
     private readonly LinkedList<(string Library, int Index)> textureOrder = new();
+    internal static Vector2 MeasureHeadAnchor(byte[] pixels, int width, int height, Vector2 centre)
+    {
+        var radius = Math.Clamp(width / 8, 3, 10);
+        var from = Math.Max(0, (int)centre.X - radius); var to = Math.Min(width - 1, (int)centre.X + radius);
+        // 只取躯干中线附近的连续实体像素，避免护卫长矛、翅膀和阴影把血条抬到武器顶端。
+        for (var y = 0; y < height; y++)
+        {
+            var count = 0;
+            for (var x = from; x <= to; x++)
+            {
+                var offset = (y * width + x) * 4;
+                if (pixels[offset + 3] >= 200 && Math.Max(pixels[offset], Math.Max(pixels[offset + 1], pixels[offset + 2])) > 16) count++;
+            }
+            if (count >= Math.Min(4, to - from + 1)) return new Vector2(centre.X, y);
+        }
+        return new Vector2(centre.X, 0);
+    }
+
     private readonly Dictionary<(string Library, int Index), LinkedListNode<(string Library, int Index)>> textureNodes = new();
     private long textureBytes, decodeTicks;
     internal long TextureBytes => textureBytes;

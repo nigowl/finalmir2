@@ -29,7 +29,8 @@ internal static class CompanionChecks
         var paths=new ProjectPaths(data:directory,runtime:directory);
         using var storage=new SqliteDatabaseStorage(paths.Database);
         var store=new CompanionStore(storage,new(paths,storage),paths);
-        check(store.Records.Count==0&&!storage.Contains("companions/settings.json"),"只读初始化写入陪玩快照");
+        check(store.Records.Count==0&&!store.Settings.Enabled&&storage.Contains("companions/settings.json")&&storage.Contains("companions/presets.json") &&
+            store.Presets.Length == PersonalityPresets.All.Length,"缺失的版本默认设置或人格未初始化，或自动创建了角色");
         storage.Write("companions/settings.json",JsonSerializer.SerializeToUtf8Bytes(new CompanionEnvelope<CompanionConfiguration>(999,new(new(),"secret",paths.VersionId,now,0))));
         var newer=new CompanionStore(storage,new(paths,storage),paths);
         check(newer.LoadError!=null,"未知陪玩 schema 未阻断写入");

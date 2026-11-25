@@ -65,21 +65,35 @@ public sealed partial class CompanionSession
     }
     private bool Walkable(Point p) => map != null && p.X >= 0 && p.Y >= 0 && p.X < map.Width && p.Y < map.Height &&
         (map.MapCells[p.X,p.Y].BackImage & 0x20000000) == 0 && (map.MapCells[p.X,p.Y].FrontImage & 0x8000) == 0;
-    private Point? Step(Point destination, int near, string goal, bool run)
+    private Point? Step(Point destination, int near, string goal, bool run, bool avoidThreats)
     {
         if (state.User == null) return null;
         var origin = state.User.Location;
         var occupied = state.Actors.Values.Where(a => a.Id != state.User.ObjectID && !a.Dead && !a.Hidden && a.Kind is not (ObjectType.Item or ObjectType.Spell)).Select(a => a.Location).ToHashSet();
-        foreach(var exit in Knowledge?.Exits ?? [])
-            if(near > 0 || new Point(exit.X,exit.Y)!=destination)occupied.Add(new(exit.X,exit.Y));
+        if(avoidThreats&&Knowledge!=null)
+        {
+            var now=Environment.TickCount64;
+            // 缺药筹资不能等到走进强怪近身范围才绕路。
+            foreach(var enemy in Knowledge.Enemies??[])
+                if((!enemy.Suitable||now-monsterAttackers.GetValueOrDefault(enemy.ObjectId,long.MinValue/2)<5000)&&
+                    state.Actors.GetValueOrDefault(enemy.ObjectId) is {Kind:ObjectType.Monster,Dead:false,Hidden:false,MasterObjectId:0} threat)
+                {
+                    // shortcut: 筹资以8格作可见危险缓冲，待有实际追击范围时再按怪物区分。
+                    var radius = Funding ? 8 : 1;
+                    for (var x = -radius; x <= radius; x++)
+                        for (var y = -radius; y <= radius; y++)
+                            occupied.Add(new(threat.Location.X + x, threat.Location.Y + y));
+                }
+        }
+        occupied.UnionWith(CompanionSafety.BlockingExits(Knowledge?.Exits ?? [],destination,near));
         return navigation.Next(origin, destination, near, Walkable, occupied, goal, run);
     }
-    private async Task<bool> MoveTo(Point destination, int near = 0, string goal = "", bool run = false)
+    private async Task<bool> MoveTo(Point destination, int near = 0, string goal = "", bool run = false, bool avoidThreats = false)
     {
         if (state.User == null || Distance(state.User.Location, destination) <= near) return false;
         var now = Environment.TickCount64;
         if (unreachable.GetValueOrDefault(destination) > now) return false;
-        var step = Step(destination, near, goal, run && CompanionSafety.CanRun(state,now,lastMoved));
+        var step = Step(destination, near, goal, run && CompanionSafety.CanRun(state,now,lastMoved),avoidThreats);
         if (step != null)
         {
             var direction=Direction(state.User.Location,step.Value);var distance=Distance(state.User.Location,step.Value);
@@ -89,7 +103,7 @@ public sealed partial class CompanionSession
                 if(door!=0)await connection.Send(new C.Opendoor{DoorIndex=door});
             }
             await connection.Send(distance==2?new C.Run { Direction=direction }:new C.Walk { Direction=direction });
-            moveDestination=step.Value;moving = true; moveSent = now; nextAction = now + 650; return true;
+            moveDestination=step.Value;moving = true; moveSent = now; nextAction = now + Math.Max(650, state.Me!.MoveDelay); return true;
         }
         unreachable[destination] = now + 15000;
         if (unreachable.Count > 128) unreachable.Clear();

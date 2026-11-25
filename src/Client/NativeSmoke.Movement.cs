@@ -69,7 +69,7 @@ public partial class NativeSmoke
         }
         void Mode(bool run)
         {
-            var settings = SettingsPanel(); SelectSetting((OptionButton)settings.FindChild("MovementMode", true, false), run ? 1 : 0);
+            var settings = SettingsPanel(); ((CheckBox)settings.FindChild("MovementMode", true, false)).ButtonPressed = run;
             CloseSettingsPanel(settings);
         }
         await Place(3); Mode(false); Client.SetDestination(start, true);

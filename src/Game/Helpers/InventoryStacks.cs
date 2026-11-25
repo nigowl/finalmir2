@@ -2,7 +2,9 @@ namespace Server.Helpers;
 
 public static class InventoryStacks
 {
-    public static bool CanAdd(UserItem[] inventory, IEnumerable<UserItem> items)
+    public static bool CanAdd(UserItem[] inventory, IEnumerable<UserItem> items) => AfterAdding(inventory, items) != null;
+
+    public static UserItem[] AfterAdding(UserItem[] inventory, IEnumerable<UserItem> items)
     {
         var slots = inventory.Select(item => item?.Clone()).ToArray();
         foreach (var item in items.Where(item => item != null))
@@ -17,10 +19,10 @@ public static class InventoryStacks
             }
             if (remaining.Count == 0) continue;
             var index = Array.IndexOf(slots, null);
-            if (index < 0) return false;
+            if (index < 0) return null;
             slots[index] = remaining;
         }
-        return true;
+        return slots;
     }
 
     public static void Compact(UserItem[] inventory)

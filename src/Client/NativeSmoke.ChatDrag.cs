@@ -44,7 +44,7 @@ public partial class NativeSmoke
         if (bar.Value != reading) throw new Exception("A new message displaced the chat history being read.");
         point = handle.GetGlobalRect().GetCenter(); await MoveMouse(point); MouseButtonAt(point, true);
         await MoveMouse(point - new Vector2(0, 200), true); MouseButtonAt(point - new Vector2(0, 200), false);
-        if (frame.Size != new Vector2(629, 136) || frame.Position != new Vector2(230, 600) || input.GetRect() != inputRect || quickBars.Position != new Vector2(0, -68))
+        if (frame.Size != new Vector2(629, 136) || frame.Position != new Vector2(230, 600) || input.GetRect() != inputRect || quickBars.Position != new Vector2(0, -92))
             throw new Exception($"Top resize exceeded twice the original height or moved the fixed input/bottom edge: frame={frame.GetRect()}, handle={handle.GetRect()}, input={input.GetRect()} vs {inputRect}.");
         if (quickBars.GetChildren().OfType<SkillIconButton>().Any(button => button.GetGlobalRect().End.Y >= frame.Position.Y))
             throw new Exception("拖高聊天框时技能快捷栏没有同步上移。");
@@ -57,7 +57,7 @@ public partial class NativeSmoke
         await Screenshot("chat-expanded");
         point = handle.GetGlobalRect().GetCenter(); await MoveMouse(point); MouseButtonAt(point, true);
         await MoveMouse(point + new Vector2(0, 300), true); MouseButtonAt(point + new Vector2(0, 300), false);
-        if (frame.Size != new Vector2(629, 68) || frame.Position != new Vector2(230, 668) || quickBars.Position != Vector2.Zero) throw new Exception("Chat shrank below its original height or shortcut bars did not return.");
+        if (frame.Size != new Vector2(629, 68) || frame.Position != new Vector2(230, 668) || quickBars.Position != new Vector2(0, -24)) throw new Exception("Chat shrank below its original height or shortcut bars did not return.");
         point = frame.GetRect().End - Vector2.One; await MoveMouse(point); MouseButtonAt(point, true);
         await MoveMouse(point - new Vector2(0, 35), true); MouseButtonAt(point - new Vector2(0, 35), false);
         if (frame.Size.Y != 68) throw new Exception("Dragging the bottom resized chat.");

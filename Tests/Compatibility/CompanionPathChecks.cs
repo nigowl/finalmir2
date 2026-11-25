@@ -40,7 +40,10 @@ internal static class CompanionPathChecks
         MovingGoalChecks(check);
         var retreat=CompanionSafety.Retreat(new(5,5),[new(5,6)],point=>point.X>=4&&point.X<=6&&point.Y>=4&&point.Y<=6,new HashSet<Point>{new(5,4)});
         check(retreat is { Y:4 }&&retreat!=new Point(5,4),"撤退没有避开占格并远离近身怪物");
-        check(CompanionSafety.Retreat(new(5,5),[new(5,6)],point=>point.Y>=5,new HashSet<Point>())==null,"撤退受阻时反而向怪物绕行");
+        var corner=new HashSet<Point>{new(5,5),new(6,5),new(7,4),new(8,3)};
+        check(CompanionSafety.Retreat(new(5,5),[new(5,6)],corner.Contains,new HashSet<Point>())==new Point(6,5),"转角有安全退路却因首步距离相同而原地反击");
+        check(CompanionSafety.Retreat(new(5,5),[new(5,6)],point=>point==new Point(5,5)||point==new Point(6,5),new HashSet<Point>())==null,"没有后续退路时仍沿等距格反复移动");
+        check(CompanionSafety.Retreat(new(5,5),[new(5,7)],point=>point==new Point(5,5)||point==new Point(6,6)||point==new Point(7,7),new HashSet<Point>())==null,"为了远处落点先走近攻击者");
         var flank=CompanionSafety.Retreat(new(5,5),[new(5,6),new(5,4)],_=>true,new HashSet<Point>{new(5,6),new(5,4)});
         check(flank.HasValue && flank.Value.Y!=5 && flank.Value.X!=5 &&
             new[]{new Point(5,6),new Point(5,4)}.Count(p=>Functions.MaxDistance(p,flank.Value)<=1)==1,"被夹击时没有选择可减少近身攻击者的空格");

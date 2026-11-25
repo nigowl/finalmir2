@@ -573,7 +573,7 @@ const server = process.env.MIR2_SERVER;
         for (const tab of ['战斗平衡','状态效果','怪物平衡']) { await page.getByRole('tab',{name:tab,exact:true}).click(); await expect(page.locator('.settings-summary tbody tr').first()).toBeVisible(); }
         await page.screenshot({path:path.join(root,'balance-settings.png'),fullPage:true,animations:'disabled'});
         console.log('PASS six settings tabs, classic classes only, child-field dirty protection/cancel, confirmed balance save and live values.');
-        for(const route of ['/','/accounts','/characters','/guilds','/population','/npcs','/resources','/development','/settings','/companions']){
+        for(const route of ['/','/accounts','/characters','/guilds','/population','/npcs','/resources','/development','/settings','/companions','/shop']){
             await page.goto(admin+route);await expect(page.getByRole('heading',{level:1})).toBeVisible();
             await require('./style.cjs')(page);
         }

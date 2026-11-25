@@ -61,6 +61,10 @@ internal static class CompanionGuildScenario
             character.CurrentMapIndex = local.Index; character.CurrentLocation = start; character.Level = 22;
             character.HP = 250; character.MP = 90; character.Experience = 0; character.AccountInfo.Gold = character == founder ? 1500u : 1000u;
             character.Inventory = new UserItem[46]; character.Equipment = new UserItem[14]; character.CurrentQuests.Clear(); character.CompletedQuests.Clear();
+            // 建会专项先备好原药卷，避免公共补给合法扣费干扰建会费用断言。
+            var medicine=world.ItemInfoList.First(item=>item.Type==ItemType.Potion&&item.Shape is 0 or 1&&item.Stats[Stat.HP]>0&&item.StackSize>=15);
+            character.Inventory[1]=world.CreateFreshItem(medicine);character.Inventory[1].Count=15;
+            character.Inventory[2]=world.CreateFreshItem(world.ItemInfoList.First(item=>item.Type==ItemType.Scroll&&item.Shape==1));
             var blade = new ItemInfo { Index = ++world.ItemIndex, Name = "NativeGuildBlade" + character.Index, Type = ItemType.Weapon, Durability = 5000,
                 Stats = new Stats { [Stat.MinDC] = 10, [Stat.MaxDC] = 10 } };
             world.ItemInfoList.Add(blade); character.Equipment[0] = world.CreateFreshItem(blade);

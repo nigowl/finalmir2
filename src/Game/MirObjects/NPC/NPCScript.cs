@@ -1206,7 +1206,12 @@ namespace Server.MirObjects
                 item.UniqueID = Envir.CreateFreshItem(goods.Info).UniqueID;
             item.Count = count;
 
-            if (!player.CanGainItem(item)) { player.ReceiveChat("购买失败：背包空间或负重不足。", ChatType.System); return; }
+            if (!player.CanGainItem(item))
+            {
+                var bag = item.Info.Type == ItemType.Quest ? player.Info.QuestInventory : player.Info.Inventory;
+                player.ReceiveChat($"购买失败：{(item.Info.Type == ItemType.Quest ? "任务物品栏" : "背包")}空间不足（已用 {bag.Count(slot => slot != null)}/{bag.Length} 格），且无法合堆。", ChatType.System);
+                return;
+            }
 
             if (player.NPCPage.Key.ToUpper() == PearlBuyKey)
             {

@@ -53,6 +53,45 @@ public partial class NativeSmoke
         finally { State.Actors.Remove(id); Client.World.EffectFrameDrawn -= Drawn; }
     }
 
+    private async Task VerifyShinsuFrames()
+    {
+        stage = "Shinsu appearance, transformation, breath and death frames";
+        const uint id = 0x70001001;
+        var at = State.User!.Location;
+        const MirDirection direction = MirDirection.Down;
+        var breath = OriginalSpellEffects.ShinsuBreath(direction, 100);
+        var drawn = new HashSet<int>();
+        void Drawn(string library, int frame) { if (library == breath.Library) drawn.Add(frame); }
+        Client.World.EffectFrameDrawn += Drawn;
+        try
+        {
+            State.Apply(new S.ObjectMonster { ObjectID = id, Image = Monster.Shinsu, Name = "神兽", Location = new(at.X - 1, at.Y - 1), Direction = direction });
+            var pet = State.Actors[id];
+            async Task CheckClip(string library, MirAction action, int count)
+            {
+                Frame? clip = null;
+                await Until(() => { clip = Client.Assets.Frames(library)?.Frames.GetValueOrDefault(action); return clip != null && Client.Assets.PrepareAnimation(library, clip, direction); });
+                var present = Enumerable.Range(0, count).Select(i => pet.ActionTime + clip!.Interval * i)
+                    .Select(time => Client.World.ActorBody(pet, time)?.Texture.GetInstanceId()).ToArray();
+                if (clip!.Count != count || present.Any(frame => frame == null) || present.Distinct().Count() != count)
+                    throw new Exception($"神兽动作 {action} 未逐帧使用 {library} 的 {count} 张素材。");
+            }
+            await CheckClip("Monster/079", MirAction.Appear, 10);
+            State.Apply(new S.ObjectShow { ObjectID = id });
+            await CheckClip("Monster/079", MirAction.Show, 10);
+            await Until(() => Enumerable.Range(breath.Index, breath.Count).All(frame => Client.Assets.PrepareSprite(breath.Library, frame)));
+            var attack = new S.ObjectAttack { ObjectID = id, Location = pet.Location, Direction = direction };
+            State.Apply(attack); Client.World.SpellPacket(attack);
+            await CheckClip("Monster/080", MirAction.Attack1, 6);
+            await Until(() => Enumerable.Range(breath.Index, breath.Count).All(drawn.Contains));
+            State.Apply(new S.ObjectDied { ObjectID = id, Location = pet.Location, Direction = direction });
+            await CheckClip("Monster/080", MirAction.Die, 10);
+            if (Client.World.ActorBody(pet, pet.ActionTime + 1000) != null) throw new Exception("神兽死亡动作没有在最后一帧后结束。");
+            GD.Print("PASS native Shinsu: ten appear, ten transform, six attack, six rendered breath, ten death frames and no lingering corpse.");
+        }
+        finally { State.Actors.Remove(id); Client.World.EffectFrameDrawn -= Drawn; }
+    }
+
     private async Task ProfileActors()
     {
         var added = new List<uint>();
@@ -78,7 +117,7 @@ public partial class NativeSmoke
                 intervals.Add(System.Diagnostics.Stopwatch.GetElapsedTime(previous, now).TotalMilliseconds); draws.Add(Client.World.LastDrawMilliseconds); previous = now;
             }
             intervals.Sort(); draws.Sort();
-            GD.Print($"PROFILE actors={State.Actors.Count}, fps={1000 / intervals.Average():F1}, frame p50/p95/p99={intervals[120]:F2}/{intervals[228]:F2}/{intervals[237]:F2}ms, world CPU p50/p95={draws[120]:F2}/{draws[228]:F2}ms, allocation={(GC.GetTotalAllocatedBytes()-bytes)/1048576d:F2}MiB/240frames, disk={Client.Assets.CachedFiles-disk}, downloads={Client.Assets.Downloads-downloads}.");
+            GD.Print($"PROFILE actors={State.Actors.Count}, fps={1000 / intervals.Average():F1}, frame p50/p95/p99={intervals[120]:F2}/{intervals[228]:F2}/{intervals[237]:F2}ms, world CPU p50/p95={draws[120]:F2}/{draws[228]:F2}ms, allocation={(GC.GetTotalAllocatedBytes()-bytes)/1048576d:F2}MiB/240frames, disk={Client.Assets.CachedFiles-disk}, downloads={Client.Assets.Downloads-downloads}, textures={Client.Assets.TextureCount}/{Client.Assets.TextureBytes/1048576d:F1}MiB, evictions={Client.Assets.TextureEvictions}.");
             await Screenshot("actors-profile");
         }
         finally { foreach (var id in added) State.Actors.Remove(id); }

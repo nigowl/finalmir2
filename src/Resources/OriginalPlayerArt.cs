@@ -7,11 +7,16 @@ public static class OriginalPlayerArt
     public static int SelectionStart(MirClass role, MirGender gender) => role == MirClass.Archer ? (gender == MirGender.Male ? 100 : 160) :
         20 + (int)role * 20 + (gender == MirGender.Female ? 280 : 0);
     public static bool HasBow(MirClass @class, int weapon) => @class == MirClass.Archer && weapon / Globals.ClassWeaponCount == 2;
-    public static MirAction Animation(MirClass @class, int weapon, MirAction action) => HasBow(@class, weapon) ? action switch
-    { MirAction.Walking => MirAction.WalkingBow, MirAction.Running => MirAction.RunningBow, _ => action } : action;
+    public static MirAction Animation(MirClass @class, int weapon, MirAction action)
+    {
+        if (action == MirAction.Pushed) action = MirAction.Walking;
+        return HasBow(@class, weapon) ? action switch
+        { MirAction.Walking => MirAction.WalkingBow, MirAction.Running => MirAction.RunningBow, _ => action } : action;
+    }
 
     public static PlayerArt Resolve(MirClass @class, MirGender gender, int armour, int hair, int weapon, MirAction action)
     {
+        if (action == MirAction.Pushed) action = MirAction.Walking;
         var assassinWeapon = @class == MirClass.Assassin && weapon / Globals.ClassWeaponCount == 1;
         var assassin = @class == MirClass.Assassin && (assassinWeapon || weapon < 0) && action is MirAction.Standing or MirAction.Stance
             or MirAction.Walking or MirAction.Running or MirAction.Die or MirAction.Dead or MirAction.Struck or MirAction.Attack1

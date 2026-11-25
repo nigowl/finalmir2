@@ -5,13 +5,15 @@ public static class CompanionInventoryRules
 {
     public static int UpgradeSlot(UserItem item, IReadOnlyList<UserItem?> equipment, MirClass role, bool caster)
     {
+        if (MagicBloodStone.IsStone(item.Info))
+            return equipment.Count > 3 && MagicBloodStone.Remaining(item) > MagicBloodStone.Remaining(equipment[3]) ? 3 : -1;
         int[] slots = item.Info.Type switch
         {
             ItemType.Weapon => [0], ItemType.Armour => [1], ItemType.Helmet => [2], ItemType.Torch => [3],
             ItemType.Necklace => [4], ItemType.Bracelet => [5, 6], ItemType.Ring => [7, 8],
             ItemType.Amulet => [9], ItemType.Belt => [10], ItemType.Boots => [11], ItemType.Stone => [12], _ => []
         };
-        return slots.Where(slot => slot < equipment.Count && (equipment[slot] == null ||
+        return slots.Where(slot => slot < equipment.Count && (equipment[slot] == null || !MagicBloodStone.IsStone(equipment[slot]!.Info) &&
                 EquipmentValue(item, role, caster) > EquipmentValue(equipment[slot]!, role, caster)))
             .OrderBy(slot => equipment[slot] == null ? int.MinValue : EquipmentValue(equipment[slot]!, role, caster))
             .DefaultIfEmpty(-1).First();
@@ -37,6 +39,7 @@ public static class CompanionInventoryRules
 
     public static int EquipmentValue(UserItem item, MirClass role, bool caster)
     {
+        if (MagicBloodStone.IsStone(item.Info)) return MagicBloodStone.Remaining(item);
         var attack = caster && role is MirClass.Wizard or MirClass.Archer ? Stat.MaxMC : caster && role == MirClass.Taoist ? Stat.MaxSC : Stat.MaxDC;
         return item.Info.Stats[attack] * 5 + item.AddedStats[attack] * 5 + item.Info.Stats[Stat.MaxAC] * 2 + item.Info.Stats[Stat.MaxMAC] * 2 + item.Info.Stats[Stat.HP] / 5;
     }
