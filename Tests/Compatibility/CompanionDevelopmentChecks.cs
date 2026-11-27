@@ -108,6 +108,15 @@ internal static class CompanionDevelopmentChecks
             Server.Settings.ExpMobLevelDifference=true;
             check(player.ReduceExp(chicken.Experience,chicken.Level)==1,"练级检查没有复现原等级差经验衰减");
             check(CompanionPlanning.Choose(player,profile)?.MonsterIds?.SequenceEqual(new[]{2})==true,"普通练级只看最近，继续围着1经验怪转");
+            check(CompanionPlanning.Choose(player,profile,new HashSet<string>{"combat/2"})?.MonsterIds?.SequenceEqual(new[]{1})==true,
+                "实战不适合的目标没有跨刷新点排除并退回低级怪");
+            check(CompanionPlanning.Choose(player,profile)?.MonsterIds?.SequenceEqual(new[]{2})==true,"排除到期后没有恢复高收益练级目标");
+            var normalSpawns=map.Info.Respawns;
+            map.Info.Respawns=Enumerable.Repeat(new RespawnInfo{MonsterIndex=2,Count=1,Location=new(1,2)},32)
+                .Append(new RespawnInfo{MonsterIndex=2,Count=1,Location=new(5,5)}).ToList();
+            check(CompanionPlanning.Choose(player,profile,new HashSet<string>{"hunt/701/1/2/2/0"}) is {Key:"hunt/701/5/5/2/0"},
+                "前32个已排除刷新点仍占满候选预算，遗漏后续可行目标");
+            map.Info.Respawns=normalSpawns;
             map.Info.NoExperience=true;check(CompanionPlanning.Choose(player,profile)==null,"普通练级选择禁止经验地图");map.Info.NoExperience=false;
             world.MapInfoList.Add(remote.Info);world.MapList.Add(remote);
             map.Info.Movements.Add(new(){MapIndex=remote.Info.Index,Source=new(6,6)});

@@ -86,6 +86,7 @@ public partial class Main
 
     private void ProcessActions()
     {
+        if (appraisalPending != null || selectingAppraisalScroll != 0) return;
         ProcessKeyboardMovement();
         var me = State.Me; var user = State.User;
         if (me == null || user == null || me.Dead || World.Loading || World.Map == null || !HandshakeReady || npcInput.Visible) return;
@@ -98,6 +99,7 @@ public partial class Main
             if (now - moveTime >= 3000) StopTimedOutMove(now, "服务端未确认移动，请重新选择目标。");
             return;
         }
+        if (pendingDrop != 0 || dropDialog.Visible) return;
         if (State.Actors.GetValueOrDefault(actionTarget) is { Kind: ObjectType.Item } loot && loot.Location == user.Location)
         { PickUpTarget(loot); return; }
         if (ActionInProgress(me, now, true) || (me.Poison & (PoisonType.Paralysis | PoisonType.LRParalysis | PoisonType.Frozen)) != 0) return;

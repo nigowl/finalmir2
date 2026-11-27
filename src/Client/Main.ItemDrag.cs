@@ -76,7 +76,7 @@ public partial class Main
     private void InventoryDragInput(InputEvent input)
     {
         if (input is InputEventMouseMotion motion) itemDragPosition = motion.Position;
-        if (SkillPreparationBusy || heroItemPending != null) return;
+        if (SkillPreparationBusy || heroItemPending != null || appraisalPending != null) return;
         if (input is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mouse || State.User == null || scene != "game") return;
         itemDragPosition = mouse.Position;
         if (mouse.Pressed)
@@ -84,6 +84,8 @@ public partial class Main
             var hovered = GetViewport().GuiGetHoveredControl();
             var source = inventorySlots.FirstOrDefault(pair => pair.button == hovered && pair.button.IsVisibleInTree() && pair.button.GetGlobalRect().HasPoint(mouse.Position));
             if (source.button == null) return;
+            if (selectingAppraisalScroll != 0)
+            { if (!appraisalScrollDialog.Visible) SelectAppraisalEquipment(State.User.Inventory.ElementAtOrDefault(source.slot)); GetViewport().SetInputAsHandled(); return; }
             inventoryDragSource = source.slot; itemDragStart = mouse.Position;
             inventoryDragShortcut = IsItemShortcut(source.button);
             draggedItem = State.User.Inventory.ElementAtOrDefault(source.slot)?.UniqueID ?? 0;
@@ -129,7 +131,13 @@ public partial class Main
     {
         if (pendingDrop != 0 || State.Trading || State.Me?.Dead != false || World.Loading || MiniMap.Expanded ||
             position.X < 0 || position.X >= 1024 || position.Y < 0 || position.Y >= 616 || GetViewport().GuiGetHoveredControl() != null) return;
-        var item = State.User?.Inventory.FirstOrDefault(item => item?.UniqueID == id);
+        PrepareItemDrop(id);
+    }
+
+    private void PrepareItemDrop(ulong id)
+    {
+        if (pendingDrop != 0 || heroItemPending != null || appraisalPending != null || State.Trading || State.Me?.Dead != false) return;
+        var item = State.User?.Inventory.Concat(State.User.QuestInventory).FirstOrDefault(item => item?.UniqueID == id);
         if (item?.Info == null || automation.PendingItem == id || recyclePending?.UniqueID == id) return;
         if (item.Info.Bind.HasFlag(BindMode.DontDrop) || item.RentalInformation?.BindingFlags.HasFlag(BindMode.DontDrop) == true)
         { Log("该物品不能丢弃。"); return; }
@@ -141,7 +149,7 @@ public partial class Main
 
     private void ConfirmItemDrop()
     {
-        var item = State.User?.Inventory.FirstOrDefault(item => item?.UniqueID == dropCandidate);
+        var item = State.User?.Inventory.Concat(State.User.QuestInventory).FirstOrDefault(item => item?.UniqueID == dropCandidate);
         if (dropForHero != HeroInventoryContext) return;
         if (item == null || pendingDrop != 0 || heroItemPending != null || State.Trading || State.Me?.Dead != false || automation.PendingItem == item.UniqueID || recyclePending?.UniqueID == item.UniqueID) return;
         var count = (ushort)Math.Clamp(dropCount.Value, 1, Math.Min(item.Count, ushort.MaxValue));

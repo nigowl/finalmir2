@@ -9,6 +9,7 @@ public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHost
 {
     private readonly SemaphoreSlim lifecycle = new(1);
     private readonly Stopwatch uptime = Stopwatch.StartNew();
+    private int generation;
     public SemaphoreSlim Changes { get; } = new(1);
     public int GamePort { get; private set; } = 7000;
     public bool Ready => Envir.Main.Running && Envir.Main.NetworkStarted;
@@ -21,39 +22,57 @@ public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHost
     public async Task Start(CancellationToken cancellation)
     {
         await lifecycle.WaitAsync(cancellation);
-        try
-        {
-            if (Ready) return;
-            Stopping = false;
-            Settings.MapPath = Path.Combine(paths.Assets, "maps");
-            Settings.Load();
-            Settings.IPAddress = Environment.GetEnvironmentVariable("MIR2_BIND_ADDRESS") ?? "127.0.0.1";
-            Settings.Port = ushort.Parse(Environment.GetEnvironmentVariable("MIR2_GAME_PORT") ?? Settings.Port.ToString());
-            Settings.CheckVersion = Settings.StartHTTPService = Settings.Multithreaded = false;
-            Settings.AllowStartGame = true; GamePort = Settings.Port;
-            var environment = Envir.Main; environment.StatusPortEnabled = false; environment.Start();
-            var deadline = Stopwatch.StartNew();
-            while (!Ready && environment.Running && deadline.Elapsed < TimeSpan.FromMinutes(2)) await Task.Delay(100, cancellation);
-            if (!Ready) throw new InvalidOperationException("游戏引擎启动失败：" + string.Join(Environment.NewLine,
-                MessageQueue.Instance.MessageLog.Concat(MessageQueue.Instance.DebugLog).TakeLast(8)));
-            Console.WriteLine($"Game server ready on {Settings.IPAddress}:{GamePort}.");
-        }
+        try { await StartCore(); }
         finally { lifecycle.Release(); }
+    }
+    private async Task StartCore()
+    {
+        if (Ready) return;
+        Stopping = false;
+        Settings.MapPath = Path.Combine(paths.Assets, "maps");
+        Settings.Load();
+        Settings.IPAddress = Environment.GetEnvironmentVariable("MIR2_BIND_ADDRESS") ?? "127.0.0.1";
+        Settings.Port = ushort.Parse(Environment.GetEnvironmentVariable("MIR2_GAME_PORT") ?? Settings.Port.ToString());
+        Settings.CheckVersion = Settings.StartHTTPService = Settings.Multithreaded = false;
+        Settings.AllowStartGame = true; GamePort = Settings.Port;
+        var environment = Envir.Main; environment.StatusPortEnabled = false; environment.Start();
+        var deadline = Stopwatch.StartNew();
+        while (!Ready && environment.Running && deadline.Elapsed < TimeSpan.FromMinutes(2)) await Task.Delay(100);
+        if (!Ready)
+        {
+            await Task.Run(environment.Stop);
+            throw new InvalidOperationException("游戏引擎启动失败：" + string.Join(Environment.NewLine,
+                MessageQueue.Instance.MessageLog.Concat(MessageQueue.Instance.DebugLog).TakeLast(8)), environment.LastError);
+        }
+        Console.WriteLine($"Game server ready on {Settings.IPAddress}:{GamePort}.");
     }
     public async Task Stop(CancellationToken cancellation)
     {
         await lifecycle.WaitAsync(cancellation);
-        try
-        {
-            Stopping = true;
-            try { if (BeforeStop != null) await BeforeStop(); }
-            finally { await Task.Run(() => Envir.Main.Stop(), CancellationToken.None); LastSave = DateTimeOffset.UtcNow; }
-        }
+        try { await StopCore(); }
         finally { lifecycle.Release(); }
     }
-    public async Task<T> Invoke<T>(Func<T> action, CancellationToken cancellation = default)
+    private async Task StopCore()
     {
-        if (!Ready) throw new InvalidOperationException("游戏引擎未运行。");
+        Stopping = true;
+        try
+        {
+            if (Ready)
+            {
+                await Invoke(() => { Envir.Main.SaveAll(); return true; }, allowStopping: true);
+                LastSave = DateTimeOffset.UtcNow;
+            }
+            if (BeforeStop != null) await BeforeStop();
+            Interlocked.Increment(ref generation);
+            await Task.Run(() => Envir.Main.Stop());
+            if (Envir.Main.LastError != null) throw new InvalidOperationException("游戏引擎退出失败，请检查引擎日志；未执行重新启动。", Envir.Main.LastError);
+        }
+        catch { if (Ready) Stopping = false; throw; }
+    }
+    public async Task<T> Invoke<T>(Func<T> action, CancellationToken cancellation = default, bool allowStopping = false)
+    {
+        if (!Ready || Stopping && !allowStopping) throw new InvalidOperationException("游戏引擎未运行或正在停止，请稍后重试。");
+        var queuedGeneration = Volatile.Read(ref generation);
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(20));
         var token = timeout.Token; var state = 0;
@@ -65,26 +84,39 @@ public sealed class GameRuntime(ProjectPaths paths, AssetCatalog assets) : IHost
         {
             // Cancellation can remove queued work, but must not detach an active save.
             if (Interlocked.CompareExchange(ref state, 1, 0) != 0) return;
-            try { completion.TrySetResult(action()); } catch (Exception error) { completion.TrySetException(error); }
+            try
+            {
+                if (!Ready || queuedGeneration != Volatile.Read(ref generation) || Stopping && !allowStopping)
+                    throw new InvalidOperationException("游戏引擎正在切换，请刷新后重试。");
+                completion.TrySetResult(action());
+            }
+            catch (Exception error) { completion.TrySetException(error); }
         });
         return await completion.Task;
     }
     public async Task Save(CancellationToken cancellation)
     {
-        await Invoke(() => { Envir.Main.SaveAll(); return true; }, cancellation); LastSave = DateTimeOffset.UtcNow;
+        await lifecycle.WaitAsync(cancellation);
+        try { await Invoke(() => { Envir.Main.SaveAll(); return true; }); LastSave = DateTimeOffset.UtcNow; }
+        finally { lifecycle.Release(); }
     }
-    public async Task Restart(CancellationToken cancellation) { await Stop(cancellation); await Start(cancellation); }
+    public async Task Restart(CancellationToken cancellation)
+    {
+        await lifecycle.WaitAsync(cancellation);
+        try { await StopCore(); await StartCore(); }
+        finally { lifecycle.Release(); }
+    }
     public async Task<ServerStatus> Status(CancellationToken cancellation)
     {
-        var data = Ready ? await Invoke(() => new
+        var data = Ready && !Stopping ? await Invoke(() => new
         {
             Counts = new WorldCounts(Envir.Main.MapList.Count, Envir.Main.ItemInfoList.Count, Envir.Main.MonsterInfoList.Count, Envir.Main.NPCInfoList.Count, Envir.Main.QuestInfoList.Count, Envir.Main.AccountList.Count),
-            Players = Envir.Main.Players.Select(p => new PlayerStatus(p.Name, p.Class.ToString(), p.Level, p.CurrentMap?.Info.Title ?? "", p.CurrentLocation.X, p.CurrentLocation.Y,
+            Players = Envir.Main.Players.OrderBy(p => p.Info.Index).Select(p => new PlayerStatus(p.Name, p.Class.ToString(), p.Level, p.CurrentMap?.Info.Title ?? "", p.CurrentLocation.X, p.CurrentLocation.Y,
                 p.GroupMembers?.FirstOrDefault()?.Name ?? "", p.GroupMembers?.Count ?? 0, p.TradePartner?.Name ?? "", p.TradeLocked, p.MyGuild?.Name ?? "", p.MyGuildRank?.Name ?? "")).ToArray(),
             Objects = Envir.Main.Objects.Count
         }, cancellation) : null;
         using var process = Process.GetCurrentProcess();
-        return new(Envir.Main.Running, Ready, Environment.ProcessId, uptime.Elapsed.TotalSeconds, process.WorkingSet64 / 1048576d,
+        return new(Envir.Main.Running, Ready && !Stopping, Environment.ProcessId, uptime.Elapsed.TotalSeconds, process.WorkingSet64 / 1048576d,
             process.TotalProcessorTime.TotalSeconds, Envir.LastRunTime, data?.Objects ?? 0, data?.Counts ?? new(0, 0, 0, 0, 0, 0), data?.Players ?? [],
             assets.Version, assets.Files.Length, assets.Files.Sum(f => f.Size), paths.Database, LastSave, DateTimeOffset.UtcNow);
     }

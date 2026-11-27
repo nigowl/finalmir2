@@ -44,7 +44,7 @@ public static class CompanionPlanning
         return routes;
     }
 
-    public static KnownGoal? Choose(PlayerObject player, CompanionProfile profile, ISet<string>? blocked = null, KnownGoal? guildGoal = null, KnownGoal? previousGoal = null, Lazy<ILookup<Map, MapObject>>? objectsByMap = null)
+    public static KnownGoal? Choose(PlayerObject player, CompanionProfile profile, ISet<string>? blocked = null, KnownGoal? guildGoal = null, KnownGoal? previousGoal = null, Lazy<ILookup<Map, MapObject>>? objectsByMap = null, List<KnownGoal>? taskChoices = null, int preferredQuest = 0)
     {
         var world = Envir.Main;
         objectsByMap ??= new(() => world.Objects.ToLookup(entity => entity.CurrentMap));
@@ -56,7 +56,8 @@ public static class CompanionPlanning
         KnownGoal NpcGoal(string kind, QuestInfo quest, NPCObject npc) => new(kind, npc.CurrentMap.Info.Index,
             npc.CurrentLocation.X, npc.CurrentLocation.Y, $"{(kind == "turn-in" ? "交付" : "接取")}任务“{quest.Name}”：{npc.Name}", quest.Index, npc.ObjectID,
             NextExit: routes[npc.CurrentMap.Info.Index], Key:$"{kind}/{quest.Index}/{npc.ObjectID}");
-        if (CompanionPublicServices.Choose(player, profile, blocked) is { } publicSupply) return publicSupply;
+        if (CompanionPublicServices.Choose(player, profile, blocked,
+            savingGuild:guildGoal?.Kind == "guild-fund" || guildGoal?.Key is "public-guild-material" or "fund/guild-material-wait") is { } publicSupply) return publicSupply;
         if (CompanionInventory.Choose(player, npcs, routes, blocked, true) is { } recycle) return recycle;
         if (CompanionStorage.Choose(player, npcs, routes, blocked) is { } deposit) return deposit;
         if (CompanionInventory.Choose(player, npcs, routes, blocked) is { } unload) return unload;
@@ -66,7 +67,8 @@ public static class CompanionPlanning
         if (CompanionSupplies.Choose(player, profile, npcs, routes, blocked) is { } supply) return supply;
         if (CompanionRepairs.Choose(player, npcs, routes, blocked) is { } repair) return repair;
         var needsFunds=CompanionSupplies.NeedsFunds(player,profile,npcs);
-        var supplyBlocked=CompanionSupplyRules.NeedsRefill(player.Info.Inventory,Stat.HP,player.Class,profile.Traits.Frugality) &&
+        var supplyBlocked=MagicBloodStone.Remaining(player.Info.Equipment[(int)EquipmentSlot.Torch])<=600 &&
+            CompanionSupplyRules.NeedsRefill(player.Info.Inventory,Stat.HP,player.Class,profile.Traits.Frugality,player.Level) &&
             blocked?.Any(key=>key.StartsWith("supply/",StringComparison.Ordinal)||key=="public-supply")==true;
         foreach (var progress in player.CurrentQuests.Where(quest => quest.Completed))
         {
@@ -75,7 +77,7 @@ public static class CompanionPlanning
             if((needsFunds||supplyBlocked) && npc?.CurrentMap!=player.CurrentMap)continue;
             if (npc != null && RewardsFit(player,progress.Info) && blocked?.Contains(NpcGoal("turn-in",progress.Info,npc).Key)!=true) return NpcGoal("turn-in", progress.Info, npc);
         }
-        if (player.Info.Equipment[(int)EquipmentSlot.Weapon] == null && CompanionRecovery.Choose(player, maps, npcs, routes, blocked) is { } recovery)
+        if (player.Info.Equipment[(int)EquipmentSlot.Weapon] == null && CompanionRecovery.Choose(player, profile, maps, npcs, routes, blocked) is { } recovery)
             return recovery;
         if (needsFunds)
             return Hunt(player, profile, maps, routes, objectsByMap, null, 0, "红药与药费不足，先低风险打怪筹资", blocked, funds: true) ??
@@ -84,8 +86,12 @@ public static class CompanionPlanning
         // 药店暂不可达不是恢复战力，不能让购装或新任务抢占缺药保命。
         if(supplyBlocked)return new("wait",player.CurrentMap.Info.Index,player.CurrentLocation.X,player.CurrentLocation.Y,
             "红药储备不足，暂无可用补给，保留保命与减负并等待重新规划",Key:"supply/wait");
+        if (guildGoal?.Kind == "guild-fund")
+            return Hunt(player, profile, maps, routes, objectsByMap, null, 0, "积累建会资金，暂停非必要发展消费", blocked, funds:true, hops:hops) ??
+                new("wait",player.CurrentMap.Info.Index,player.CurrentLocation.X,player.CurrentLocation.Y,"暂无可安全筹资的真实金币来源，保留建会计划等待重试",Key:"fund/guild-wait");
         if (guildGoal != null) return guildGoal;
         if (CompanionHeroes.Choose(player, npcs, routes, blocked) is { } hero) return hero;
+        if (CompanionDevelopment.Choose(player, profile, npcs, routes, blocked, previousGoal, hero:true) is { } heroDevelopment) return heroDevelopment;
         var candidates = player.CurrentQuests.Count < Globals.MaxConcurrentQuests
             ? npcs.SelectMany(npc => npc.Quests.Select(quest => (npc, quest)))
                 .Where(pair => pair.npc.ObjectID == pair.quest.NpcIndex &&
@@ -105,6 +111,7 @@ public static class CompanionPlanning
         }
         var dailyHunt = ChooseHunt(true);
         if (dailyHunt != null) return dailyHunt;
+        if (CompanionAppraisals.Choose(player, profile, npcs, routes, blocked) is { } appraisal) return appraisal;
         if (CompanionDevelopment.Choose(player, profile, npcs, routes, blocked, previousGoal) is { } development) return development;
         var flagSources = npcs.Select(npc => (Npc: npc, Source: CompanionQuestFlags.Source(npc))).Where(pair => pair.Source != null).ToArray();
         bool HasFlagSources(QuestInfo quest) => quest.FlagTasks.All(flag =>
@@ -129,6 +136,11 @@ public static class CompanionPlanning
         if (visit.npc != null && !busyDaily)
         { player.CheckQuestInfo(visit.quest); return NpcGoal("accept",visit.quest,visit.npc); }
         var hunt = ChooseHunt(false);
+        // 入门阶段先刷附近可打的小怪，避免为远途职业考验耗掉大半练级时间。
+        if (player.Level < 10 && player.Info.Equipment[(int)EquipmentSlot.Weapon] is { CurrentDura: > 0 } && hunt != null &&
+            (hunt.MapId != player.CurrentMap.Info.Index || Distance(player.CurrentLocation, new(hunt.X, hunt.Y)) > 64) &&
+            Hunt(player, profile, [player.CurrentMap], routes, objectsByMap, null, 0, "入门阶段先就近练级，10级后继续远途任务", blocked, hops: hops) is { } nearby &&
+            Distance(player.CurrentLocation, new(nearby.X, nearby.Y)) <= 64) return nearby;
         if (hunt != null) return hunt;
         if (visit.npc != null)
         { player.CheckQuestInfo(visit.quest); return NpcGoal("accept",visit.quest,visit.npc); }
@@ -159,8 +171,10 @@ public static class CompanionPlanning
                     progress.ItemTaskCount.Sum(task => Math.Max(0L, (long)task.Info.Count - task.Count))));
             }
             // shortcut: 剩余计数只近似工作量，跨图耗时与掉率收益出现实测瓶颈时再评估。
-            return hunts.OrderBy(candidate => candidate.Goal.MapId != player.CurrentMap.Info.Index)
-                .ThenBy(candidate => candidate.Remaining).Select(candidate => candidate.Goal).FirstOrDefault();
+            var ordered = hunts.OrderBy(candidate => candidate.Goal.MapId != player.CurrentMap.Info.Index)
+                .ThenBy(candidate => candidate.Remaining).Select(candidate => candidate.Goal).ToArray();
+            taskChoices?.AddRange(ordered);
+            return ordered.FirstOrDefault(goal => goal.QuestId == preferredQuest) ?? ordered.FirstOrDefault();
         }
     }
 
@@ -195,27 +209,32 @@ public static class CompanionPlanning
         var training = wanted == null && !funds;
         // 刷新点远多于怪物定义；逐点线性查表会阻塞游戏线程和移动回执。
         var monsters = world.MonsterInfoList.DistinctBy(monster => monster.Index).ToDictionary(monster => monster.Index);
+        var declinedLevel = monsters.Values.Where(monster => blocked?.Contains($"combat/{monster.Index}") == true)
+            .Select(monster => (int)monster.Level).DefaultIfEmpty(int.MaxValue).Min();
         int TrainingDistance(Map map, Point target)
         {
             if (map == player.CurrentMap) return Distance(player.CurrentLocation, target);
             var exit = routes[map.Info.Index]!;
             // shortcut: 每次跨图按35格估算途中成本，实测不足时再引入全程寻路。
-            return Distance(player.CurrentLocation, new(exit.X, exit.Y)) + 35 * hops![map.Info.Index];
+            return Distance(player.CurrentLocation, new(exit.X, exit.Y)) + 35 * (hops?.GetValueOrDefault(map.Info.Index) ?? 1);
         }
         var candidates = maps.Where(map => !map.Info.NoFight && (!training || !map.Info.NoExperience)).SelectMany(map => map.Info.Respawns.Where(spawn => spawn.Count > 0)
             .Select(spawn => (map, spawn, monster: monsters.GetValueOrDefault(spawn.MonsterIndex))))
-            .Where(pair => pair.monster != null && CanHunt(player.Stats, player.Level, pair.monster, profile.Traits.Risk) &&
+            .Where(pair => pair.monster != null && blocked?.Contains($"combat/{pair.monster.Index}") != true &&
+                CanHunt(player.Stats, player.Level, pair.monster, profile.Traits.Risk) &&
                 (funds ? !pair.map.Info.NoDropMonster && CanFund(player, pair.monster) :
                     wanted != null ? wanted.Contains(pair.monster.Index) : pair.monster.Experience > 0 &&
                         (pair.map == player.CurrentMap || player.HP * 100L > player.Stats[Stat.HP] * 65L)))
             .Select(pair => (pair.map, pair.spawn, monster: pair.monster!))
-            .OrderByDescending(pair => training ? TrainingValue(player, pair.monster, TrainingDistance(pair.map, pair.spawn.Location)) : 0)
+            .OrderBy(pair => pair.monster.Level >= declinedLevel)
+            .ThenByDescending(pair => training ? TrainingValue(player, pair.monster, TrainingDistance(pair.map, pair.spawn.Location)) :
+                funds ? FundingValue(player,pair.monster,TrainingDistance(pair.map,pair.spawn.Location)) : 0)
             .ThenBy(pair => (pair.map == player.CurrentMap ? Distance(player.CurrentLocation, pair.spawn.Location) : 10000) +
-                Math.Max(0, pair.monster.Level - player.Level) * 40).Take(32);
+                Math.Max(0, pair.monster.Level - player.Level) * 40)
+            .Where(pair => blocked?.Contains($"{(funds ? "fund" : "hunt")}/{pair.map.Info.Index}/{pair.spawn.Location.X}/{pair.spawn.Location.Y}/{pair.monster.Index}/{questId}") != true).Take(32);
         foreach (var (map, spawn, monster) in candidates)
         {
             var key=$"{(funds ? "fund" : "hunt")}/{map.Info.Index}/{spawn.Location.X}/{spawn.Location.Y}/{monster.Index}/{questId}";
-            if(blocked?.Contains(key)==true)continue;
             var live = objectsByMap.Value[map].OfType<MonsterObject>().Where(target => !target.Dead && target.Master == null && target.Info.Index == monster.Index)
                 .OrderBy(target => Distance(target.CurrentLocation, map == player.CurrentMap ? player.CurrentLocation : spawn.Location)).FirstOrDefault();
             var cells = live == null ? map.GetRespawnCells(spawn) : null;
@@ -252,16 +271,31 @@ public static class CompanionPlanning
         // shortcut: 仅沿用单怪普攻成本作保守筛选，不保证复杂围攻或整条路线的收益。
         var drops = monster.AI is 1 or 2 or 4 or 5 or 7 or 9 or 28
             ? monster.Drops.Where(Server.MirObjects.Monsters.HarvestMonster.GroundSupply) : monster.Drops;
-        return hits <= 8 && loss <= player.Stats[Stat.HP] / 10d && DropsGold(drops);
+        // 基础装备已能完全抵挡的普通小怪可以持续刷，不能只因超过8次攻击就原地等药费。
+        var maxHits = loss == 0 && monster.AI is 0 or 1 or 2 or 3 ? 30 : 8;
+        return hits <= maxHits && loss <= Math.Min(Math.Max(1,player.HP),player.Stats[Stat.HP]) / 10d && DropsGold(drops);
+    }
+
+    public static double FundingValue(PlayerObject player, MonsterInfo monster, int distance)
+    {
+        double Gold(IEnumerable<DropInfo> drops, int depth = 0) => depth >= 16 ? 0 : drops.Where(d => !d.QuestRequired).Sum(d =>
+            (double)d.AdjustedProbability(Server.Settings.DropRate,player.Stats[Stat.ItemDropRatePercent]) *
+            (d.Gold > 0 ? d.Gold : d.GroupedDrop == null ? 0 : Gold(d.GroupedDrop.First ? d.GroupedDrop.Take(1) : d.GroupedDrop,depth+1)));
+        var drops = monster.AI is 1 or 2 or 4 or 5 or 7 or 9 or 28 ? monster.Drops.Where(Server.MirObjects.Monsters.HarvestMonster.GroundSupply) : monster.Drops;
+        var (hits,_) = CombatCost(player.Stats,player.Level,monster);
+        // shortcut: 正常掉金均值除以普攻与近似路程，仅供低风险候选排序，不承诺长期净收益。
+        return Gold(drops)/Math.Max(1,hits*Math.Max(700,1400-player.Level*14-player.Stats[Stat.AttackSpeed]*60)/1000d+Math.Max(0,distance)*.5);
     }
 
     private static bool SafeFundingPoint(PlayerObject player, IEnumerable<MapObject> objects, Point point)
     {
         // shortcut: 检查筹资点和当前首个出口的已加载活怪，尚未评估两者之间的完整路径。
         var loss=objects.OfType<MonsterObject>().Where(m=>!m.Dead&&!m.Hidden&&m.Master==null&&player.IsAttackTarget(m)&&
+            // 鹿的Target也用于逃跑，不能把只逃跑的鹿当成正在攻击本人的强怪。
+            (m.Info.AI is not (1 or 2) || m.Target==player && m is not Server.MirObjects.Monsters.Deer { RunsAway:true })&&
             Distance(point,m.CurrentLocation)<=Math.Max(3,(int)m.Info.ViewRange))
             .Sum(m=>CombatCost(player.Stats,player.Level,m.Info).Loss);
-        return loss<=player.Stats[Stat.HP]/10d;
+        return loss<=Math.Min(Math.Max(1,player.HP),player.Stats[Stat.HP])/10d;
     }
 
     // 首个成功即终止的分组保守只采信首项，后置金币可能永远被前项挡住。

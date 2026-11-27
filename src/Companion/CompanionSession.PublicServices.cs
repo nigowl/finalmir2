@@ -15,7 +15,7 @@ public sealed partial class CompanionSession
     private async Task<bool> PublicServices(long now)
     {
         var goal = Knowledge?.Goal;
-        if (goal?.Key is not ("public-supply" or "public-develop" or "public-hero-develop" or "public-recycle")) return false;
+        if (goal?.Key is not ("public-supply" or "public-develop" or "public-hero-develop" or "public-recycle" or "public-guild-material")) return false;
         if (state.Trading || state.StorageActive || repairItem != 0) return false;
         var user = state.User!;
         if (goal.Key == "public-recycle")
@@ -43,7 +43,12 @@ public sealed partial class CompanionSession
         var hero = goal.Key == "public-hero-develop";
         if (hero && (state.HeroState != HeroSpawnState.Summoned || state.Hero is not { HP: > 0 })) return false;
         var subject = hero ? state.Hero! : user;
-        var choice = CompanionPublicShopRules.Choose(state.PublicShop.Items.Where(offer => offer.ItemIndex == goal.PublicItemId &&
+        var choice = goal.Key == "public-guild-material" && !state.InGuild && Profile.Guilds.Mode is "create" or "auto"
+            ? CompanionPublicShopRules.GuildMaterial(state.PublicShop.Items,id=>state.Items.GetValueOrDefault(id),goal.PublicItemId,goal.PublicCount,
+                goal.GoldReserve,user.Gold,state.CalculateStats()[Stat.BagWeight]-state.InventoryWeight,
+                user.Inventory.Concat(user.QuestInventory).Where(i=>i?.ItemIndex==goal.PublicItemId).Sum(i=>(int)i!.Count))
+            : CompanionPublicShopRules.Choose(state.PublicShop.Items.Where(offer => offer.ItemIndex == goal.PublicItemId &&
+                (Knowledge?.Guild?.Action != "prepare" || state.Items.GetValueOrDefault(offer.ItemIndex) is { } saving && !MagicBloodStone.IsStone(saving)) &&
                 (!hero || state.Items.GetValueOrDefault(offer.ItemIndex) is { } info && !info.Bind.HasFlag(BindMode.NoHero))), id => state.Items.GetValueOrDefault(id),
             user.Inventory, subject.Equipment, subject.Class, subject.Gender, subject.Level, subject.Magics.Select(m => m.Spell).ToHashSet(),
             user.Gold, state.CalculateStats()[Stat.BagWeight] - state.InventoryWeight, Profile.Traits.Frugality,
@@ -53,6 +58,8 @@ public sealed partial class CompanionSession
             await Status("补给中", $"公共商店购买{state.Items[request.ItemIndex].FriendlyName} ×{request.Count}");
             await Asset(request, "public-buy", (ulong)request.RequestId);
         }
+        else if (goal.Key == "public-guild-material")
+            await report(new("goal-blocked",Profile.Id,Reason:"建会材料报价、预算、容量或身份已改变，重新核对",Text:goal.Key));
         return true;
     }
 

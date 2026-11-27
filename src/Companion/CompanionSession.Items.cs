@@ -14,8 +14,8 @@ public sealed partial class CompanionSession
     private long assetSent;
     private readonly HashSet<ulong> refused = [];
     private static string AssetName(string kind) => kind switch
-    {"hero-create"=>"创建英雄", "hero-seal"=>"激活英雄", "hero-summon"=>"召唤英雄", "hero-equip"=>"英雄装备", "hero-use"=>"英雄使用", "public-buy"=>"商城购买", "recycle"=>"回收", "buy"=>"购买", "sell"=>"出售", "equip"=>"装备", "remove"=>"卸下", "repair"=>"修理", "use"=>"使用", "quest"=>"任务操作",
-        "storage-store"=>"存仓", "storage-take"=>"取回", "storage-split"=>"仓库拆分", "storage-password" or "storage-unlock"=>"仓库认证", "guild-create"=>"建会", "guild-join"=>"入会", _=>"资产操作"};
+    {"hero-create"=>"创建英雄", "hero-seal"=>"激活英雄", "hero-summon"=>"召唤英雄", "hero-equip"=>"英雄装备", "hero-remove"=>"英雄卸装", "hero-mode"=>"英雄模式", "hero-use"=>"英雄使用", "appraise"=>"装备鉴定", "public-buy"=>"商城购买", "recycle"=>"回收", "buy"=>"购买", "sell"=>"出售", "equip"=>"装备", "remove"=>"卸下", "repair"=>"修理", "use"=>"使用", "quest"=>"任务操作",
+        "storage-store"=>"存仓", "storage-take"=>"取回", "storage-split"=>"仓库拆分", "storage-password" or "storage-unlock"=>"仓库认证", "guild-create"=>"建会", "guild-join"=>"入会", "guild-register"=>"攻城报名", _=>"资产操作"};
     private async Task Asset(Packet packet, string kind, ulong id)
     {
         pendingAsset=kind; assetId=id; assetSent=Environment.TickCount64; receivedPurchase=false;purchasePaid=false;
@@ -28,12 +28,19 @@ public sealed partial class CompanionSession
         if(await StorageResult(packet))return;
         bool? success = packet switch
         {
+            S.Chat p when pendingAsset=="buy" && !purchasePaid && !receivedPurchase && p.Type==ChatType.System &&
+                p.Message.StartsWith("购买失败：",StringComparison.Ordinal) => false,
+            S.NPCResponse p when pendingAsset == "guild-register" && p.Page.Contains("攻城报名成功："+assetId) => true,
+            S.NPCResponse p when pendingAsset == "guild-register" && p.Page.Contains("攻城报名拒绝："+assetId) => false,
             S.EquipItem p when pendingAsset=="equip" && p.Grid==MirGridType.Inventory && p.UniqueID==assetId => p.Success,
             S.RemoveItem p when pendingAsset=="remove" && p.Grid==MirGridType.Inventory && p.UniqueID==assetId => p.Success,
             S.EquipItem p when pendingAsset=="hero-equip" && p.Grid==MirGridType.HeroInventory && p.UniqueID==assetId => p.Success,
+            S.RemoveItem p when pendingAsset=="hero-remove" && p.Grid==MirGridType.HeroInventory && p.UniqueID==assetId => p.Success,
+            S.EquipmentAppraisalResult p when pendingAsset=="appraise" && p.UniqueID==assetId => p.Success,
             S.UseItem p when pendingAsset=="hero-use" && p.Grid==MirGridType.HeroInventory && p.UniqueID==assetId => p.Success,
             S.UseItem p when pendingAsset=="hero-seal" && p.Grid==MirGridType.Inventory && p.UniqueID==assetId => p.Success,
             S.UpdateHeroSpawnState { State:HeroSpawnState.Summoned } when pendingAsset=="hero-summon" => true,
+            S.SetHeroBehaviour p when pendingAsset=="hero-mode" && p.Behaviour==requestedHeroMode => true,
             S.UseItem p when pendingAsset is "use" or "route-town" && p.Grid==MirGridType.Inventory && p.UniqueID==assetId => p.Success,
             S.SellItem p when pendingAsset=="sell" && p.UniqueID==assetId => p.Success,
             S.ItemRepaired p when pendingAsset=="repair" && p.UniqueID==assetId => true,
@@ -43,20 +50,33 @@ public sealed partial class CompanionSession
         };
         if (pendingAsset=="buy")
         {
-            if (packet is S.GainedItem item && item.Item.ItemIndex==boughtItem) receivedPurchase=true;
+            var received = packet switch { S.GainedItem item => item.Item, S.GainedQuestItem material => material.Item, _ => null };
+            if (received?.ItemIndex==boughtItem) receivedPurchase=true;
             // 原购买协议没有请求号，只接受该串行请求的指定商品与扣款回执；超时不重发。
             if (packet is S.LoseGold)purchasePaid=true;
             if(receivedPurchase&&purchasePaid)success=true;
         }
         if (success == null) return;
+        if (pendingAsset == "guild-register" && success.Value && Profile.Chat && state.InGuild && state.Guild?.MyRankId == 0)
+            await connection.Send(new C.Chat { Message="!~已完成本会攻城报名，大家准备药品装备，临近原定战期按集结路线出征！" });
+        if (pendingAsset=="appraise" && success.Value &&
+            state.User!.Inventory.FirstOrDefault(item=>item?.UniqueID==assetId) is not {Identified:true})
+            throw new InvalidDataException("鉴定成功回执与原装备状态不一致，停止资产操作。");
         // RepairItem 是原服先发的解锁包，成功还会跟随 ItemRepaired，不能提前当成拒绝。
-        if (!success.Value) (pendingAsset.StartsWith("hero-",StringComparison.Ordinal)?heroRefused:refused).Add(assetId);
+        if (!success.Value && pendingAsset!="buy") (pendingAsset.StartsWith("hero-",StringComparison.Ordinal)?heroRefused:refused).Add(assetId);
         var restoreSlot=pendingAsset=="repair" && success.Value?repairSlot:-1;
-        if (pendingAsset=="repair" || pendingAsset=="remove" && !success.Value) {repairItem=0;repairSlot=-1;}
-        await report(new("asset",Profile.Id,Text:pendingAsset+":"+(success.Value?"成功":"拒绝")));
+        if (pendingAsset=="repair" || pendingAsset is "remove" or "hero-remove" && !success.Value) {repairItem=0;repairSlot=-1;}
+        var heroWear = pendingAsset == "hero-equip" && success.Value ? state.Hero?.Equipment.FirstOrDefault(item => item?.UniqueID == assetId) : null;
+        await report(new("asset",Profile.Id,Text:pendingAsset+":"+(success.Value?"成功":"拒绝"),
+            Reason: packet is S.Chat rejected ? rejected.Message : heroWear == null ? "" : $"英雄已装备{heroWear.Info.FriendlyName}（定义 {heroWear.ItemIndex}，编号 {assetId}）"));
+        if (pendingAsset=="buy" && !success.Value)
+        {
+            await report(new("goal-blocked",Profile.Id,Reason:((S.Chat)packet).Message,Text:Knowledge?.Goal?.Key??""));
+            goods=null;page=[];pendingNpc=npcId=0;
+        }
         pendingAsset=null;
         if(restoreSlot>=0)
-            await Asset(new C.EquipItem{Grid=MirGridType.Inventory,UniqueID=assetId,To=restoreSlot},"equip",assetId);
+            await Asset(new C.EquipItem{Grid=repairGrid,UniqueID=assetId,To=restoreSlot},repairGrid==MirGridType.HeroInventory?"hero-equip":"equip",assetId);
     }
     private long nextRouteTown;
     private async Task<bool> UseTownOnRoute(long now)
@@ -93,7 +113,7 @@ public sealed partial class CompanionSession
         var user=state.User!;
         foreach (var item in user.Inventory.Where(i=>i?.Info!=null && i.UniqueID!=repairItem && !refused.Contains(i.UniqueID)))
         {
-            if (!Usable(item.Info)) continue;
+            if (!Usable(item.Info) || item.UniqueID==Knowledge?.Goal?.AppraisalItemId && EquipmentAppraisal.Pending(item)) continue;
             var slot=Mir2.Companions.CompanionInventoryRules.UpgradeSlot(item,user.Equipment,user.Class,
                 Mir2.Companions.CompanionInventoryRules.Caster(user.Magics.Select(m=>m.Spell)));
             if (slot>=0 && slot<user.Equipment.Length)

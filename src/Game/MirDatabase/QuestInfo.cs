@@ -63,8 +63,8 @@ namespace Server.MirDatabase
         public bool MengchongDaily => ClientQuestInfo.IsMengchongDaily(Type, Group);
         public uint ActualGoldReward => MengchongDaily ? GoldReward : (uint)(GoldReward * Settings.DropRate);
         public bool CanReceiveRewards(PlayerObject player, UserItem[] items) => !MengchongDaily ? player.CanGainItems(items) :
-            Helpers.InventoryStacks.CanAdd(player.Info.Inventory, items.Where(item => item.Info.Type != ItemType.Quest)) &&
-            Helpers.InventoryStacks.CanAdd(player.Info.QuestInventory, items.Where(item => item.Info.Type == ItemType.Quest));
+            Helpers.InventoryStacks.CanAdd(player.Info.Inventory, items.Where(item => !Helpers.MaterialInventoryRules.Contains(item.Info, Envir))) &&
+            Helpers.InventoryStacks.CanAdd(player.Info.QuestInventory, items.Where(item => Helpers.MaterialInventoryRules.Contains(item.Info, Envir)));
 
         public int TimeLimitInSeconds = 0;
 

@@ -29,6 +29,7 @@ public partial class WorldView : Node2D
     public override void _Ready()
     {
         TextureFilter = TextureFilterEnum.Nearest;
+        BuildEquipmentGlow();
         glowLayer = new GlowLayer { OwnerView = this, Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Add } };
         AddChild(glowLayer);
         combatTextLayer = new CombatTextLayer { View = this }; AddChild(combatTextLayer);
@@ -138,6 +139,7 @@ public partial class WorldView : Node2D
     internal ClientPreferences? ItemPreferences;
     internal bool NameVisible(Actor actor) => actor.Id == State.User?.ObjectID || (actor.Kind switch
     {
+        ObjectType.Player => actor.Id == Hovered || actor.Id == Selected,
         ObjectType.Merchant => ShowNpcNames || actor.Id == Hovered || actor.Id == Selected,
         ObjectType.Monster => ShowMonsterNames || actor.Id == Hovered || actor.Id == Selected,
         ObjectType.Item => (ItemPreferences?.ForItem(ClientPickup.Name(actor)).HasFlag(ItemActions.Display) ?? ShowItemNames) || actor.Id == Hovered || actor.Id == Selected,
@@ -154,7 +156,7 @@ public partial class WorldView : Node2D
         PrefetchTerrain();
         ProcessEffects(frameTime);
         combatTexts.RemoveAll(text => frameTime - text.Start >= text.Duration);
-        QueueRedraw(); glowLayer.QueueRedraw(); combatTextLayer.QueueRedraw();
+        QueueRedraw(); equipmentGlowLayer.QueueRedraw(); glowLayer.QueueRedraw(); combatTextLayer.QueueRedraw();
     }
     public override void _Draw()
     {
@@ -166,6 +168,7 @@ public partial class WorldView : Node2D
     private void DrawWorld()
     {
         glow.Clear();
+        equipmentGlows.Clear();
         if (State.User == null) return;
         DrawRect(new Rect2(0, 0, 1024, 768), new GColor("111710"));
         if (Map == null) return;
@@ -224,6 +227,7 @@ public partial class WorldView : Node2D
             DrawHealthBar(actor, now);
             if (!NameVisible(actor)) continue;
             var p = NameAnchor(actor, now);
+            if (actor.Kind == ObjectType.Merchant) { DrawNpcName(actor, p); continue; }
             var namePosition = p - new Vector2(ThemeDB.FallbackFont.GetStringSize(actor.Name, fontSize: 12).X / 2, 0);
             if (actor.Kind is ObjectType.Player or ObjectType.Merchant or ObjectType.Monster)
                 namePosition.Y += (ThemeDB.FallbackFont.GetAscent(12) - ThemeDB.FallbackFont.GetDescent(12)) / 2;

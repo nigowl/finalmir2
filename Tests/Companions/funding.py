@@ -5,6 +5,7 @@ parser=argparse.ArgumentParser(description=__doc__)
 mode=parser.add_mutually_exclusive_group();mode.add_argument('--no-source',action='store_true');mode.add_argument('--harvest-source',action='store_true');mode.add_argument('--evasive-source',action='store_true');mode.add_argument('--harvest-ground',action='store_true')
 mode.add_argument('--crowded-source',action='store_true');mode.add_argument('--blocked-exit',action='store_true');mode.add_argument('--blocked-route',action='store_true')
 mode.add_argument('--friendly-guard',action='store_true')
+mode.add_argument('--passive-neighbours',action='store_true')
 parser.add_argument('--remote-delivery',action='store_true');parser.add_argument('--unarmed',action='store_true')
 parser.add_argument('--caster',action='store_true')
 args=parser.parse_args();waiting=args.no_source or args.harvest_source or args.blocked_exit or args.blocked_route
@@ -58,7 +59,7 @@ try:
         return row if row['characterId'] and call('/management/admin/characters/'+str(row['characterId']))['online'] else False
     row=wait(entered);cid=row['characterId'];aid=row['accountId'];command('stop')
     wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
-    subprocess.run(['dotnet',str(compat),'--companion-funding',str(cid)]+(['--blocked-route'] if args.blocked_route else ['--blocked-exit'] if args.blocked_exit else ['--no-source'] if args.no_source else ['--harvest-source'] if args.harvest_source else ['--evasive-source'] if args.evasive_source else ['--harvest-ground'] if args.harvest_ground else ['--crowded-source'] if args.crowded_source else ['--friendly-guard'] if args.friendly_guard else [])+(['--remote-delivery'] if args.remote_delivery else [])+(['--unarmed'] if args.unarmed else [])+(['--caster'] if args.caster else []),cwd=root,env=env,check=True)
+    subprocess.run(['dotnet',str(compat),'--companion-funding',str(cid)]+(['--blocked-route'] if args.blocked_route else ['--blocked-exit'] if args.blocked_exit else ['--no-source'] if args.no_source else ['--harvest-source'] if args.harvest_source else ['--evasive-source'] if args.evasive_source else ['--harvest-ground'] if args.harvest_ground else ['--crowded-source'] if args.crowded_source else ['--friendly-guard'] if args.friendly_guard else ['--passive-neighbours'] if args.passive_neighbours else [])+(['--remote-delivery'] if args.remote_delivery else [])+(['--unarmed'] if args.unarmed else [])+(['--caster'] if args.caster else []),cwd=root,env=env,check=True)
     fixture=json.loads((data/'runtime/companion-funding-fixture.json').read_text());start()
     if args.friendly_guard:
         guard=wait(lambda:next((spawn for spawn in call('/management/admin/spawns?mapId='+str(fixture['origin'])) if spawn['monsterName']=='隔离友好城镇守卫' and spawn['alive']>0),None))

@@ -1347,7 +1347,7 @@ namespace Server.MirObjects
             return true;
         }
         public virtual void UseItem(ulong id) { }
-        protected void ConsumeItem(UserItem item, byte cost)
+        protected virtual void ConsumeItem(UserItem item, byte cost)
         {
             item.Count -= cost;
             Enqueue(new S.DeleteItem { UniqueID = item.UniqueID, Count = cost });
@@ -1381,11 +1381,13 @@ namespace Server.MirObjects
 
             //Item not found
         }
-        protected bool DropItem(UserItem item, int range = 1, bool DeathDrop = false)
+        protected bool DropItem(UserItem item, int range = 1, bool DeathDrop = false, bool manual = false)
         {
             ItemObject ob = new ItemObject(this, item, DeathDrop);
+            if (manual && !DeathDrop && this is PlayerObject dropper) ob.ManualDropperId = dropper.Info.Index;
 
             if (!ob.Drop(range)) return false;
+            if (this is PlayerObject owner) ob.SendManualDrop(owner);
 
             if (item.Info.Type == ItemType.Meat)
                 item.CurrentDura = (ushort)Math.Max(0, item.CurrentDura - 2000);
@@ -1770,6 +1772,7 @@ namespace Server.MirObjects
 
             AttackSpeed = Settings.PlayerTiming.AttackDelay(Stats[Stat.AttackSpeed], Level);
             BroadcastExactHealth();
+            RefreshEquipmentGlow();
         }
         public virtual void RefreshGuildBuffs() { }
 
@@ -2401,6 +2404,7 @@ namespace Server.MirObjects
                     p = GetInfoEx(player);
                     if (p != null)
                         player.Enqueue(p);
+                    SendEquipmentGlow(player);
                 }
             }
         }
@@ -2751,6 +2755,7 @@ namespace Server.MirObjects
         {
             LogTime = Envir.Time + Globals.LogDelay;
 
+            if (!CanAttack) return;
             if (Info.Equipment[(int)EquipmentSlot.Weapon] == null) return;
             ItemInfo RealItem = Functions.GetRealItem(Info.Equipment[(int)EquipmentSlot.Weapon].Info, Info.Level, Info.Class, Envir.ItemInfoList);
 
@@ -2765,6 +2770,7 @@ namespace Server.MirObjects
                 target = FindObject(targetID, 10);
 
             if (target != null && target.Dead) return;
+            if (target != null && !Functions.InRange(CurrentLocation, target.CurrentLocation, Globals.MaxAttackRange)) return;
 
             if (target != null && target.Race != ObjectType.Monster && target.Race != ObjectType.Player && target.Race != ObjectType.Hero) return;
 
@@ -2820,9 +2826,8 @@ namespace Server.MirObjects
 
                 damage = ApplyArcherState(damage);
 
-                int chanceToHit = (100 + Settings.RangeAccuracyBonus - ((100 / Globals.MaxAttackRange) * distance)) * (focus ? 2 : 1);
-
-                if (chanceToHit < 0) chanceToHit = 0;
+                // 最远射程仍保留基础命中，避免九格普箭因整数衰减只剩1%。敏捷判定仍由原伤害流程执行。
+                int chanceToHit = Helpers.GameBalance.RangeHitChance(distance, Settings.RangeAccuracyBonus, focus);
 
                 int delay = Functions.MaxDistance(CurrentLocation, target.CurrentLocation) * 50 + 500 + 50; //50 MS per Step
 
@@ -6866,7 +6871,7 @@ namespace Server.MirObjects
             target.ApplyPoison(new Poison { PType = pt, Duration = duration, TickSpeed = tickSpeed }, this);
             target.Broadcast(new S.ObjectEffect { ObjectID = target.ObjectID, Effect = sp });
         }
-        protected UserItem GetAmulet(int count, int shape = 0)
+        protected virtual UserItem GetAmulet(int count, int shape = 0)
         {
             for (int i = 0; i < Info.Equipment.Length; i++)
             {
@@ -6877,7 +6882,7 @@ namespace Server.MirObjects
 
             return null;
         }
-        protected UserItem GetPoison(int count, byte shape = 0)
+        protected virtual UserItem GetPoison(int count, byte shape = 0)
         {
             for (int i = 0; i < Info.Equipment.Length; i++)
             {
@@ -7600,7 +7605,7 @@ namespace Server.MirObjects
         }
         public bool CanGainItem(UserItem item)
         {
-            if (this is PlayerObject player && item.Info.Type == ItemType.Quest) return player.CanGainQuestItem(item);
+            if (this is PlayerObject player && Helpers.MaterialInventoryRules.Contains(item.Info, Envir)) return player.CanGainQuestItem(item);
             if (FreeSpace(Info.Inventory) > 0)
             {
                 return true;
@@ -7644,10 +7649,10 @@ namespace Server.MirObjects
         }
         public bool CanGainItems(UserItem[] items)
         {
-            if (this is PlayerObject player && items.Any(item => item?.Info.Type == ItemType.Quest))
+            if (this is PlayerObject player && items.Any(item => Helpers.MaterialInventoryRules.Contains(item?.Info, Envir)))
             {
-                if (!Helpers.InventoryStacks.CanAdd(Info.QuestInventory, items.Where(item => item?.Info.Type == ItemType.Quest))) return false;
-                items = items.Where(item => item?.Info.Type != ItemType.Quest).ToArray();
+                if (!Helpers.InventoryStacks.CanAdd(Info.QuestInventory, items.Where(item => Helpers.MaterialInventoryRules.Contains(item?.Info, Envir)))) return false;
+                items = items.Where(item => !Helpers.MaterialInventoryRules.Contains(item?.Info, Envir)).ToArray();
             }
             int itemCount = items.Count(e => e != null);
             ushort stackOffset = 0;
@@ -7679,7 +7684,7 @@ namespace Server.MirObjects
 
             return true;
         }
-        public bool CanEquipItem(UserItem item, int slot)
+        public bool CanEquipItem(UserItem item, int slot, bool checkWeight = true)
         {
             switch ((EquipmentSlot)slot)
             {
@@ -7830,12 +7835,12 @@ namespace Server.MirObjects
                     break;
             }
 
-            if (item.Info.Type == ItemType.Weapon || item.Info.Type == ItemType.Torch)
+            if (checkWeight && (item.Info.Type == ItemType.Weapon || item.Info.Type == ItemType.Torch))
             {
                 if (item.Weight - (Info.Equipment[slot] != null ? Info.Equipment[slot].Weight : 0) + CurrentHandWeight > Stats[Stat.HandWeight])
                     return false;
             }
-            else
+            else if (checkWeight)
                 if (item.Weight - (Info.Equipment[slot] != null ? Info.Equipment[slot].Weight : 0) + CurrentWearWeight > Stats[Stat.WearWeight])
                 return false;
 
@@ -7848,7 +7853,7 @@ namespace Server.MirObjects
         }
         public void GainItem(UserItem item)
         {
-            if (this is PlayerObject player && item.Info.Type == ItemType.Quest) { player.GainQuestItem(item); return; }
+            if (this is PlayerObject player && Helpers.MaterialInventoryRules.Contains(item.Info, Envir)) { player.GainQuestItem(item); return; }
             //CheckItemInfo(item.Info);
             CheckItem(item);
 
@@ -8480,6 +8485,8 @@ namespace Server.MirObjects
 
             player.SendHealth(this);
             SendHealth(player);
+            player.SendEquipmentGlow(this);
+            SendEquipmentGlow(player);
         }
         public override void Remove(MonsterObject monster)
         {

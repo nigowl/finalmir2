@@ -24,7 +24,10 @@ internal static class HeroCombatChecks
         protected override void MoveTo(Point location) => Destination = location;
     }
     private sealed class Taoist(HeroInfo info, Player owner) : TaoistHero(info, owner)
-    { protected override void Load(CharacterInfo info, MirConnection connection) => HeroCombatChecks.Load(this, info); }
+    {
+        protected override void Load(CharacterInfo info, MirConnection connection) => HeroCombatChecks.Load(this, info);
+        public UserItem? Material(int count, short shape) => shape is 1 or 2 ? GetPoison(count, (byte)shape) : GetAmulet(count, shape);
+    }
     private sealed class Assassin(HeroInfo info, Player owner) : AssassinHero(info, owner)
     { protected override void Load(CharacterInfo info, MirConnection connection) => HeroCombatChecks.Load(this, info); }
     private sealed class Archer(HeroInfo info, Player owner) : ArcherHero(info, owner)
@@ -119,6 +122,7 @@ internal static class HeroCombatChecks
         check(Plan(tao) == Spell.Poisoning, "道士英雄没有先补目标缺失毒");
         target.PoisonList.Add(new Poison { PType = PoisonType.Red, Owner = tao, Duration = 50, TickSpeed = 1000 });
         check(Plan(tao) == Spell.SoulFireBall, "道士英雄对已有同色毒目标重复消耗");
+        SharedMaterials(check, (Taoist)tao, owner, target);
         tao.Target = null; owner.HP = 400; var heal = Learn(tao, Spell.Healing); tao.AttackTime = long.MaxValue;
         check(Plan(tao) == Spell.Healing, "道士英雄无敌人时无法治疗主人");
         Act(tao, "ProcessTarget"); foreach (var action in tao.ActionList.ToArray()) { tao.ActionList.Remove(action); tao.Process(action); }
@@ -143,6 +147,14 @@ internal static class HeroCombatChecks
         check(Plan(assassin) == Spell.CrescentSlash, "刺客英雄前方多怪未选择扇区斩击"); extra.Dead = true;
         Move(target, new(12, 10)); check(Plan(assassin) == Spell.HeavenlySword, "刺客英雄隔位直线未使用神圣剑术");
         Move(target, new(12, 11)); check(Plan(assassin) == Spell.None, "刺客英雄对斜偏目标空放直线技能");
+        assassin.Info.Magics.Clear(); Learn(assassin, Spell.PoisonSword); Move(target, new(11, 10)); target.PoisonList.Clear();
+        assassin.ActionTime = assassin.AttackTime = assassin.SpellTime = 0; assassin.MP = 100;
+        var sharedPoison = owner.Info.Inventory[6] = new UserItem(new ItemInfo { Type = ItemType.Amulet, Shape = 1,
+            RequiredClass = (RequiredClass)31, RequiredGender = RequiredGender.Male | RequiredGender.Female }) { UniqueID = 93001, Count = 1 };
+        check(Plan(assassin) == Spell.PoisonSword, "刺客英雄没有使用主人背包毒粉安排毒剑");
+        Act(assassin, "ProcessTarget"); foreach (var action in assassin.ActionList.ToArray()) { assassin.ActionList.Remove(action); assassin.Process(action); }
+        check(owner.Info.Inventory[6] == null && sharedPoison.Count == 0 && assassin.MP == 95 && target.PoisonList.Any(p => p.PType.HasFlag(PoisonType.Green)), "刺客毒剑未通过原技能精确消耗主人毒粉并中毒");
+        Move(target, new(12, 11));
 
         var archer = Hero(MirClass.Archer); archer.Target = target;
         archer.Info.Equipment[0] = new UserItem(new ItemInfo { Type = ItemType.Weapon, Shape = 200 }) { CurrentDura = 1000 };
@@ -154,5 +166,44 @@ internal static class HeroCombatChecks
         check(Plan(archer) == Spell.DoubleShot, "弓箭英雄没有冥想仍反复尝试聚集元素"); Learn(archer, Spell.Meditation);
         check(Plan(archer) == Spell.ElementalBarrier, "弓箭英雄没有自动维护元素屏障");
         archer.Info.Equipment[0].CurrentDura = 0; check(Plan(archer) == Spell.None, "弓箭英雄损坏武器仍使用弓系技能");
+    }
+
+    private static void SharedMaterials(Action<bool, string> check, Taoist hero, Player owner, MonsterObject target)
+    {
+        hero.Info.Equipment[5] = hero.Info.Equipment[6] = null;
+        UserItem Material(short shape, ulong id, ushort count) => new(new ItemInfo { Type = ItemType.Amulet, Shape = shape,
+            RequiredClass = (RequiredClass)31, RequiredGender = RequiredGender.Male | RequiredGender.Female }) { UniqueID = id, Count = count };
+        var amulet = owner.Info.Inventory[6] = Material(0, 92001, 2);
+        var red = owner.Info.Inventory[7] = Material(2, 92002, 1);
+        var green = owner.Info.Inventory[8] = Material(1, 92003, 1);
+        target.PoisonList.Clear(); target.HP = 10000;
+        void Ready() { hero.ActionTime = hero.AttackTime = hero.SpellTime = 0; foreach (var magic in hero.Info.Magics) magic.CastTime = -100000; }
+        void Cast()
+        {
+            Act(hero, "ProcessTarget");
+            foreach (var action in hero.ActionList.ToArray()) { hero.ActionList.Remove(action); hero.Process(action); }
+        }
+        Ready(); check(Plan(hero) == Spell.Poisoning, "英雄只有共用包红毒时没有安排施毒"); Cast();
+        check(owner.Info.Inventory[7] == null && red.Count == 0 && target.PoisonList.Any(p => p.PType.HasFlag(PoisonType.Red)) &&
+            owner.Packets.OfType<S.DeleteItem>().Any(p => p.UniqueID == red.UniqueID && p.Count == 1), "英雄未从共用包精确消耗最后红毒/原中毒回执");
+        Ready(); check(Plan(hero) == Spell.Poisoning, "已有红毒时英雄未从共用包选择绿毒"); Cast();
+        check(owner.Info.Inventory[8] == null && green.Count == 0 && target.PoisonList.Any(p => p.PType.HasFlag(PoisonType.Green)), "共用包绿毒未消耗/生效或没有清空末格");
+        Ready(); var mana = hero.MP;
+        check(Plan(hero) == Spell.SoulFireBall, "双毒后英雄未使用共用包普通护符"); Cast();
+        check(amulet.Count == 1 && hero.MP == mana - 5 && target.HP < 10000 && hero.Info.Inventory.Length == 0, "共用护符未扣次数/蓝量/真实伤害或重建了英雄背包");
+        Ready(); Plan(hero); Cast(); check(owner.Info.Inventory[6] == null && amulet.Count == 0, "最后一符消耗后主人背包留零数量幽灵物品");
+        var reserve = owner.Info.Inventory[6] = Material(0, 92004, 4); owner.Info.Inventory[7] = Material(0, 92005, 4);
+        check(hero.Material(5, 0) == null, "需要5符时错误跨包合计了两个4符包");
+        reserve.Count = 5; check(ReferenceEquals(hero.Material(5, 0), reserve), "共用包单包5符无法满足召唤");
+        var guards = new Action<UserItem>[] { item => item.Info.Bind = BindMode.NoHero, item => item.SoulBoundId = owner.Info.Index + 1,
+            item => item.Info.RequiredClass = RequiredClass.Warrior, item => item.Info.RequiredAmount = 100,
+            item => item.RentalInformation = new RentalInformation { BindingFlags = BindMode.DontTrade }, item => item.SealedInfo = new SealedInfo(),
+            item => item.ExpireInfo = new ExpireInfo { ExpiryDate = DateTime.MinValue } };
+        owner.Info.Inventory[7] = null;
+        foreach (var restrict in guards)
+        { var item = Material(0, 92006, 5); restrict(item); owner.Info.Inventory[6] = item; check(hero.Material(5, 0) == null && item.Count == 5, "英雄共享毒符绕过职业/等级/绑定/租赁/封印/到期校验"); }
+        owner.Info.Inventory[6] = reserve; owner.TradePartner = new Player(); check(hero.Material(5, 0) == null, "主人交易中仍共享消耗毒符"); owner.TradePartner = null;
+        reserve.SoulBoundId = owner.Info.Index; check(ReferenceEquals(hero.Material(5, 0), reserve), "主人本人绑定的共用毒符被误判成英雄编号绑定");
+        Array.Clear(owner.Info.Inventory); Ready(); hero.MP = 100; target.PoisonList.Clear();
     }
 }

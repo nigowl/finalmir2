@@ -12,6 +12,8 @@ public sealed partial class CompanionSession
     private string guildPromptName = "";
     private string pendingGuildName = "";
     private long nextGuildAction, nextGuildRequest, nextGuildInvite;
+    private string rallyKey = "";
+    private long nextRally, nextRegistration;
 
     private void GuildPacket(Packet packet)
     {
@@ -37,7 +39,7 @@ public sealed partial class CompanionSession
         }
         if (page.Count > 0 && npcId == goal.NpcId)
         {
-            var link = page.SelectMany(line => Regex.Matches(line, @"<[^<>]+/@([^<>]+)>").Select(m => m.Groups[1].Value))
+            var link = page.SelectMany(line => Regex.Matches(line, @"<[^<>]+/@([^<>]+)>").Select(m => m.Groups[1].Value.Split('/')[0]))
                 .FirstOrDefault(value => value.Equals("CREATEGUILD", StringComparison.OrdinalIgnoreCase));
             page = [];
             if (link != null) { await Call(goal.NpcId, "[@" + link + "]"); nextGuildAction = now + 3000; return true; }
@@ -47,6 +49,33 @@ public sealed partial class CompanionSession
         if (now < nextGuildAction) return false;
         nextGuildAction = now + 3000;
         await Status("筹备建会", "读取建会NPC实际对话"); await Call(goal.NpcId, "[@MAIN]"); return true;
+    }
+
+    private async Task<bool> RegisterSiege(long now)
+    {
+        if (Knowledge?.Goal is not { Kind:"guild-register" } goal || Knowledge.Guild is not { Action:"register" } ||
+            !Profile.Guilds.Siege || Profile.Guilds.Mode == "off" || !Knowledge.AllowPk || !state.InGuild || state.Guild?.MyRankId != 0 ||
+            state.Trading || state.StorageActive || goal.MapId != Knowledge.MapId || Distance(state.User!.Location,new(goal.X,goal.Y)) > 4) return false;
+        if (now < nextRegistration) return true;
+        var parts = goal.Key.Split('/');
+        if (parts.Length != 4 || !int.TryParse(parts[2],out var id) || id <= 0) return false;
+        if (page.Count > 0 && npcId == goal.NpcId)
+        {
+            var links = page.SelectMany(line => Regex.Matches(line,@"<[^<>]+/@([^<>]+)>").Select(m => m.Groups[1].Value.Split('/')[0])).ToArray();
+            page = [];
+            if (links.Contains("SIEGEREGISTER_"+id,StringComparer.OrdinalIgnoreCase))
+            {
+                nextRegistration = now+60000;
+                await Status("攻城报名",goal.Reason);
+                await Asset(new C.CallNPC { ObjectID=goal.NpcId,Key=$"[@SIEGEREGISTER_{id}]" },"guild-register",(ulong)id);
+                return true;
+            }
+            if (links.Contains("SIEGE",StringComparer.OrdinalIgnoreCase)) { await Call(goal.NpcId,"[@SIEGE]"); return true; }
+            await report(new("goal-blocked",Profile.Id,Reason:"当前NPC没有本城的实际报名许可",Text:goal.Key));
+            nextRegistration=now+60000; return true;
+        }
+        if (now < nextGuildAction) return true;
+        nextGuildAction=now+3000; await Call(goal.NpcId,"[@MAIN]"); return true;
     }
 
     private async Task<bool> GuildActivity(long now)
@@ -86,7 +115,19 @@ public sealed partial class CompanionSession
             await connection.Send(new C.EditGuildMember { ChangeType = 0, Name = plan.Member });
             await report(new("guild", Profile.Id, Reason:"按原权限邀请申请者入会", Text:plan.Member)); return true;
         }
-        if (plan.Action != "siege" || !Profile.Guilds.Siege || Knowledge.AllowPk != true || plan.Goal == null || Knowledge.Goal?.Key != plan.Goal.Key || !state.InGuild) return false;
+        if (plan.Action is not ("siege" or "rally") || !Profile.Guilds.Siege || Knowledge.AllowPk != true || plan.Goal == null || Knowledge.Goal?.Key != plan.Goal.Key || !state.InGuild) return false;
+        if (Profile.Chat && plan.Member == state.User!.Name && state.Guild?.MyRankId == 0 && (rallyKey != plan.Goal.Key || now >= nextRally))
+        {
+            rallyKey=plan.Goal.Key; nextRally=now+300000;
+            await connection.Send(new C.Chat { Message="!~兄弟们集合，"+plan.Reason+"，补好药后按路线支援！" });
+            await report(new("guild",Profile.Id,"会长组织",plan.Reason,"已发送原行会频道集结指令"));
+        }
+        if (plan.Action == "rally")
+        {
+            if (plan.Goal.MapId == Knowledge.MapId && Distance(state.User!.Location,new(plan.Goal.X,plan.Goal.Y)) <= 3)
+            { await Status("攻城集结",plan.Reason+"，等待原定开战时间"); nextAction=now+1500; return true; }
+            return await FollowObjective(now);
+        }
         if (state.CurrentAttackMode != AttackMode.Guild)
         {
             if (now >= nextGuildAction) { nextGuildAction = now + 3000; await connection.Send(new C.ChangeAMode { Mode = AttackMode.Guild }); }

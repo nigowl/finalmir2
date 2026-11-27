@@ -26,14 +26,15 @@ public sealed class ClientPickup
     public Actor? Next(GameState state, ClientPreferences preferences, long now, Func<Actor, bool>? reachable = null)
     {
         Tick(now);
-        if (!preferences.AutoPickup || Paused || Pending != 0 || state.User == null || state.Me?.Dead != false || state.Trading || state.StorageActive) return null;
-        foreach (var item in state.Actors.Values.Where(actor => actor.Kind == ObjectType.Item && !actor.Hidden && Allowed(actor, preferences) && Functions.MaxDistance(state.User.Location, actor.Location) <= 8)
+        if (!preferences.AutoPickup || Paused || Pending != 0 || state.User == null || state.Me?.Dead != false || state.Trading || state.StorageActive || state.ManualDropHistoryFull) return null;
+        foreach (var item in state.Actors.Values.Where(actor => actor.Kind == ObjectType.Item && !actor.Hidden && !state.ManuallyDropped.Contains(actor.Id) && Allowed(actor, preferences) && Functions.MaxDistance(state.User.Location, actor.Location) <= 8)
             .OrderBy(actor => Functions.MaxDistance(state.User.Location, actor.Location)).Take(16))
         {
             if (!Allowed(item, preferences)) continue;
             // 原PickUp不指定物品；混合格整格跳过，避免因归属/负重跳过首件后误拣排除项。
-            if (state.Actors.Values.Any(other => other.Kind == ObjectType.Item && other.Location == item.Location && !Allowed(other, preferences))) continue;
-            if (item.Gold > 0 ? (ulong)state.User.Gold + item.Gold > uint.MaxValue : state.User.Inventory.All(slot => slot != null)) continue;
+            if (state.Actors.Values.Any(other => other.Kind == ObjectType.Item && other.Location == item.Location && (!Allowed(other, preferences) || state.ManuallyDropped.Contains(other.Id)))) continue;
+            if (item.Gold > 0 ? (ulong)state.User.Gold + item.Gold > uint.MaxValue :
+                state.MaterialItemNames.Contains(Name(item)) ? state.User.QuestInventory.All(slot => slot != null) : state.User.Inventory.All(slot => slot != null)) continue;
             if (reachable != null && !reachable(item)) continue;
             return item;
         }

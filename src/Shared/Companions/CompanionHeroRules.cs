@@ -3,6 +3,9 @@ namespace Mir2.Companions;
 
 public static class CompanionHeroRules
 {
+    public static HeroBehaviour CombatMode(int hp, int maximum, HeroBehaviour current) => maximum <= 0 ? current :
+        hp * 100L <= maximum * 35L ? HeroBehaviour.Follow : hp * 100L > maximum * 65L ? HeroBehaviour.Attack : current;
+
     public static bool Usable(UserItem item, MirClass role, MirGender gender, int level) =>
         !item.Info.Bind.HasFlag(BindMode.NoHero) && item.RentalInformation?.BindingFlags is null or BindMode.None &&
         CompanionSupplyRules.Usable(item.Info, role, gender, level);

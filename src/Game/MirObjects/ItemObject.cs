@@ -38,6 +38,22 @@ namespace Server.MirObjects
 
         public uint Gold;
         public UserItem Item;
+        public int ManualDropperId = -1;
+
+        public bool ManuallyDroppedBy(PlayerObject player) => player != null && ManualDropperId >= 0 && ManualDropperId == player.Info.Index;
+
+        public void SendManualDrop(PlayerObject viewer)
+        {
+            if (viewer.ClientPresentationEnabled && ManuallyDroppedBy(viewer) && CurrentMap == viewer.CurrentMap &&
+                Functions.InRange(CurrentLocation, viewer.CurrentLocation, Globals.DataRange))
+                viewer.Enqueue(new S.ManualItemDropped { ObjectID = ObjectID });
+        }
+
+        public override void Add(HumanObject player)
+        {
+            base.Add(player);
+            if (player is PlayerObject viewer) SendManualDrop(viewer);
+        }
 
 
         public override int Health
@@ -77,6 +93,7 @@ namespace Server.MirObjects
                     NameColour = Color.Red;
             }
 
+            if (Item.EquipmentQuality != EquipmentGrade.Legacy) NameColour = EquipmentAppraisal.Colour(Item);
 			CurrentMap = dropper.CurrentMap;
             CurrentLocation = dropper.CurrentLocation;
         }
@@ -106,6 +123,7 @@ namespace Server.MirObjects
 
             CurrentMap = dropper.CurrentMap;
             CurrentLocation = manualpoint;
+            if (Item.EquipmentQuality != EquipmentGrade.Legacy) NameColour = EquipmentAppraisal.Colour(Item);
         }
         public ItemObject(MapObject dropper, uint gold)
         {

@@ -30,9 +30,9 @@ internal static class ItemPresentationChecks
         check(!ItemPresentation.Details(gear).Contains("耐久"), "0/0耐久没有隐藏");
         gear.MaxDura = 8000;
         check(ItemPresentation.Details(gear).Contains("耐久 0/8"), "破损0/8装备被误隐藏");
-        check(ItemPresentation.Category(new UserItem(new ItemInfo { Type = ItemType.Quest })).Contains("专用任务栏") &&
+        check(ItemPresentation.Category(new UserItem(new ItemInfo { Type = ItemType.Quest })).Contains("材料物品栏") &&
             !ItemPresentation.Category(first).Contains("任务物品"), "专用任务物品与普通任务材料混淆");
-        check(ItemPresentation.Stats(gear).Contains("攻击 3–9") && ItemPresentation.Stats(gear).Contains("魔法 2–5"), "属性区间没有合并或漏了附加属性");
+        check(ItemPresentation.Stats(gear).Contains("攻击：3 - 9") && ItemPresentation.Stats(gear).Contains("魔法：2 - 5"), "属性区间没有合并或漏了附加属性");
         var state = new GameState();
         var worn = new UserItem(new ItemInfo { Type = ItemType.Weapon, Stats = new Stats { [Stat.MaxDC] = 5 } }) { Count = 1 };
         var equipment = new UserItem[14]; equipment[0] = worn;

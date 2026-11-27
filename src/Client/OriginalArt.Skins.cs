@@ -49,6 +49,16 @@ public partial class OriginalArt
         return ImageTexture.CreateFromImage(skin);
     }
 
+    public static Texture2D MaterialInventorySkin(SpriteImage image)
+    {
+        using var frame = DialogSkin(image);
+        using var source = frame.GetImage();
+        // 只用原底纹盖掉金币/负重图标和信息底板，保留完整高度、底边及两角。
+        for (var x = 20; x < 293; x += 248)
+            source.BlitRect(source, new Rect2I(32, 10, Math.Min(248, 293 - x), 20), new Vector2I(x, 211));
+        return ImageTexture.CreateFromImage(source);
+    }
+
     public static Texture2D ButtonSkin(SpriteImage image)
     {
         using var source = image.Texture.GetImage();

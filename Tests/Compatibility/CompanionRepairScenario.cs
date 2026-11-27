@@ -16,7 +16,7 @@ internal static class CompanionRepairScenario
         var world=Envir.Main;if(!world.LoadDB())throw new InvalidDataException("测试世界读取失败。");
         world.BuffInfoList.AddRange(BuffInfo.Load());world.LoadAccounts();
         var character=world.CharacterList.Single(role=>role.Index==characterId);
-        character.Inventory=new UserItem[46];character.Equipment=new UserItem[14];character.Level=10;
+        character.Inventory=new UserItem[46];character.Equipment=new UserItem[14];character.Level=10;character.HP=character.MP=10000;
         character.AccountInfo.Gold=20000;character.CurrentQuests.Clear();character.CompletedQuests=world.QuestInfoList.Select(quest=>quest.Index).ToList();
         foreach(var map in world.MapInfoList)map.Respawns.Clear();
         var remote=world.MapInfoList.Single(map=>map.Index==2);

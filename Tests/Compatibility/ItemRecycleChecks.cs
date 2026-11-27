@@ -42,6 +42,7 @@ internal static class ItemRecycleChecks
         player.Account.Gold = uint.MaxValue; Refused(8, 1); player.Account.Gold = 250;
         player.RecycleItem(new C.RecycleItem { RequestId = 9, UniqueID = 7, Count = 7 });
         check(player.Info.Inventory[0] == null && player.Account.Gold == 600, "整叠回收未清空唯一编号或金额错误");
+        Unidentified(check);
         var wasServer = Packet.IsServer;
         try
         {
@@ -53,6 +54,29 @@ internal static class ItemRecycleChecks
             check(reply.Success && reply.Gold == 150 && reply.UniqueID == 7 && extra.Length == 0, "回收结果协议字段错误");
         }
         finally { Packet.IsServer = wasServer; }
+    }
+
+    private static void Unidentified(Action<bool, string> check)
+    {
+        var info = new ItemInfo { Index = 8, Name = "未鉴定回收检查", Type = ItemType.Weapon, Price = 1000, Durability = 10000 };
+        var state = new GameState(); state.Apply(new S.UserInformation { ObjectID = 1, HP = 100, Inventory = new UserItem[86], Equipment = new UserItem[14], QuestInventory = [] });
+        var prefs = new ClientPreferences { AutoSell = true, SellWhitelist = false };
+        foreach (var grade in Enum.GetValues<EquipmentGrade>().Where(g => g != EquipmentGrade.Legacy))
+        {
+            var item = new UserItem(info) { UniqueID = (ulong)(100 + (int)grade), EquipmentQuality = grade, CurrentDura = 10000, MaxDura = 10000 };
+            state.User!.Inventory[6] = item; prefs.ItemRules.Clear();
+            check(!ClientAutoSell.Allowed(state, prefs, item) && ItemRecycling.Rejection(item).Length > 0, "未明确勾选也自动回收未鉴定装备");
+            prefs.ItemRules[info.FriendlyName] = ItemActions.Display | ItemActions.Recycle;
+            check(ClientAutoSell.Allowed(state, prefs, item) && ItemRecycling.Rejection(item, true).Length == 0, "明确勾选仍不能回收未鉴定装备");
+            var player = new Player { Account = new AccountInfo(), Info = new CharacterInfo { HP = 100 } }; player.Info.Inventory[6] = item;
+            var request = new C.RecycleItem { RequestId = 1, UniqueID = item.UniqueID, Count = 1 }; player.RecycleItem(request); player.RecycleItem(request);
+            check(player.Info.Inventory[6] == null && player.Account.Gold == 500 && player.Packets.OfType<S.DeleteItem>().Count() == 1,
+                "未鉴定装备计入隐藏品质/未按普通半价回收或重放重复加金币");
+            item.Identified = true;
+            if (grade > EquipmentGrade.Normal) check(!ClientAutoSell.Allowed(state, prefs, item) && ItemRecycling.Rejection(item, true).Length > 0, "已鉴定高品质装备因新规则被回收");
+            item.Identified = false; item.AddedStats[Stat.MaxDC] = 1;
+            check(ItemRecycling.Rejection(item, true).Length > 0, "允许未鉴定回收时放行强化资产");
+        }
     }
 
     public static async Task VerifySaved(int port, string record)

@@ -24,12 +24,14 @@ public sealed partial class CompanionSession
         if(Knowledge==null||Profile.Traits.Exploration<60&&Profile.Goal!="探索优先"&&goalHint!="explore")return false;
         if(explorationMap!=Knowledge.MapId){explorationMap=Knowledge.MapId;exploredMaps[explorationMap]=now+90000;}
         if(now-lastProgress<20000&&Profile.Goal!="探索优先")return false;
-        var exit=Knowledge.Exits.Where(e=>exploredMaps.GetValueOrDefault(e.DestinationMapId)<now)
-            .OrderBy(e=>Distance(state.User!.Location,new(e.X,e.Y))).FirstOrDefault();
+        var exit=ExploreDestination(now);
         if(exit==null)return false;
         await Status("跨图中","沿当前版本公开入口赶路");
         return await MoveTo(new(exit.X,exit.Y),run:true);
     }
+    private Mir2.Companions.KnownExit? ExploreDestination(long now) => Knowledge?.Exits.Where(e=>
+        exploredMaps.GetValueOrDefault(e.DestinationMapId)<now&&unreachable.GetValueOrDefault(new(e.X,e.Y))<=now&&Walkable(new(e.X,e.Y)))
+        .OrderBy(e=>Distance(state.User!.Location,new(e.X,e.Y))).FirstOrDefault();
     private static int Distance(Point a, Point b) => Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
     private static MirDirection Direction(Point a, Point b) => (Math.Sign(b.X - a.X), Math.Sign(b.Y - a.Y)) switch
     { (0,-1) => MirDirection.Up, (1,-1) => MirDirection.UpRight, (1,0) => MirDirection.Right, (1,1) => MirDirection.DownRight,
@@ -75,11 +77,12 @@ public sealed partial class CompanionSession
             var now=Environment.TickCount64;
             // 缺药筹资不能等到走进强怪近身范围才绕路。
             foreach(var enemy in Knowledge.Enemies??[])
-                if((!enemy.Suitable||now-monsterAttackers.GetValueOrDefault(enemy.ObjectId,long.MinValue/2)<5000)&&
-                    state.Actors.GetValueOrDefault(enemy.ObjectId) is {Kind:ObjectType.Monster,Dead:false,Hidden:false,MasterObjectId:0} threat)
+                if(state.Actors.GetValueOrDefault(enemy.ObjectId) is {Kind:ObjectType.Monster,Dead:false,Hidden:false,MasterObjectId:0} threat)
                 {
                     // shortcut: 筹资以8格作可见危险缓冲，待有实际追击范围时再按怪物区分。
-                    var radius = Funding ? 8 : 1;
+                    var radius = CompanionSafety.ThreatRadius(threat.AI,enemy.Suitable,
+                        now-monsterAttackers.GetValueOrDefault(enemy.ObjectId,long.MinValue/2)<5000,Funding);
+                    if(radius==0)continue;
                     for (var x = -radius; x <= radius; x++)
                         for (var y = -radius; y <= radius; y++)
                             occupied.Add(new(threat.Location.X + x, threat.Location.Y + y));
@@ -103,7 +106,7 @@ public sealed partial class CompanionSession
                 if(door!=0)await connection.Send(new C.Opendoor{DoorIndex=door});
             }
             await connection.Send(distance==2?new C.Run { Direction=direction }:new C.Walk { Direction=direction });
-            moveDestination=step.Value;moving = true; moveSent = now; nextAction = now + Math.Max(650, state.Me!.MoveDelay); return true;
+            moveDestination=step.Value;moving = true; moveSent = now; nextAction = now + state.Me!.MoveDelay; return true;
         }
         unreachable[destination] = now + 15000;
         if (unreachable.Count > 128) unreachable.Clear();

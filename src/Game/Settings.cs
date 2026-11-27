@@ -70,6 +70,8 @@ namespace Server
                              MaxUser = 50,
                              RelogDelay = 50,
                              MaxIP = 5,
+                             MaxAccountsPerIPHour = 3,
+                             MaxCharactersPerIPHour = 5,
                              MaxPacket = 50;
 
         public static int IPBlockSeconds = 5;
@@ -409,6 +411,8 @@ namespace Server
             TimeOut = Reader.ReadUInt16("Network", "TimeOut", TimeOut);
             MaxUser = Reader.ReadUInt16("Network", "MaxUser", MaxUser);
             MaxIP = Reader.ReadUInt16("Network", "MaxIP", MaxIP);
+            MaxAccountsPerIPHour = Reader.ReadUInt16("Network", "MaxAccountsPerIPHour", MaxAccountsPerIPHour);
+            MaxCharactersPerIPHour = Reader.ReadUInt16("Network", "MaxCharactersPerIPHour", MaxCharactersPerIPHour);
             MaxPacket = Reader.ReadUInt16("Network", "MaxPacket", MaxPacket);
 
             //HTTP
@@ -706,6 +710,8 @@ namespace Server
             Reader.Write("Network", "TimeOut", TimeOut);
             Reader.Write("Network", "MaxUser", MaxUser);
             Reader.Write("Network", "MaxIP", MaxIP);
+            Reader.Write("Network", "MaxAccountsPerIPHour", MaxAccountsPerIPHour);
+            Reader.Write("Network", "MaxCharactersPerIPHour", MaxCharactersPerIPHour);
 
             //HTTP
             Reader.Write("Network", "StartHTTPService", StartHTTPService);

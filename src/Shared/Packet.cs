@@ -1,4 +1,4 @@
-﻿using C = ClientPackets;
+using C = ClientPackets;
 using S = ServerPackets;
 
 public abstract class Packet
@@ -122,6 +122,10 @@ public abstract class Packet
             case (short)ClientPacketIds.HeroRecoveryRequest: return new C.HeroRecoveryRequest();
             case (short)ClientPacketIds.DeleteHeroRequest: return new C.DeleteHeroRequest();
             case (short)ClientPacketIds.HealthDisplayRequest: return new C.HealthDisplayRequest();
+            case (short)ClientPacketIds.ItemPricesRequest: return new C.ItemPricesRequest();
+            case (short)ClientPacketIds.ClientPresentationRequest: return new C.ClientPresentationRequest();
+            case (short)ClientPacketIds.AppraiseEquipment: return new C.AppraiseEquipment();
+            case (short)ClientPacketIds.StorageRequest: return new C.StorageRequest();
             case (short)ClientPacketIds.Login:
                 return new C.Login();
             case (short)ClientPacketIds.NewCharacter:
@@ -984,6 +988,10 @@ public abstract class Packet
                 return new S.CharacterLocation();
             case (short)ServerPacketIds.HeroRecovery: return new S.HeroRecovery();
             case (short)ServerPacketIds.DeleteHeroResult: return new S.DeleteHeroResult();
+            case (short)ServerPacketIds.EquipmentAppraisalResult: return new S.EquipmentAppraisalResult();
+            case (short)ServerPacketIds.ItemPriceChanged: return new S.ItemPriceChanged();
+            case (short)ServerPacketIds.ObjectEquipmentGlow: return new S.ObjectEquipmentGlow();
+            case (short)ServerPacketIds.ManualItemDropped: return new S.ManualItemDropped();
             case (short)ServerPacketIds.ObjectVitals: return new S.ObjectVitals();
             default:
                 return null;

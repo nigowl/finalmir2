@@ -51,6 +51,16 @@ internal static class MapRenderingChecks
         }
         idat.Position = 0; using var zlib = new ZLibStream(idat, CompressionMode.Decompress); var row = new byte[1024 * 4 + 1]; zlib.ReadExactly(row);
         check(row.AsSpan(1, 4).SequenceEqual(new byte[] { 200, 20, 10, 255 }) && row.AsSpan(1 + 192 * 4, 4).SequenceEqual(new byte[] { 30, 38, 34, 255 }), "Native terrain pixels were scaled or drawn outside the native map bounds");
+        foreach (var level in new[] { 1, 2, 6 })
+        {
+            var scaled = await renderer.Native("wide.map", assets.Version, 0, 0, token, level);
+            check(Size(scaled) == (1024, 1024) && !scaled.SequenceEqual(tile), "显示比例未重新渲染原地图块或复用了其他比例缓存");
+        }
+        foreach (var level in new[] { -1, 7 })
+        {
+            try { await renderer.Native("wide.map", assets.Version, 0, 0, token, level); throw new Exception("接受非法地图比例"); }
+            catch (InvalidDataException) { check(true, "地图比例边界"); }
+        }
         foreach (var (x, version) in new[] { (-1, assets.Version), (1, assets.Version), (0, "stale") })
         {
             try { await renderer.Native("wide.map", version, x, 0, token); throw new Exception("Invalid native map request was accepted"); }

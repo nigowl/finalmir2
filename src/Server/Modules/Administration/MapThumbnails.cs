@@ -74,29 +74,31 @@ public sealed class MapThumbnails(AssetCatalog assets, ProjectPaths paths)
         }
         return Convert.ToBase64String(mask);
     }
-    public async Task<byte[]> Native(string name, string version, int tileX, int tileY, CancellationToken token)
+    public async Task<byte[]> Native(string name, string version, int tileX, int tileY, CancellationToken token, int level = 0)
     {
+        if (level is < 0 or > 6) throw new InvalidDataException("地图显示比例无效。");
+        var scale = 1d / (1 << level);
         await gate.WaitAsync(token);
         try
         {
             using var lease = assets.TryRead() ?? throw new InvalidOperationException("资源正在发布，请在发布完成后重试。");
             if (version != assets.Version) throw new InvalidOperationException("资源已变化，请刷新地图。");
             var map = ReadMap(assets.ReadPath("maps", name));
-            if (tileX < 0 || tileY < 0 || (long)tileX * 1024 >= (long)map.Width * 48 || (long)tileY * 1024 >= (long)map.Height * 32)
+            if (tileX < 0 || tileY < 0 || (long)tileX * 1024 >= map.Width * 48d * scale || (long)tileY * 1024 >= map.Height * 32d * scale)
                 throw new InvalidDataException("原尺寸地图块超出地图范围。");
-            var key = $"native:{assets.Version}:{name}:{tileX}:{tileY}";
+            var key = $"native:{assets.Version}:{name}:{level}:{tileX}:{tileY}";
             if (cache.TryGetValue(key, out var found)) return found.Png;
-            var result = await Task.Run(() => Render(map, token, nativeX: tileX * 1024, nativeY: tileY * 1024), token);
+            var result = await Task.Run(() => Render(map, token, nativeX: tileX * 1024, nativeY: tileY * 1024, nativeScale: scale), token);
             if (cache.Count >= 4) cache.Clear(); cache[key] = result; return result.Png;
         }
         finally { gate.Release(); }
     }
-    private MapThumbnail Render(MapReader map, CancellationToken token, int nativeX = -1, int nativeY = -1)
+    private MapThumbnail Render(MapReader map, CancellationToken token, int nativeX = -1, int nativeY = -1, double nativeScale = 1)
     {
         var native = nativeX >= 0;
         // 48×32 是游戏格子的像素尺寸，缩略图需在同一像素比例下等比缩小。
         var scale = 1024d / Math.Max(map.Width * 48d, map.Height * 32d);
-        var scaleX = native ? 48d : 48d * scale; var scaleY = native ? 32d : 32d * scale;
+        var scaleX = 48d * (native ? nativeScale : scale); var scaleY = 32d * (native ? nativeScale : scale);
         var width = native ? 1024 : Math.Max(1, (int)Math.Round(map.Width * scaleX)); var height = native ? 1024 : Math.Max(1, (int)Math.Round(map.Height * scaleY));
         var pixels = new byte[width * height * 4];
         for (var i = 0; i < pixels.Length; i += 4) { pixels[i] = 30; pixels[i + 1] = 38; pixels[i + 2] = 34; pixels[i + 3] = 255; }
@@ -140,10 +142,10 @@ public sealed class MapThumbnails(AssetCatalog assets, ProjectPaths paths)
         }
         for (var layer = 0; layer < 2; layer++)
         // 原素材尺寸上限 4096，包含跨块伸出的高物件，避免地图块接缝缺图。
-        for (var y = native ? Math.Max(0, nativeY / 32 - 1) : 0; y < (native ? Math.Min(map.Height, (nativeY + height) / 32 + 4096 / 32 + 1) : map.Height); y++)
+        for (var y = native ? Math.Max(0, (int)(nativeY / scaleY) - 1) : 0; y < (native ? Math.Min(map.Height, (nativeY + height) / scaleY + 4096 / 32 + 1) : map.Height); y++)
         {
             token.ThrowIfCancellationRequested();
-            for (var x = native ? Math.Max(0, nativeX / 48 - 4096 / 48 - 1) : 0; x < (native ? Math.Min(map.Width, (nativeX + width) / 48 + 1) : map.Width); x++)
+            for (var x = native ? Math.Max(0, (int)(nativeX / scaleX) - 4096 / 48 - 1) : 0; x < (native ? Math.Min(map.Width, (nativeX + width) / scaleX + 1) : map.Width); x++)
             {
                 var c = map.MapCells[x, y];
                 if (layer == 0 && x % 2 == 0 && y % 2 == 0) Draw(Sprite(c.BackIndex, (c.BackImage & 0x1FFFFFFF) - 1), x, y, false);

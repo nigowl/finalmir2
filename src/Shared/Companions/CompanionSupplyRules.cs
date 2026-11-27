@@ -13,18 +13,22 @@ public static class CompanionSupplyRules
         .Where(item => IsTownScroll(item) && Usable(item!.Info, role, gender, level) &&
             (item.RentalInformation == null || item.RentalInformation.BindingFlags == BindMode.None)).Sum(item => (int)item!.Count);
 
-    public static int Target(Stat stat, MirClass role, int frugality) => stat == Stat.MP
-        ? role == MirClass.Warrior ? 0 : Math.Max(6, 10 - frugality / 25)
-        : Math.Max(12, 20 - frugality / 10);
+    public static int Target(Stat stat, MirClass role, int frugality, int level = int.MaxValue)
+    {
+        var full = stat == Stat.MP ? role == MirClass.Warrior ? 0 : Math.Max(6, 10 - frugality / 25) : Math.Max(12, 20 - frugality / 10);
+        // 新手区持续掉红蓝，不能要求先攒齐地牢储备才肯做入门任务或换装。
+        return Math.Min(full, level < 10 ? 4 : level < 20 ? 8 : full);
+    }
 
-    public static bool NeedsRefill(IEnumerable<UserItem?> items, Stat stat, MirClass role, int frugality) =>
-        Count(items, stat) < (Target(stat, role, frugality) + 1) / 2;
+    public static bool NeedsRefill(IEnumerable<UserItem?> items, Stat stat, MirClass role, int frugality, int level = int.MaxValue) =>
+        Count(items, stat) < (Target(stat, role, frugality, level) + 1) / 2;
 
     public static double BudgetDivisor(int frugality) => 2d + frugality / 25d;
 
     public static int PurchaseLimit(UserItem item, double price, uint gold, int frugality, int hpPotions)
     {
         if (!(price > 0) || price > gold) return 0;
+        if (MagicBloodStone.IsStone(item.Info)) return price <= gold / 2d ? 1 : 0;
         if (price <= gold / BudgetDivisor(frugality))
             return (int)Math.Min(ushort.MaxValue, Math.Floor(gold / (price * 2)));
         // 无红药时允许先保留一瓶，不能因节俭拿着买药钱继续裸补给猎杀。

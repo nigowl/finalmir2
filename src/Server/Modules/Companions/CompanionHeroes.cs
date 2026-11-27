@@ -29,6 +29,7 @@ public static class CompanionHeroes
 
     public static void ProtectInventory(PlayerObject player, ISet<int> protectedItems)
     {
+        protectedItems.UnionWith(Server.Settings.Guild_CreationCostList.Where(c => c.Item != null).Select(c => c.Item.Index));
         if (player.CurrentHero is not { } hero) return;
         protectedItems.UnionWith(CompanionHeroRules.ProtectedItems(player.Info.Inventory, hero.Class, hero.Gender, hero.Level,
             hero.Equipment, hero.Magics.Select(magic => magic.Info.Spell).ToHashSet()));

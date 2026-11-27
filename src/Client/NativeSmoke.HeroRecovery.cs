@@ -21,7 +21,7 @@ public partial class NativeSmoke
             Items = user.Inventory.Select(i => i == null ? "-" : $"{i.UniqueID}:{i.ItemIndex}:{i.Count}"),
             Equipment = user.Equipment.Select(i => i?.UniqueID ?? 0) });
         var summon = (Button)Client.FindChild("SummonHero", true, false);
-        var hpBar = (ProgressBar)Client.FindChild("HeroHP", true, false);
+        var portrait = (HeroPortraitButton)Client.FindChild("HeroShortcut", true, false);
         var mode = (OptionButton)Client.FindChild("HeroPortraitMode", true, false);
         async Task Barrier()
         {
@@ -38,7 +38,7 @@ public partial class NativeSmoke
             packets.RemoveAll(p => p is S.UseItem); Client.UseItem(potion.UniqueID);
             if (!(await Packet<S.UseItem>()).Success) throw new Exception("隔离原UseItem未能作用于英雄。");
             await Until(() => State.HeroState == HeroSpawnState.Dead && State.HeroRecoverySeconds > 0);
-            await Until(() => summon.Disabled && hpBar.Value == 0 && mode.Disabled);
+            await Until(() => summon.Disabled && portrait.Health == 0 && mode.Disabled);
             if (State.Hero!.HP != 0 || State.HeroRecoverySeconds < 55 || summon.Text == "休息") throw new Exception("阵亡状态/生命/60秒禁用不同步。");
         }
         async Task RejectEarly(bool scroll)
@@ -67,7 +67,7 @@ public partial class NativeSmoke
         }
         if (action == "death")
         {
-            await Until(() => State.HeroState == HeroSpawnState.Summoned && State.Hero?.HP > 0 && hpBar.Value > 0);
+            await Until(() => State.HeroState == HeroSpawnState.Summoned && State.Hero?.HP > 0 && portrait.Health > 0);
             if (State.Hero!.HP != State.CalculateHeroStats()[Stat.HP]) throw new Exception("初次召唤未发送已初始化的生命。");
             await Screenshot("hero-initial-health"); await Kill(); await RejectEarly(true);
             File.WriteAllText(record, Assets()); File.WriteAllText(record + ".death", DateTime.UtcNow.ToString("O"));
@@ -86,7 +86,7 @@ public partial class NativeSmoke
             try
             {
                 await ClickSelectionControl(summon);
-                await Until(() => State.HeroState == HeroSpawnState.Summoned && State.Hero != null && hpBar.Value > 0 && !mode.Disabled);
+                await Until(() => State.HeroState == HeroSpawnState.Summoned && State.Hero != null && portrait.Health > 0 && !mode.Disabled);
             }
             finally { Client.PacketReceived -= CaptureHealth; }
             if (initialHP != Math.Max(1, State.CalculateHeroStats()[Stat.HP] / 10) ||
@@ -108,7 +108,7 @@ public partial class NativeSmoke
         }
         else if (action == "saved")
         {
-            await Until(() => State.HeroState == HeroSpawnState.Summoned && State.Hero?.HP > 0 && hpBar.Value > 0);
+            await Until(() => State.HeroState == HeroSpawnState.Summoned && State.Hero?.HP > 0 && portrait.Health > 0);
             if (Assets() != File.ReadAllText(record)) throw new Exception("原复活卷/共享背包/英雄召唤意愿未跨重启保存。");
         }
         else throw new InvalidOperationException("未知英雄恢复验证阶段。");

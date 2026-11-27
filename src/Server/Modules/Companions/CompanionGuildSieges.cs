@@ -7,6 +7,43 @@ namespace Server.ConsoleHost;
 
 public static class CompanionGuildSieges
 {
+    public static KnownGuildPlan? Organize(PlayerObject player, CompanionRecord[] records, ISet<string>? blocked)
+    {
+        var guild = player.MyGuild;
+        if (guild == null || guild.IsAtWar()) return null;
+        var leader = records.Where(r => CompanionGuildDevelopment.Active(r) && r.Profile.Guilds is { Mode:not "off", Siege:true })
+            .Select(CompanionGuildDevelopment.Player)
+            .FirstOrDefault(p => p is { Dead:false } && p.MyGuild == guild && p.MyGuildRank.Index == 0);
+        if (leader == null) return null;
+        var routes = CompanionPlanning.Routes(player.CurrentMap.Info.Index,Envir.Main.MapInfoList,player.GroupMembers?.Count ?? 0);
+        foreach (var war in Envir.Main.Conquests.Where(c => !c.WarIsOn && c.ConquestMap != null && !c.ConquestMap.Info.NoFight).OrderBy(c => c.Info.Index))
+        {
+            if (war.Info.Type != ConquestType.Request || !routes.ContainsKey(war.ConquestMap.Info.Index)) continue;
+            if (war.GuildInfo.AttackerID == guild.Guildindex || war.GuildInfo.Owner == guild.Guildindex && war.GuildInfo.AttackerID > 0)
+            {
+                var minute = Envir.Main.Now.Hour*60 + Envir.Main.Now.Minute;
+                if (!war.CheckDay() || minute < war.Info.StartHour*60-15 || minute >= war.Info.StartHour*60+war.Info.WarLength) continue;
+                var point = war.Info.Location;
+                var map = war.ConquestMap;
+                if (!map.ValidPoint(point) || map.GetSafeZone(point) != null || map.Info.Movements.Any(e => e.Source == point)) continue;
+                var goal = new KnownGoal("guild-rally",map.Info.Index,point.X,point.Y,$"响应会长{leader.Name}集结：{war.Info.Name}",
+                    NextExit:routes[map.Info.Index],Key:$"guild/rally/{war.Info.Index}");
+                return new("rally",guild.Name,leader.Name,goal.Reason,player.EnableGuildInvite,goal);
+            }
+            if (player != leader || !ConquestRegistration.Available(player,war) ||
+                records.Count(r => CompanionGuildDevelopment.Active(r) && r.Profile.Guilds is { Mode:not "off",Siege:true } &&
+                    CompanionGuildDevelopment.Player(r) is { Dead:false } p && p.MyGuild == guild) < 2) continue;
+            var npc = Envir.Main.NPCs.Where(n => n.Visible && n.CurrentMap != null && routes.ContainsKey(n.CurrentMap.Info.Index) &&
+                (!n.VisibleLog.TryGetValue(player.Info.Index,out var visible) || visible) && blocked?.Contains($"guild/register/{war.Info.Index}/{n.ObjectID}") != true &&
+                NPCScript.Get(n.ScriptID).NPCPages.Any(p => p.Key == ConquestRegistration.Page))
+                .OrderBy(n => n.CurrentMap == player.CurrentMap ? Functions.MaxDistance(n.CurrentLocation,player.CurrentLocation) : 10000).FirstOrDefault();
+            if (npc == null) continue;
+            var registration = new KnownGoal("guild-register",npc.CurrentMap.Info.Index,npc.CurrentLocation.X,npc.CurrentLocation.Y,
+                $"会长报名攻城：{war.Info.Name}",NpcId:npc.ObjectID,NextExit:routes[npc.CurrentMap.Info.Index],Key:$"guild/register/{war.Info.Index}/{npc.ObjectID}");
+            return new("register",guild.Name,leader.Name,registration.Reason,player.EnableGuildInvite,registration);
+        }
+        return null;
+    }
     public static KnownGuildPlan? Plan(PlayerObject player, ISet<string>? blocked)
     {
         var guild = player.MyGuild;
@@ -25,7 +62,7 @@ public static class CompanionGuildSieges
             var goal = new KnownGoal("guild-siege", map.Info.Index, reachable.Value.X, reachable.Value.Y,
                 (war.GuildInfo.Owner == guild.Guildindex ? "守卫" : "参与攻城：") + war.Info.Name, NextExit:routes[map.Info.Index], Key:key);
             var targets = Targets(player, war).Select(target => target.ObjectID).Take(64).ToArray();
-            return new("siege", guild.Name, "", goal.Reason, player.EnableGuildInvite, goal, targets);
+            return new("siege", guild.Name, guild.Ranks.FirstOrDefault()?.Members.FirstOrDefault()?.Name ?? "", goal.Reason, player.EnableGuildInvite, goal, targets);
         }
         return null;
     }

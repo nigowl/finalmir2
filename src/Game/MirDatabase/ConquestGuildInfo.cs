@@ -16,7 +16,7 @@ namespace Server.MirDatabase
 
         public int Owner = 0;
         public uint GoldStorage;
-        public int AttackerID;
+        public int AttackerID = -1;
         public byte NPCRate = 0;
 
         public ConquestInfo Info;

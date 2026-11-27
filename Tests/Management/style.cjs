@@ -3,9 +3,24 @@ const expect=require('playwright/test').expect.configure({timeout:20000});
 module.exports=async function checkStyle(page){
     const root=page.locator('.admin-compact');
     const buttons=await root.locator('.mud-button').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length).map(n=>({
-        text:n.innerText,minHeight:getComputedStyle(n).minHeight,row:!!n.closest('tbody')
+        text:n.innerText,height:n.getBoundingClientRect().height,minHeight:getComputedStyle(n).minHeight,row:!!n.closest('tbody')
     })));
-    for(const b of buttons)assert.equal(b.minHeight,b.row?'28px':'32px',b.text);
+    for(const b of buttons){assert.equal(b.minHeight,b.row?'28px':'32px',b.text);assert(Math.abs(b.height-(b.row?28:32))<1,`${b.text}: 实际高度 ${b.height}`);}
+    for(const button of await page.locator('.admin-row-actions .mud-button').all()){
+        if(await button.isVisible()){
+            await expect(button).toHaveCSS('border-top-width','1px');
+            await expect(button).toHaveCSS('border-top-style','solid');
+        }
+    }
+    for(const cell of await page.locator('.admin-row-actions').all()){
+        if(!await cell.isVisible())continue;
+        const boxes=await cell.locator('.mud-button').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length).map(n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height};}));
+        for(let i=1;i<boxes.length;i++){
+            const a=boxes[i-1],b=boxes[i];
+            if(Math.abs(a.y-b.y)<1)assert(b.x-a.x-a.w>=5,`操作按钮相贴：${JSON.stringify(boxes)}`);
+            else if(b.y>a.y)assert(b.y-a.y-a.h>=5,`换行操作按钮相贴：${JSON.stringify(boxes)}`);
+        }
+    }
     for(const table of await root.locator('.mud-table').all()){
         if(await table.isVisible()){await expect(table).toHaveCSS('border-top-width','0px');await expect(table).toHaveCSS('border-radius','0px');}
     }

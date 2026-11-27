@@ -34,13 +34,13 @@ public partial class NativeSmoke
         }
         stage = "self bound name uses RealId without a lookup";
         var self = await Hover(6);
-        if (!Text(self).Contains("灵魂绑定角色：绑定观察者")) throw new Exception("本人灵魂绑定物品未显示真实角色名称。");
+        if (!Text(self).Contains("绑定：绑定观察者")) throw new Exception("本人灵魂绑定物品未显示真实角色名称。");
         stage = "offline bound owner original request and visible tooltip update";
         var foreign = await Hover(7);
         await Until(() => packets.OfType<S.UserName>().Any(packet => packet.Id == remoteId));
-        await Until(() => GodotObject.IsInstanceValid(foreign.OpenTooltip) && Text(foreign).Contains("灵魂绑定角色：离线绑定主人"));
+        await Until(() => GodotObject.IsInstanceValid(foreign.OpenTooltip) && Text(foreign).Contains("绑定：离线绑定主人"));
         if (foreign.OpenTooltip!.FindChild("EquippedComparison", true, false) is not RichTextLabel comparison ||
-            !comparison.GetParsedText().Contains("灵魂绑定角色：绑定观察者") || !comparison.GetParsedText().Contains("本人对照戒"))
+            !comparison.GetParsedText().Contains("绑定：绑定观察者") || !comparison.GetParsedText().Contains("本人对照戒"))
             throw new Exception("姓名刷新丢失已装备对比列或混用两件装备的绑定主人。");
         if (packets.OfType<S.UserName>().Count(packet => packet.Id == remoteId) != 1 || user.Name != "绑定观察者" || State.Me!.Name != user.Name ||
             State.Actors.ContainsKey(remoteId)) throw new Exception("绑定姓名查询重复请求或改动本人/场景身份。");

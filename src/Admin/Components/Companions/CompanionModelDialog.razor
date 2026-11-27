@@ -1,29 +1,88 @@
 @using System.Text.Json
-<AdminDialog Visible="true" Title="配置陪玩模型" OnClose="OnClose" OnSave="Save" Dirty="@(original!=Current)">
+<AdminDialog Visible="true" Title="配置服务商及模型" OnClose="OnClose" OnSave="Save" Busy="fetching" CanSave="@(selected.Count>0&&!fetching)" Dirty="@(original!=Current)" SaveConfirmation="将所选模型与密钥应用到设置草稿？仍需保存外层陪玩设置。">
 <DialogContent>
-    @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
-    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="配置名称" Immediate="true" @bind-Value="draft.Name" />
-    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="Chat Completions HTTP 接口完整地址" Immediate="true" @bind-Value="draft.Endpoint" />
-    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="模型标识" Immediate="true" @bind-Value="draft.Model" />
-    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="@(draft.HasKey?"替换密钥（已配置，留空保留）":"API 密钥（可选）")" InputType="InputType.Password" Immediate="true" @bind-Value="key" />
-    <MudCheckBox T="bool" Label="清除该模型已保存的密钥" @bind-Value="clear" />
-    <MudCheckBox T="bool" Label="启用此模型" @bind-Value="draft.Enabled" />
-    <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Typo="Typo.subtitle1">可选 LLM · 测试当前配置</MudText><LlmTestButton Model="draft" Key="@key" ClearKey="clear" /></MudStack>
-    <MudText Typo="Typo.caption">测试使用当前输入，不保存配置；应用后还需保存外层系统设置。密钥留空保留，取消不改模型。</MudText>
+    @if(error!=null){<MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>}
+    <MudGrid Spacing="2">
+        <MudItem xs="12"><MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="API地址（基础地址或Chat Completions地址）" Immediate="true" @bind-Value="draft.Endpoint" /></MudItem>
+        <MudItem xs="12"><MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="model-key-row">
+            <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="@(draft.HasKey?"API密钥（留空保留已保存密钥）":"API密钥（可选）")" InputType="InputType.Password" Immediate="true" @bind-Value="key" />
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Disabled="fetching" OnClick="Fetch">@(fetching?"正在获取…":"获取模型")</MudButton>
+        </MudStack></MudItem>
+        <MudItem xs="12"><MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="服务商 / 配置名称" MaxLength="60" Immediate="true" @bind-Value="draft.Name" /></MudItem>
+    </MudGrid>
+    @if(options.Length>0)
+    {
+        <MudMenu FullWidth="true" RelativeWidth="DropdownWidth.Relative" @bind-Open="pickerOpen" AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" PopoverClass="model-picker-popover" ListClass="pa-0">
+            <ActivatorContent><MudTextField T="string" ReadOnly="true" Label="@($"模型列表（共{options.Length}个，已选{selected.Count}个）")" Value="@string.Join(", ",selected.Order())" Margin="Margin.Dense" Variant="Variant.Outlined" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.ArrowDropDown" /></ActivatorContent>
+            <ChildContent><div class="model-picker-content" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true" @onkeydown="PickerKey">
+                <MudTextField T="string" Label="搜索模型" Placeholder="输入名称片段，多个关键词用空格分隔" @bind-Value="search" Immediate="true" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+                <MudText Typo="Typo.caption" Class="d-block my-2">匹配 @FilteredModels.Length / @options.Length 个 · 已选 @selected.Count 个（筛选不会取消勾选）</MudText>
+                <div class="model-picker-options" role="group" aria-label="可选模型列表">
+                    @foreach(var model in FilteredModels){<MudCheckBox @key="model" T="bool" Dense="true" Label="@model" Value="selected.Contains(model)" ValueChanged="@(v=>ToggleModel(model,v))" />}
+                    @if(FilteredModels.Length==0){<MudText Class="pa-3" Color="Color.Secondary">没有匹配的模型，请调整关键词。</MudText>}
+                </div>
+            </div></ChildContent>
+        </MudMenu>
+    }
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+        <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="手动补充模型标识" Immediate="true" @bind-Value="manual" />
+        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" OnClick="AddManual">添加</MudButton>
+    </MudStack>
+    <MudCheckBox T="bool" Dense="true" Label="清除已保存密钥" @bind-Value="clear" />
+    <MudCheckBox T="bool" Dense="true" Label="启用所选模型" @bind-Value="draft.Enabled" />
+    <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Typo="Typo.body2">测试首个已选模型</MudText><LlmTestButton Model="TestModel" Key="@key" ClearKey="clear" /></MudStack>
+    <MudText Typo="Typo.caption">支持兼容Chat Completions的服务商，模型列表读取/models；不支持列表时可手动补充。同一服务商可一次导入多个模型，角色仍独立选择模型。获取不保存配置，密钥不回显；取消不写入。</MudText>
 </DialogContent>
 </AdminDialog>
 @code{
     [Parameter,EditorRequired]public CompanionLlmModel Model{get;set;}=null!;
     [Parameter]public CompanionModelKeyEdit? Secret{get;set;}
+    [Parameter]public int AvailableSlots{get;set;}=20;
     [Parameter]public EventCallback OnClose{get;set;}
-    [Parameter]public EventCallback<(CompanionLlmModel Model,CompanionModelKeyEdit Secret)> OnApply{get;set;}
-    private CompanionLlmModel draft=new();private string key="",original="";private bool clear;private string? error;
-    private string Current=>JsonSerializer.Serialize(new{draft,key,clear});
-    protected override void OnInitialized(){draft=Model with{};key=Secret?.Key??"";clear=Secret?.Clear??false;original=Current;}
+    [Parameter]public EventCallback<(CompanionLlmModel[] Models,CompanionModelKeyEdit[] Secrets)> OnApply{get;set;}
+    private CompanionLlmModel draft=new();private string key="",original="",manual="",search="";private bool clear,fetching,pickerOpen;private string? error;
+    private string[] options=[];private HashSet<string> selected=new(StringComparer.Ordinal);
+    private string DiscoveryContext=>JsonSerializer.Serialize(new{draft.Endpoint,key,clear});
+    private string Current=>JsonSerializer.Serialize(new{draft,key,clear,selected=selected.Order().ToArray(),manual});
+    private CompanionLlmModel? TestModel
+    {get{try{return selected.Count==0?null:draft with{Endpoint=CompanionModelEndpoints.Chat(draft.Endpoint),Model=selected.Order().First()};}catch(InvalidDataException){return null;}}}
+    protected override void OnInitialized()
+    {draft=Model with{};key=Secret?.Key??"";clear=Secret?.Clear??false;if(draft.Model.Length>0){options=[draft.Model];selected.Add(draft.Model);}original=Current;}
+    private string[] FilteredModels
+    {get{var words=search.Split((char[]?)null,StringSplitOptions.RemoveEmptyEntries);return options.Where(model=>words.All(word=>model.Contains(word,StringComparison.OrdinalIgnoreCase))).ToArray();}}
+    private void ToggleModel(string model,bool value){if(value)selected.Add(model);else selected.Remove(model);}
+    private void PickerKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e){if(e.Key=="Escape")pickerOpen=false;}
+    private void AddManual()
+    {
+        var value=manual.Trim();if(value.Length is <1 or >200||value.Any(char.IsControl)){error="模型标识须为1–200个字符。";return;}
+        options=options.Append(value).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();selected.Add(value);manual="";error=null;
+    }
+    private async Task Fetch()
+    {
+        fetching=true;error=null;var context=DiscoveryContext;
+        try
+        {
+            var result=await Api.Post<CompanionModelList>("management/companions/models/discover",new CompanionModelDiscovery(draft.Endpoint,key.Length==0?null:key,Model.Id,clear));
+            if(context!=DiscoveryContext)return;
+            options=result.Models.Concat(selected).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();draft.Endpoint=result.Endpoint;
+            if(draft.Name.Trim().Length==0){var host=new Uri(result.Endpoint).Host;draft.Name=host[..Math.Min(60,host.Length)];}
+            if(result.Models.Length==0)error="服务商没有返回可用模型，可手动填写模型标识。";
+        }
+        catch(Exception e){if(context==DiscoveryContext)error=e.Message;}finally{fetching=false;}
+    }
     private async Task Save()
     {
-        if(string.IsNullOrWhiteSpace(draft.Name)||string.IsNullOrWhiteSpace(draft.Model)||!Uri.TryCreate(draft.Endpoint,UriKind.Absolute,out var uri)||uri.Scheme is not("https"or"http"))
-        {error="请填写名称、模型标识和完整 HTTP 接口地址。";return;}
-        await OnApply.InvokeAsync((draft,new(draft.Id,string.IsNullOrEmpty(key)?null:key,clear)));
+        try
+        {
+            if(selected.Count is <1||selected.Count>AvailableSlots)throw new InvalidDataException($"最多还能配置{AvailableSlots}个模型，请调整选择。");
+            if(string.IsNullOrWhiteSpace(draft.Name)||draft.Name.Length>60)throw new InvalidDataException("请填写1–60字的服务商或配置名称。");
+            var endpoint=CompanionModelEndpoints.Chat(draft.Endpoint);var choices=selected.Order().ToArray();
+            if(Model.HasKey&&key.Length==0&&!clear&&(choices.Length>1||endpoint!=CompanionModelEndpoints.Chat(Model.Endpoint)))
+                throw new InvalidDataException("更换API地址或导入额外模型时，请重新输入密钥；已有密钥不回显。");
+            var values=choices.Select((model,index)=>draft with{Id=model==Model.Model||Model.Model.Length==0&&index==0?Model.Id:Guid.NewGuid(),Endpoint=endpoint,Model=model,Name=draft.Name.Trim()}).ToArray();
+            if(Model.Model.Length>0&&!choices.Contains(Model.Model))values[0]=values[0] with{Id=Model.Id};
+            await OnApply.InvokeAsync((values,values.Select(model=>new CompanionModelKeyEdit(model.Id,key.Length==0?null:key,clear)).ToArray()));
+        }
+        catch(InvalidDataException e){error=e.Message;}
     }
 }

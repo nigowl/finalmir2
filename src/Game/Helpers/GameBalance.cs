@@ -4,6 +4,9 @@ namespace Server.Helpers;
 
 public static class GameBalance
 {
+    public static int RangeHitChance(int distance, int bonus, bool focus) => (int)Math.Clamp(
+        (100L + bonus - 50L * Math.Clamp(distance, 0, Globals.MaxAttackRange) / Globals.MaxAttackRange) * (focus ? 2 : 1), 0, 100);
+
     public static int Scale(int value, float rate) => (int)Math.Clamp(Duration(value, rate), int.MinValue, int.MaxValue);
     public static long Duration(long value, float rate)
     {

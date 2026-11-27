@@ -23,7 +23,7 @@
     </MudTabPanel>
     <MudTabPanel Text="在线日程">
         <MudCheckBox T="bool" Label="按日程自动上线（关闭后仅手动启动）" @bind-Value="Profile.Scheduled" />
-        <ScheduleFields Schedule="Profile.Schedule" Id="Profile.Id" />
+        <ScheduleFields @bind-Schedule="Profile.Schedule" Id="Profile.Id" Presets="SchedulePresets" />
     </MudTabPanel>
     <MudTabPanel Text="社交与 PK">
         <MudCheckBox T="bool" Label="允许自主组队及接受组队邀请" @bind-Value="Profile.AcceptGroup" />
@@ -35,14 +35,15 @@
         <CompanionGuildFields Preferences="Profile.Guilds" />
     </MudTabPanel>
     <MudTabPanel Text="LLM 增强">
-        <MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="增强模式" @bind-Value="Profile.LlmMode"><MudSelectItem Value="0">关闭：完全使用规则</MudSelectItem><MudSelectItem Value="1">社交增强</MudSelectItem><MudSelectItem Value="2">社交与候选目标建议</MudSelectItem></MudSelect>
+        <MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="增强模式" @bind-Value="Profile.LlmMode"><MudSelectItem Value="0">关闭：完全使用规则</MudSelectItem><MudSelectItem Value="1">社交增强</MudSelectItem><MudSelectItem Value="2">社交、行会与候选决策</MudSelectItem></MudSelect>
         @if(Profile.LlmMode>0)
         {
             <MudSelect T="Guid" Margin="Margin.Dense" Variant="Variant.Outlined" Label="使用模型" @bind-Value="Profile.LlmModelId"><MudSelectItem Value="Guid.Empty">使用本版本默认模型</MudSelectItem>@foreach(var m in Models.Where(m=>m.Enabled)){<MudSelectItem Value="m.Id">@m.Name · @m.Model</MudSelectItem>}</MudSelect>
             <MudStack Row="true" AlignItems="AlignItems.Center"><MudText>检查所选模型</MudText><LlmTestButton Model="SelectedModel" /></MudStack>
-            @if(SelectedModel==null){<MudAlert Severity="Severity.Warning">请先在系统设置配置模型，再选择一个已启用模型。</MudAlert>}
+            @if(SelectedModel==null){<MudAlert Severity="Severity.Warning">请先在陪玩设置的模型设置中配置模型，再选择一个已启用模型。</MudAlert>}
         }
-        <MudText Class="my-3">供应商和密钥在本版本系统设置中配置。网络或额度故障时继续使用规则；不向模型发送账号密码。</MudText>
+        <MudText Class="my-3">服务商和密钥在“陪玩设置 → 模型设置”中配置。网络或额度故障时继续使用规则；不向模型发送账号密码。</MudText>
+        <MudText Typo="Typo.caption">模型用于实际玩家对话、多个已接任务的先后、练级探索、建会入会、切磋与已许可的攻城选择；保命、紧急补给和资产校验继续由规则处理。目标建议至少间隔5分钟，同场景15分钟不重复；运行事件显示是否实际采用。</MudText>
     </MudTabPanel>
 </MudTabs>
 </DialogContent>
@@ -50,6 +51,7 @@
 @code{
     [Parameter,EditorRequired]public CompanionProfile Profile{get;set;}=null!;
     [Parameter]public PersonalityPreset[] Presets{get;set;}=[];
+    [Parameter]public CompanionSchedulePreset[] SchedulePresets{get;set;}=[];
     [Parameter]public CompanionLlmModel[] Models{get;set;}=[];
     [Parameter]public Guid DefaultModelId{get;set;}
     [Parameter]public bool Bound{get;set;}

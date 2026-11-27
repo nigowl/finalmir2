@@ -21,6 +21,10 @@ public static class CompanionDevelopment
             .Where(pair => CompanionSupplies.Sells(pair.script))
             .SelectMany(pair => pair.script.Goods.Where(item =>
             {
+                // 入门阶段已有武器就先在本地成长，不为普通配饰跨图跑长途。
+                if (!hero && subject.Level < 10 && item.Info.IsEquipment && !MagicBloodStone.IsStone(item.Info) &&
+                    subject.Info.Equipment[(int)EquipmentSlot.Weapon] is {CurrentDura:>0} &&
+                    (pair.npc.CurrentMap != player.CurrentMap || Functions.MaxDistance(player.CurrentLocation,pair.npc.CurrentLocation)>64)) return false;
                 if (item.Info.Type is ItemType.Book or ItemType.Amulet && publicItems.Any(info => info.Index == item.ItemIndex ||
                     info.Type == ItemType.Amulet && item.Info.Type == ItemType.Amulet && info.Shape == item.Info.Shape)) return false;
                 var missing = CompanionInventoryRules.DevelopmentCount(item, player.Info.Inventory, subject.Info.Equipment,
@@ -28,7 +32,7 @@ public static class CompanionDevelopment
                 // 护符在原50张目标下用过半才专程返店，已打开货架仍可补满。
                 if (missing == 0 || item.Info.Type == ItemType.Amulet && missing <= 25) return false;
                 var unit = item.Clone(); unit.Count = 1;
-                var price = unit.Price() * (double)NPCScript.PriceRate(player, pair.npc);
+                var price = unit.BuyPrice() * (double)NPCScript.PriceRate(player, pair.npc);
                 if (CompanionSupplyRules.PurchaseLimit(item, price, player.Account.Gold, profile.Traits.Frugality,
                         CompanionSupplyRules.Count(player.Info.Inventory, Stat.HP)) == 0 ||
                     item.Info.UnitWeight > player.Stats[Stat.BagWeight] - player.CurrentBagWeight) return false;
@@ -44,7 +48,7 @@ public static class CompanionDevelopment
             .ThenByDescending(pair => previousGoal?.Key == $"develop/{pair.npc.ObjectID}")
             .ThenBy(pair => distances[pair.npc.CurrentMap.Info.Index].Hops)
             .ThenBy(pair => Functions.MaxDistance(distances[pair.npc.CurrentMap.Info.Index].Entry, pair.npc.CurrentLocation))
-            .ThenBy(pair => pair.item.Price());
+            .ThenBy(pair => pair.item.BuyPrice());
         var selected = offers.FirstOrDefault();
         return selected.npc == null ? hero ? null : Choose(player, profile, npcs, routes, blocked, previousGoal, true) : new("service", selected.npc.CurrentMap.Info.Index,
             selected.npc.CurrentLocation.X, selected.npc.CurrentLocation.Y, $"主动发展，购买{(hero ? "英雄所需" : "")}{selected.item.FriendlyName}：{selected.npc.Name}",

@@ -6,6 +6,10 @@ namespace Mir2.Companion;
 
 public static class CompanionSafety
 {
+    // 原AI1/2只在被攻击后反击或逃跑，未攻击本人时不应形成封路的危险区。
+    public static int ThreatRadius(byte ai, bool suitable, bool attacked, bool funding) =>
+        attacked || !suitable && ai is not (1 or 2) ? funding ? 8 : 1 : 0;
+
     public static IEnumerable<Point> BlockingExits(KnownExit[] exits, Point destination, int near)
     {
         // 同一地图的并排出口可覆盖洞口全宽，不能把选定出口外侧的同向出口当墙。
@@ -26,7 +30,7 @@ public static class CompanionSafety
         var goal=knowledge.Goal;
         if(goal==null)return false;
         if(goal.Kind=="service" || goal.Kind=="hunt" && goal.Key.StartsWith("fund/",StringComparison.Ordinal))return true;
-        return !low && (goal.Kind is "accept" or "turn-in" or "guild-create" || goal.Kind=="hunt" &&
+        return !low && (goal.Kind is "accept" or "turn-in" or "guild-create" or "guild-register" or "guild-rally" || goal.Kind=="hunt" &&
             (goal.MapId!=knowledge.MapId || goal.QuestId>0 && attackerMonster>0 &&
              goal.MonsterIds is {Length:>0} && !goal.MonsterIds.Contains(attackerMonster)));
     }

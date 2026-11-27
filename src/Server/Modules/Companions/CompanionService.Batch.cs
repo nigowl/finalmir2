@@ -25,13 +25,15 @@ public sealed partial class CompanionService
         if(names.Count<request.Count)throw new InvalidDataException($"有效且未被使用的昵称只有{names.Count}个，无法创建{request.Count}个陪玩，请补充昵称池。");
         var pool=names.ToArray();RandomNumberGenerator.Shuffle(pool.AsSpan());
         var presets=store.Presets.Where(p=>!p.Archived).ToArray();
+        var schedules=store.Schedules;
+        if(request.RandomSchedule&&schedules.Length==0)throw new InvalidDataException("没有可用的日程预设，请先在日程管理中新增。");
         var classes=CompanionValidation.AvailableClasses;
         if(request.RandomClass&&classes.Length==0)throw new InvalidDataException("当前没有启用可创建的陪玩职业，请先在游戏设置中启用职业。");
         var profiles=pool.Take(request.Count).Select(name=>
         {
             var preset=request.RandomPersonality?presets[RandomNumberGenerator.GetInt32(presets.Length)]:null;
             var p=request.Template with{Id=Guid.NewGuid(),Version="",Name=name,Class=request.RandomClass?classes[RandomNumberGenerator.GetInt32(classes.Length)]:request.Template.Class,
-                Gender=request.RandomGender?RandomNumberGenerator.GetInt32(2):request.Template.Gender,Schedule=request.Template.Schedule with{Windows=request.Template.Schedule.Windows.ToArray()},
+                Gender=request.RandomGender?RandomNumberGenerator.GetInt32(2):request.Template.Gender,Schedule=request.RandomSchedule?CompanionSchedulePresets.Pick(schedules):CompanionSchedulePresets.Copy(request.Template.Schedule),
                 PresetKey=preset?.Key??request.Template.PresetKey,PresetRevision=preset?.Revision??request.Template.PresetRevision,Traits=preset?.Traits??request.Template.Traits};
             CompanionValidation.Profile(p,store);return p;
         }).ToArray();

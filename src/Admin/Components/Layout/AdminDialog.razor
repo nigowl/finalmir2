@@ -42,8 +42,8 @@
 
     public async ValueTask DisposeAsync()
     {
-        // inline 弹窗的浮层由 Provider 持有，移除编辑组件时也必须主动关闭。
-        if (Instance == null && native != null) await native.CloseAsync();
+        // 嵌套 inline 弹窗会继承外层 Instance，仍须关闭自己在 Provider 中的浮层。
+        if ((Instance == null || Visible) && native != null) await native.CloseAsync();
     }
 
     public static async Task<bool> Confirm(IDialogService dialogs, string title, string message, string confirmText)

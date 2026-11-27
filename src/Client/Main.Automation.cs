@@ -21,6 +21,7 @@ public partial class Main
 
     public override void _Input(InputEvent input)
     {
+        if (AppraisalSelectionInput(input)) return;
         if (input is InputEventKey { Pressed: false }) KeyboardInput(input);
         StopBattleForInput(input);
         ChatResizeInput(input);
@@ -60,6 +61,7 @@ public partial class Main
 
     private void ProcessAutomation()
     {
+        if (appraisalPending != null || selectingAppraisalScroll != 0) return;
         if (!HandshakeReady || World.Loading || State.Me?.Dead != false || settingsDialog.Visible || social.Visible || HeroInventoryContext || npcInput.Visible || heroItemPending != null || pendingDrop != 0 || dropDialog.Visible) return;
         var now = Environment.TickCount64;
         if (inventoryOrganizer.Pending != null) return;
@@ -113,7 +115,7 @@ public partial class Main
     private void AutomationPacket(Packet packet)
     {
         pickup.Apply(packet);
-        if (packet is S.UserInformation or S.MapChanged or S.Death or S.Disconnect or S.LogOutSuccess or S.ReturnToLogin) { autoPickupTarget = 0; pickupNotice = false; }
+        if (packet is S.UserInformation and not S.HeroInformation or S.MapChanged or S.Death or S.Disconnect or S.LogOutSuccess or S.ReturnToLogin) { autoPickupTarget = 0; pickupNotice = false; }
         automation.Apply(packet, Environment.TickCount64);
         if (packet is S.Death or S.MapChanged) CloseGroundMove();
         if (packet is S.MapChanged map && autoBattleEnabled && automation.PendingScrollShape == 2 && map.MapIndex == battleMapIndex)

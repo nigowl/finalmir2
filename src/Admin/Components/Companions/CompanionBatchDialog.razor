@@ -1,13 +1,12 @@
 @using System.Text.Json
-<AdminDialog Visible="true" Title="批量新增陪玩" OnClose="OnClose" OnSave="Save" Busy="busy" CanSave="@(preview!=null&&previewInput==Current)" Dirty="@(original!=Current||preview!=null)" SaveConfirmation="确认保存预览中的全部陪玩档案及昵称池？注册与建角按频率限制排队执行。">
+<AdminDialog Visible="true" Title="批量新增陪玩" OnClose="OnClose" OnSave="Save" Busy="busy" CanSave="@(preview!=null&&previewInput==Current)" Dirty="@(original!=Current||preview!=null)" SaveConfirmation="确认创建预览中的全部陪玩档案？使用预设昵称池，注册与建角按频率限制排队执行。">
 <DialogContent>
     @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
     <MudGrid Spacing="2">
         <MudItem xs="6"><MudNumericField T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="新增数量" Min="1" Max="100" @bind-Value="count" /></MudItem>
         <MudItem xs="6"><MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="本批标签" Immediate="true" @bind-Value="template.Tags" /></MudItem>
     </MudGrid>
-    <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="昵称候选池（每行一个，生成时随机选取且不重复）" Lines="7" Immediate="true" @bind-Value="names" />
-    <MudButton OnClick="RestoreNames" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">恢复内置100个昵称</MudButton>
+    <MudText Typo="Typo.body2" Class="my-2">使用昵称管理中的预设昵称池（@Overview.Settings.Nicknames.Length 个），自动排除已用或重复昵称；修改请到“陪玩设置 → 昵称管理”。</MudText>
     <MudCheckBox T="bool" Label="随机职业" @bind-Value="randomClass" />
     @if(!randomClass){<MudSelect T="int" Margin="Margin.Dense" Variant="Variant.Outlined" Label="固定职业" @bind-Value="template.Class">@foreach(var c in Overview.AvailableClasses??[0,1,2,3,4]){<MudSelectItem Value="c">@ChineseText.Name(((MirClass)c).ToString())</MudSelectItem>}</MudSelect>}
     <MudText Typo="Typo.caption">职业仅从本版本已开放的职业中选择。</MudText>
@@ -18,15 +17,15 @@
     <MudCheckBox T="bool" Label="允许本批陪玩运行" @bind-Value="template.Enabled" />
     <CompanionGuildFields Preferences="template.Guilds" />
     <MudCheckBox T="bool" Label="按日程自动上线" @bind-Value="template.Scheduled" />
-    @if(template.Scheduled){<ScheduleFields Schedule="template.Schedule" />}
-    <MudAlert Severity="Severity.Info">默认创建离线档案、LLM关闭。自动过滤当前版本角色/陪玩重名及不合法昵称；昵称不足会拒绝，不会自动添加编号冒充自定义昵称。取消不保存昵称池。</MudAlert>
+    @if(template.Scheduled){<ScheduleFields @bind-Schedule="template.Schedule" Presets="@(Overview.SchedulePresets??[])" @bind-RandomSchedule="randomSchedule" />}
+    <MudAlert Severity="Severity.Info">默认创建离线档案、LLM关闭。自动过滤当前版本角色/陪玩重名及不合法昵称；昵称不足会拒绝，不会自动添加编号冒充自定义昵称。取消不创建档案。</MudAlert>
     <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="busy" OnClick="Preview" Size="Size.Small">随机生成预览</MudButton>
     @if(preview!=null)
     {
         @if(previewInput!=Current){<MudAlert Severity="Severity.Warning">参数已变化，请重新生成预览。</MudAlert>}
         <MudText Class="my-2">本次 @preview.Profiles.Length 个，可用昵称 @preview.Available 个，排除 @preview.Excluded.Length 项。</MudText>
         @if(preview.Excluded.Length>0){<MudText Typo="Typo.caption">已排除：@string.Join("、",preview.Excluded.Take(30))</MudText>}
-        <MudTable T="CompanionProfile" Items="preview.Profiles" Dense="true" RowsPerPage="10"><HeaderContent><MudTh>昵称</MudTh><MudTh>职业 / 性别</MudTh><MudTh>人格</MudTh></HeaderContent><RowTemplate><MudTd>@context.Name</MudTd><MudTd>@ChineseText.Name(((MirClass)context.Class).ToString()) / @(context.Gender==0?"男":"女")</MudTd><MudTd>@Overview.Presets.First(p=>p.Key==context.PresetKey&&p.Revision==context.PresetRevision).Name</MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" /></PagerContent></MudTable>
+        <MudTable T="CompanionProfile" Items="preview.Profiles" Dense="true" RowsPerPage="10"><HeaderContent><MudTh>昵称</MudTh><MudTh>职业 / 性别</MudTh><MudTh>人格</MudTh><MudTh>日程</MudTh></HeaderContent><RowTemplate><MudTd>@context.Name</MudTd><MudTd>@ChineseText.Name(((MirClass)context.Class).ToString()) / @(context.Gender==0?"男":"女")</MudTd><MudTd>@Overview.Presets.First(p=>p.Key==context.PresetKey&&p.Revision==context.PresetRevision).Name</MudTd><MudTd>@(Overview.SchedulePresets?.FirstOrDefault(p=>CompanionSchedulePresets.Matches(p.Schedule,context.Schedule))?.Name??"自定义")</MudTd></RowTemplate><PagerContent><MudTablePager RowsPerPageString="每页条数" /></PagerContent></MudTable>
     }
 </DialogContent>
 </AdminDialog>
@@ -34,14 +33,13 @@
     [Parameter,EditorRequired]public CompanionOverview Overview{get;set;}=null!;
     [Parameter]public EventCallback OnClose{get;set;}
     [Parameter]public EventCallback OnSaved{get;set;}
-    private int count=10;private string names="",original="",previewInput="";private bool randomClass=true,randomGender=true,randomPersonality=true,busy;
+    private int count=10;private string original="",previewInput="";private bool randomClass=true,randomGender=true,randomPersonality=true,randomSchedule,busy;
     private CompanionProfile template=new();private CompanionBatchPreview? preview;private string? error;
-    private string Current=>JsonSerializer.Serialize(new{count,names,template,randomClass,randomGender,randomPersonality});
-    private string[] Nicknames=>names.Split(['\r','\n',',','，',';','；'],StringSplitOptions.RemoveEmptyEntries|StringSplitOptions.TrimEntries);
-    protected override void OnInitialized(){names=string.Join('\n',Overview.Settings.Nicknames);original=Current;}
-    private void RestoreNames()=>names=string.Join('\n',CompanionNames.All);
+    private string Current=>JsonSerializer.Serialize(new{count,template,randomClass,randomGender,randomPersonality,randomSchedule});
+    private string[] Nicknames=>Overview.Settings.Nicknames;
+    protected override void OnInitialized()=>original=Current;
     private async Task Preview()
-    {busy=true;error=null;try{preview=await Api.Post<CompanionBatchPreview>("management/companions/batch-preview",new CompanionBatchPlan(count,Nicknames,template,randomClass,randomGender,randomPersonality));previewInput=Current;}catch(Exception e){error=e.Message;preview=null;}finally{busy=false;}}
+    {busy=true;error=null;try{preview=await Api.Post<CompanionBatchPreview>("management/companions/batch-preview",new CompanionBatchPlan(count,Nicknames,template,randomClass,randomGender,randomPersonality,randomSchedule));previewInput=Current;}catch(Exception e){error=e.Message;preview=null;}finally{busy=false;}}
     private async Task Save()
     {if(preview==null||previewInput!=Current)return;busy=true;try{await Api.Post<CompanionProfile[]>("management/companions/batch",new CompanionBatchCreate(preview.Profiles,Nicknames,Overview.Settings.Version));await OnSaved.InvokeAsync();}catch(Exception e){error=e.Message;}finally{busy=false;}}
 }

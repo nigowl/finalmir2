@@ -23,7 +23,7 @@ public sealed partial class CompanionService
                 if(!store.ReserveLlm())throw new InvalidOperationException("本版本今日模型请求额度已用完。");
                 lastModelTest[request.Model.Id]=DateTimeOffset.UtcNow.AddSeconds(5);
                 if(lastModelTest.Count>100)foreach(var id in lastModelTest.Where(p=>p.Value<DateTimeOffset.UtcNow).Select(p=>p.Key).ToArray())lastModelTest.Remove(id);
-                var key=request.ClearKey?"":request.Key??store.Configuration.ModelKeys?.GetValueOrDefault(request.Model.Id)??"";
+                var key=request.ClearKey?"":request.Key??CompanionModels.SavedKey(store.Configuration,request.Model.Id,request.Model.Endpoint);
                 return new CompanionModelConnection(request.Model,key);
             },token);
             var text=await llm.ReplyTo(connection,new(){Name="模型连接检查"},"这是一条连接测试，请回复一句中文问候。",token);

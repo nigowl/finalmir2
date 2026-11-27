@@ -27,10 +27,12 @@ public static class CompanionStorage
         {
             foreach(var pair in storage.Where(pair=>CompanionInventoryRules.StorageMaterial(pair.item,quests,player.Level)).OrderBy(pair=>pair.item.Count))
             {
-                var item=pair.item;var missing=5-inventory.Where(i=>i?.ItemIndex==item.ItemIndex).Sum(i=>(int)i.Count);
+                var item=pair.item;var missing=5-player.CarriedItems.Where(i=>i.ItemIndex==item.ItemIndex).Sum(i=>(int)i.Count);
                 var room=Math.Max(0,player.Stats[Stat.BagWeight]*.8m-player.CurrentBagWeight)/item.Info.UnitWeight;
                 var count=(ushort)Math.Min(Math.Min(Math.Max(0,missing),item.Count),room);
                 if(count==0 || count<item.Count&&!storage.Any(p=>p.item==null))continue;
+                var portion=item.Clone();portion.Count=count;
+                if(!Server.Helpers.InventoryStacks.CanAdd(Server.Helpers.MaterialInventoryRules.Contains(item.Info,Envir.Main)?player.Info.QuestInventory:inventory,[portion]))continue;
                 move=new(item.UniqueID,count,true);break;
             }
         }

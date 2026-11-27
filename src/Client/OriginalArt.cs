@@ -161,6 +161,7 @@ public partial class OriginalItemButton : ItemTipButton
             if (SlotIcon != null)
                 DrawTextureRect(SlotIcon, OriginalArt.SlotIconRect(Size, SlotIcon.GetSize()), false, Disabled ? new Color(1, 1, 1, .4f) : Colors.White);
         }
+        base._Draw();
         if (Count <= 1) return;
         var text = Count.ToString();
         var position = new Vector2(Size.X - ThemeDB.FallbackFont.GetStringSize(text, fontSize: 10).X - 1, Size.Y - 1);

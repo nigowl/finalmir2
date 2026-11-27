@@ -1,0 +1,38 @@
+<MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="my-2">
+    <MudText>昵称池 @Nicknames.Length / 1000</MudText>
+    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(()=>adding=true)">批量录入</MudButton>
+    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" OnClick="Fill">补齐到1000个</MudButton>
+</MudStack>
+<MudTextField T="string" Label="搜索昵称" @bind-Value="search" Immediate="true" DebounceInterval="150" Margin="Margin.Dense" Variant="Variant.Outlined" />
+<MudTable T="string" Items="@Nicknames.Where(n=>n.Contains(search,StringComparison.OrdinalIgnoreCase))" Dense="true" Hover="true" RowsPerPage="10">
+    <HeaderContent><MudTh>昵称</MudTh><MudTh>使用状态</MudTh><MudTh>操作</MudTh></HeaderContent>
+    <RowTemplate><MudTd>@context</MudTd><MudTd>@(Used.Contains(context,StringComparer.OrdinalIgnoreCase)?"已使用":"可用")</MudTd><MudTd Class="admin-row-actions"><MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="@(()=>Remove(context))">移除</MudButton></MudTd></RowTemplate>
+    <NoRecordsContent><MudText>没有匹配的昵称。</MudText></NoRecordsContent>
+    <PagerContent><MudTablePager RowsPerPageString="每页条数" /></PagerContent>
+</MudTable>
+<MudText Typo="Typo.caption">昵称与批量新增、随机新增共用。移除仅改变候选池，不删除角色；保存外层陪玩设置后生效。</MudText>
+@if(adding)
+{
+    <AdminDialog Visible="true" Title="批量录入昵称" OnClose="@(()=>adding=false)" OnSave="Import" Dirty="@(input.Length>0)" SaveConfirmation="将这些昵称加入设置草稿？空行和重复项自动忽略，仍需保存外层陪玩设置。">
+    <DialogContent>
+        @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
+        <MudTextField T="string" Label="昵称（每行一个）" @bind-Value="input" Immediate="true" Lines="10" Margin="Margin.Dense" Variant="Variant.Outlined" />
+    </DialogContent>
+    </AdminDialog>
+}
+@code{
+    [Parameter]public string[] Nicknames{get;set;}=[];
+    [Parameter]public string[] Used{get;set;}=[];
+    [Parameter]public EventCallback<string[]> NicknamesChanged{get;set;}
+    [Inject]private IDialogService Dialogs{get;set;}=null!;
+    private string search="",input="";private string? error;private bool adding;
+    private Task Fill()=>NicknamesChanged.InvokeAsync(CompanionNames.Fill(Nicknames));
+    private async Task Remove(string name)
+    {if(await AdminDialog.Confirm(Dialogs,"移除昵称",$"从候选池移除「{name}」？已有角色保留，保存外层设置后生效。","移除"))await NicknamesChanged.InvokeAsync(Nicknames.Where(n=>n!=name).ToArray());}
+    private async Task Import()
+    {
+        var next=CompanionNames.Normalize(Nicknames.Concat(input.Split(['\r','\n',',','，',';','；'])));
+        if(next.Length>1000){error="合并后超过1000个昵称，请减少录入数量。";return;}
+        input="";error=null;adding=false;await NicknamesChanged.InvokeAsync(next);
+    }
+}

@@ -23,7 +23,7 @@ internal static class CompanionChecks
             try{CompanionScheduling.Validate(bad);throw new Exception("错误日程被接受");}catch(InvalidDataException){check(true,"拒绝错误日程");}
         }
         check(PersonalityPresets.All.Length==12&&PersonalityPresets.All.Select(x=>x.Key).Distinct().Count()==12,"预制人格丢失或标识重复");
-        check(CompanionNames.All.Length==100&&CompanionNames.All.Distinct().Count()==100&&CompanionNames.All.All(Server.MirEnvir.Envir.IsCharacterNameValid),"内置100昵称不合法或重复");
+        check(CompanionNames.All.Length==1000&&CompanionNames.All.Distinct().Count()==1000&&CompanionNames.All.All(Server.MirEnvir.Envir.IsCharacterNameValid),"内置1000昵称不合法或重复");
         check(PersonalityPresets.All.Single(x=>x.Key=="diligent").Traits.Diligence>PersonalityPresets.All.Single(x=>x.Key=="laid_back").Traits.Diligence,"人格行为参数没有区别");
         var directory=Path.Combine(root,"companions");Directory.CreateDirectory(directory);
         var paths=new ProjectPaths(data:directory,runtime:directory);

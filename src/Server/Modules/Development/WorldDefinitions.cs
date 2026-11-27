@@ -97,9 +97,8 @@ public sealed partial class WorldDefinitions(ProjectPaths paths, AssetCatalog as
         var duplicate = edit.Kind == "items" ? World.ItemInfoList.Any(i => i.Index != edit.Id && i.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) :
             World.MonsterInfoList.Any(i => i.Index != edit.Id && i.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (name != before.Name && duplicate) throw new InvalidOperationException("已有其他定义使用这个名称。");
-        if (edit.Kind == "items" && edit.Price == 0 && World.PublicShopCatalog?.Tabs.SelectMany(tab => tab.Products)
-            .Any(product => product.ItemIndex == edit.Id && product.Price == 0) == true)
-            throw new InvalidDataException("此物品在商城沿用默认价格，请先设置商城单价或移除商品，不能将定义价格改为0。");
+        if (edit.Kind == "items" && edit.Price != before.Price)
+            throw new InvalidDataException("买卖及回收价格请在商城的物品价格中统一管理。");
         Commit(edit.Kind + "-" + edit.Id, () => Apply(edit with { Name = name }), () => Apply(before));
     }
     private static void Apply(DefinitionEdit edit)

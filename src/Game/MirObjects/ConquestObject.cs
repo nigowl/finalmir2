@@ -354,6 +354,7 @@ namespace Server.MirObjects
                 {
                     case ConquestType.Request:
                         GuildInfo.AttackerID = -1;
+                        GuildInfo.NeedSave = true;
                         break;
                 }
 

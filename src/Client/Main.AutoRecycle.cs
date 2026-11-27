@@ -20,7 +20,7 @@ public partial class Main
         }
         if (!preferences.AutoSell || recyclePaused || now < nextRecycleScan || State.User == null || State.Me?.Dead != false ||
             !Assets.SupportsItemRecycling || State.Trading || State.StorageActive || GuildStorageOpen || npc.Visible || publicShop.Visible ||
-            publicPurchases.Pending || npcTransactionPending || heroItemPending != null || social.Visible || HeroInventoryContext || SkillPreparationBusy || automation.PendingItem != 0 || pendingDrop != 0 || draggedItem != 0 || dropDialog.Visible) return;
+            appraisalPending != null || selectingAppraisalScroll != 0 || publicPurchases.Pending || npcTransactionPending || heroItemPending != null || social.Visible || HeroInventoryContext || SkillPreparationBusy || automation.PendingItem != 0 || pendingDrop != 0 || draggedItem != 0 || dropDialog.Visible) return;
         nextRecycleScan = now + 500;
         var item = ClientAutoSell.Next(State, preferences, recycleRejected);
         if (item == null) return;

@@ -80,7 +80,7 @@ internal static class CompanionHeroChecks
             await Send(new S.Connected()); await Expect(ClientPacketIds.ClientVersion);
             await Send(new S.ClientVersion { Result = 1 }); await Expect(ClientPacketIds.Login);
             await Send(new S.LoginSuccess { Characters = [new SelectInfo { Index = 1, Name = profile.Name }] }); await Expect(ClientPacketIds.StartGame);
-            await Send(new S.UserInformation { ObjectID = 1, Name = profile.Name, HP = 100, MP = 100, Inventory = new UserItem[80], Equipment = new UserItem[14], QuestInventory = [] });
+            await Send(new S.UserInformation { ObjectID = 1, Name = profile.Name, Level = 30, HP = 100, MP = 100, Inventory = new UserItem[80], Equipment = new UserItem[14], QuestInventory = [] });
             await Expect(ClientPacketIds.SwitchGroup);
             await Send(new S.MapInformation { MapIndex = 1, FileName = "Unused" });
             await Send(new S.ObjectNPC { ObjectID = 2, Name = "英雄使者", Location = new(0, 1) }); await Barrier();
@@ -144,13 +144,55 @@ internal static class CompanionHeroChecks
             await Send(new S.HeroBaseStatsInfo { Stats = new BaseStats(MirClass.Archer) { Stats = [new(Stat.HP) { Base = 100 }] } });
             await Send(new S.HeroHealthChanged { HP = 10 });
             var potion = new ItemInfo { Index = 904, Type = ItemType.Potion, Shape = 0, StackSize = 20, Stats = new Stats { [Stat.HP] = 30 } };
-            await Send(new S.NewItemInfo { Info = potion }); await Send(new S.GainedItem { Item = new(potion) { UniqueID = 904, Count = 8 } }); await Barrier();
+            await Send(new S.NewItemInfo { Info = potion }); await Send(new S.GainedItem { Item = new(potion) { UniqueID = 904, Count = 2 } }); await Barrier();
             session.Knowledge = session.Knowledge! with { NoDrug = false };
-            check(!await Maintain(), "英雄吃掉了主人红药储备线以内的药品");
+            check(await Maintain(), "低血且无法安全分药时英雄没有转为跟随");await Expect(ClientPacketIds.SetHeroBehaviour);
+            await Send(new S.SetHeroBehaviour{Behaviour=HeroBehaviour.Follow});await Barrier();
+            check(!await Maintain(), "陪玩不应绕过引擎自动喝药再次发药品请求");
             await Send(new S.GainedItem { Item = new(potion) { UniqueID = 905, Count = 2 } }); await Barrier();
-            check(await Maintain(), "英雄恢复10%血量后未使用富余红药"); await Expect(ClientPacketIds.UseItem);
+            check(!await Maintain(), "陪玩对引擎管理的英雄药品重复发请求");
             await Send(new S.UseItem { Grid = MirGridType.HeroInventory, UniqueID = 904, Success = true }); await Barrier();
-            check(state.User!.Inventory.Where(item => item?.ItemIndex == 904).Sum(item => item.Count) == 9, "英雄药品回执没有从主人共用包扣除一次");
+            check(state.User!.Inventory.Where(item => item?.ItemIndex == 904).Sum(item => item.Count) == 3, "英雄药品回执没有从主人共用包扣除一次");
+            await Send(new S.HeroHealthChanged{HP=80});await Barrier();
+            check(await Maintain(),"英雄恢复后没有重新参与战斗");await Expect(ClientPacketIds.SetHeroBehaviour);
+            await Send(new S.SetHeroBehaviour{Behaviour=HeroBehaviour.Attack});await Barrier();
+            var appraisalSlot=Array.IndexOf(state.User!.Inventory,null);
+            var pending=state.Hero.Equipment[0]!;pending.Identified=false;pending.EquipmentQuality=EquipmentGrade.Fine;
+            session.Knowledge=session.Knowledge! with{Goal=new("service",1,0,1,"鉴定英雄装备",NpcId:2,Key:"appraise/902",AppraisalItemId:902)};
+            await Send(new S.GainedGold{Gold=10000});
+            await Send(new S.NPCResponse{Page=["<鉴定装备/@APPRAISE>"]});await Barrier();
+            async Task<bool> Appraise()=>await (Task<bool>)typeof(CompanionSession).GetMethod("AppraiseEquipment",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(session,[])!;
+            check(await Appraise(),"已穿英雄装备没有先卸下进行鉴定");await Expect(ClientPacketIds.RemoveItem);
+            await Send(new S.RemoveItem{Grid=MirGridType.Inventory,UniqueID=902,To=appraisalSlot,Success=false});await Barrier();
+            check((string?)Field("pendingAsset").GetValue(session)=="hero-remove","主人卸装回执解锁了英雄卸装");
+            await Send(new S.RemoveItem{Grid=MirGridType.HeroInventory,UniqueID=902,To=appraisalSlot,Success=true});await Barrier();
+            check(state.Hero.Equipment[0]==null&&state.User!.Inventory[appraisalSlot]?.UniqueID==902,"英雄卸装没有保留原编号进入主人包");
+            check(await Appraise(),"没有使用当前NPC实际鉴定入口");await Expect(ClientPacketIds.CallNPC);
+            await Send(new S.NPCResponse{Page=["<装备/@APPRAISESELECT_902>"]});await Barrier();
+            check(await Appraise(),"没有使用原装备的实际报价选项");await Expect(ClientPacketIds.CallNPC);
+            await Send(new S.NPCResponse{Page=["<确认鉴定/@APPRAISECONFIRM_902>","<取消/@APPRAISE>"]});await Barrier();
+            check(await Appraise(),"没有提交原NPC二次确认");await Expect(ClientPacketIds.CallNPC);
+            await Send(new S.EquipmentAppraisalResult{UniqueID=999,Success=true});await Barrier();
+            check((string?)Field("pendingAsset").GetValue(session)=="appraise","其他装备鉴定回执误解锁请求");
+            var identified=state.User!.Inventory[appraisalSlot]!.Clone();identified.Identified=true;identified.AddedStats[Stat.MaxMC]=1;
+            await Send(new S.RefreshItem{Item=identified});await Send(new S.EquipmentAppraisalResult{UniqueID=902,Success=true});await Barrier();
+            check(Field("pendingAsset").GetValue(session)==null&&state.User.Inventory[appraisalSlot]!.Identified,"鉴定回执没有确认原装备状态");
+            check(await Maintain(),"英雄鉴定后没有重新穿回原装备");await Expect(ClientPacketIds.EquipItem);
+            await Send(new S.EquipItem{Grid=MirGridType.HeroInventory,UniqueID=902,To=0,Success=true});await Barrier();
+            check(state.Hero.Equipment[0]?.UniqueID==902&&state.Hero.Equipment[0].Identified,"鉴定后重穿改变了英雄装备编号");
+            state.Hero.Equipment[0].MaxDura=1000;state.Hero.Equipment[0].CurrentDura=100;
+            session.Knowledge=session.Knowledge! with{Npcs=[new(1,2,1,0,1,"修理师",[],[(int)ItemType.Weapon])],
+                Goal=new("service",1,0,1,"修理英雄装备",NpcId:2,Key:"repair/2")};
+            Field("repairOnly").SetValue(session,true);
+            await Send(new S.NPCRepair{Rate=1});await Barrier();
+            async Task<bool> Repair()=>await (Task<bool>)typeof(CompanionSession).GetMethod("TasksAndSupplies",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(session,[Environment.TickCount64])!;
+            check(await Repair(),"低耐久英雄装备没有从原英雄槽卸下修理");await Expect(ClientPacketIds.RemoveItem);
+            await Send(new S.RemoveItem{Grid=MirGridType.HeroInventory,UniqueID=902,To=appraisalSlot,Success=true});await Barrier();
+            check(await Repair(),"英雄装备卸下后没有继续原NPC修理");await Expect(ClientPacketIds.RepairItem);
+            await Send(new S.ItemRepaired{UniqueID=902,CurrentDura=1000,MaxDura=1000});await Expect(ClientPacketIds.EquipItem);
+            check((string?)Field("pendingAsset").GetValue(session)=="hero-equip","英雄修理后误穿到主人槽位");
+            await Send(new S.EquipItem{Grid=MirGridType.HeroInventory,UniqueID=902,To=0,Success=true});await Barrier();
+            check(state.Hero.Equipment[0]?.UniqueID==902&&state.Hero.Equipment[0].CurrentDura==1000,"英雄修理没有保留原编号和耐久");
             await Send(new S.HeroHealthChanged { HP = 0 }); await Send(new S.UpdateHeroSpawnState { State = HeroSpawnState.Dead });
             await Send(new S.HeroRecovery { HeroIndex = 10, Milliseconds = 60000 }); await Barrier();
             check(!await Maintain(), "英雄死亡60秒内提前召唤");
@@ -171,7 +213,8 @@ internal static class CompanionHeroChecks
             {
                 var header = new byte[4]; try { await stream.ReadExactlyAsync(header, timeout.Token); } catch (EndOfStreamException) { return null; }
                 var body = new byte[BitConverter.ToUInt16(header) - 4]; await stream.ReadExactlyAsync(body, timeout.Token);
-                var id = BitConverter.ToInt16(header, 2); if (id != (short)ClientPacketIds.KeepAlive) return (id, body);
+                var id = BitConverter.ToInt16(header, 2);
+                if (id != (short)ClientPacketIds.KeepAlive && id != (short)ClientPacketIds.ItemPricesRequest) return (id, body);
             }
         }
     }

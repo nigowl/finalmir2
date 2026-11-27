@@ -1,0 +1,66 @@
+@using System.Text.Json
+<MudText Color="Color.Secondary" Class="my-3">统一设置NPC买价、卖给NPC的卖价及自动回收价。按单件基础价配置，实际结算保留数量、耐久和强化修正；NPC买价另计商人倍率及税率。毒符按次数配置，商城按整包计算。</MudText>
+@if(error!=null){<MudAlert Severity="Severity.Error" Dense="true" Class="my-2">@error</MudAlert>}
+@if(notice!=null){<MudAlert Severity="Severity.Success" Dense="true" Class="my-2">@notice</MudAlert>}
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="my-3">
+    <MudTextField T="string" Label="搜索物品名称或编号" Value="search" ValueChanged="Search" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" Disabled="busy" OnClick="Load">刷新</MudButton>
+</MudStack>
+<MudTable @ref="table" T="ItemPriceRow" Items="Filtered" Dense="true" Hover="true" RowsPerPage="10" Loading="busy">
+    <HeaderContent><MudTh>物品</MudTh><MudTh>类型</MudTh><MudTh>买价</MudTh><MudTh>卖价</MudTh><MudTh>回收价</MudTh><MudTh>操作</MudTh></HeaderContent>
+    <RowTemplate>
+        <MudTd><img class="admin-item-icon" src="@Icon(context)" alt="" loading="lazy" />@context.Name (#@context.Prices.ItemIndex)</MudTd>
+        <MudTd>@context.Type.ToLocalizedString()</MudTd>
+        <MudTd>@context.Prices.Buy.ToString("N0")</MudTd><MudTd>@context.Prices.Sell.ToString("N0")</MudTd><MudTd>@context.Prices.Recycle.ToString("N0")</MudTd>
+        <MudTd Class="admin-row-actions"><MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Disabled="busy" OnClick="@(()=>Edit(context))">编辑</MudButton></MudTd>
+    </RowTemplate>
+    <NoRecordsContent><MudText>没有符合条件的物品。</MudText></NoRecordsContent>
+    <PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" /></PagerContent>
+</MudTable>
+@if(selected!=null&&draft!=null)
+{
+    <AdminDialog Visible="true" Title="编辑物品价格" OnClose="@(()=>draft=null)" OnSave="Save" Busy="busy" CanSave="valid" Dirty="@(JsonSerializer.Serialize(draft)!=original)" SaveConfirmation="保存此物品的买价、卖价和回收价？将备份数据库并立即生效，已有商城报价会失效。">
+        <DialogContent>
+            <MudForm @bind-IsValid="valid">
+            <MudText Class="mb-3"><img class="admin-item-icon" src="@Icon(selected)" alt="" />@selected.Name (#@selected.Prices.ItemIndex)</MudText>
+            @if(error!=null){<MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>}
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="4"><MudNumericField T="uint" Label="买价" @bind-Value="draft.Buy" Min="0" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" Disabled="busy" /></MudItem>
+                <MudItem xs="12" sm="4"><MudNumericField T="uint" Label="卖价" @bind-Value="draft.Sell" Min="0" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" Disabled="busy" /></MudItem>
+                <MudItem xs="12" sm="4"><MudNumericField T="uint" Label="回收价" @bind-Value="draft.Recycle" Min="0" Immediate="true" Margin="Margin.Dense" Variant="Variant.Outlined" Disabled="busy" /></MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.caption" Class="mt-3">单位：金币。@selected.Unit 买价为0的物品不能加入公共商城；卖价或回收价为0时无对应收益。装备品质、绑定和任务保护继续生效。</MudText>
+            </MudForm>
+        </DialogContent>
+    </AdminDialog>
+}
+@code {
+    private ItemPriceRow[] rows=[];
+    private ItemPriceRow? selected;
+    private ItemPrice? draft;
+    private MudTable<ItemPriceRow>? table;
+    private string search="",original="";
+    private string? error,notice;
+    private bool busy,valid=true;
+    private IEnumerable<ItemPriceRow> Filtered=>rows.Where(row=>string.IsNullOrWhiteSpace(search)||row.Name.Contains(search,StringComparison.OrdinalIgnoreCase)||row.Prices.ItemIndex.ToString().Contains(search));
+    private static string Icon(ItemPriceRow row)=>$"/asset-preview?library=Items&index={row.Image}";
+    protected override Task OnInitializedAsync()=>Load();
+    private void Search(string value){search=value;table?.NavigateTo(0);}
+    private async Task Load()
+    {
+        busy=true;
+        try{rows=await Api.Get<ItemPriceRow[]>("management/shop/prices");error=null;}
+        catch(Exception e){error=e.Message;}finally{busy=false;}
+    }
+    private void Edit(ItemPriceRow row){selected=row;draft=row.Prices with { };original=JsonSerializer.Serialize(draft);error=null;}
+    private async Task Save()
+    {
+        if(draft==null||selected==null||busy)return;
+        busy=true;
+        try{
+            var saved=await Api.Put<ItemPriceRow>("management/shop/prices",new ItemPriceEdit(draft,selected.Version));
+            rows=rows.Select(row=>row.Prices.ItemIndex==saved.Prices.ItemIndex?saved:row).ToArray();
+            draft=null;error=null;notice="物品价格已保存。";
+        }catch(Exception e){error=e.Message;}finally{busy=false;}
+    }
+}

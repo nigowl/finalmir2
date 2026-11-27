@@ -26,7 +26,7 @@ public partial class Main
             S.MergeItem { Success: true } p => Item(p.IDFrom),
             S.SplitItem1 { Success: true } p => Item(p.UniqueID),
             S.MoveItem { Success: true } p => Slot(p.Grid == MirGridType.Storage ? State.Storage : State.User?.Inventory, p.From),
-            S.StoreItem { Success: true } p => Slot(State.User?.Inventory, p.From),
+            S.StoreItem { Success: true } p => Slot(p.From < 0 ? State.User?.QuestInventory : State.User?.Inventory, p.From < 0 ? ~p.From : p.From),
             S.TakeBackItem { Success: true } p => Slot(State.Storage, p.From),
             S.DepositTradeItem { Success: true } p => Slot(State.User?.Inventory, p.From),
             S.RetrieveTradeItem { Success: true } p => Slot(State.TradeItems, p.From),

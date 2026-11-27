@@ -2,8 +2,19 @@ using Godot;
 
 public partial class ItemTipButton : Button
 {
+    public UserItem? Item;
     public Func<Control>? TooltipBuilder;
     internal ItemTooltip? OpenTooltip { get; private set; }
+
+    public override void _Draw()
+    {
+        if (Item?.Info?.IsEquipment != true) return;
+        var colour = EquipmentAppraisal.Colour(Item);
+        if (Item.EquipmentQuality > EquipmentGrade.Normal && Item.Identified)
+            DrawRect(new Rect2(Vector2.One, Size - Vector2.One * 2), new Color(colour.R / 255f, colour.G / 255f, colour.B / 255f, .8f), false);
+        else if (EquipmentAppraisal.Pending(Item))
+            DrawString(ThemeDB.FallbackFont, new Vector2(Size.X - 9, 10), "?", fontSize: 10, modulate: new Color("c5b99d"));
+    }
 
     public override GodotObject _MakeCustomTooltip(string forText)
     {

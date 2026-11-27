@@ -379,7 +379,7 @@ namespace Server.MirObjects
             return new S.ObjectNPC
             {
                 ObjectID = ObjectID,
-                Name = Name,
+                Name = NpcLabels.Encode(Info.Name, Info.FileName, Quests.Count > 0),
                 NameColour = NameColour,
                 Image = Info.Image,
                 Colour = Info.Colour,

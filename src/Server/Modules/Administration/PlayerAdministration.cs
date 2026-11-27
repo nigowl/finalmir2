@@ -81,9 +81,16 @@ public sealed class PlayerAdministration(AdminChanges changes)
         var inventory = Items("Inventory", c.Inventory).Concat(Items("Equipment", c.Equipment)).Concat(Items("QuestInventory", c.QuestInventory)).ToArray();
         var result = new CharacterDetails(c.Index, c.Name, c.AccountInfo.Index, c.AccountInfo.AccountID, c.Class.ToString(), c.Gender.ToString(), c.Level, c.Experience, c.PKPoints, c.HP, c.MP,
             c.Player != null, c.Deleted, c.Banned, c.BanReason, AdminChanges.PublicExpiry(c.ExpiryDate), c.ChatBanned, AdminChanges.PublicExpiry(c.ChatBanExpiryDate), c.CurrentMapIndex, c.CurrentLocation.X, c.CurrentLocation.Y,
-            c.BindMapIndex, c.BindLocation.X, c.BindLocation.Y, c.GuildIndex, World.GetGuild(c.GuildIndex)?.Name ?? "", inventory, c.Magics.Select(m => m.Spell.ToString()).ToArray(), c.CurrentQuests.Select(q => q.Index).ToArray(), c.CompletedQuests.ToArray(), "");
+            c.BindMapIndex, c.BindLocation.X, c.BindLocation.Y, c.GuildIndex, World.GetGuild(c.GuildIndex)?.Name ?? "", inventory, c.Magics.Select(m => m.Spell.ToLocalizedString()).ToArray(), c.CurrentQuests.Select(q => q.Index).ToArray(), c.CompletedQuests.ToArray(), "")
+        {
+            Gold = c.AccountInfo.Gold,
+            ActiveQuestNames = c.CurrentQuests.Select(q => QuestName(q.Index)).ToArray(),
+            CompletedQuestNames = c.CompletedQuests.Select(QuestName).ToArray()
+        };
         return result with { Version = AdminChanges.Version(result) };
     }
+    private static string QuestName(int id) => World.QuestInfoList.FirstOrDefault(q => q.Index == id) is { } quest
+        ? $"{ChineseText.Name(quest.Name)}（#{id}）" : $"未知任务（#{id}）";
     public CharacterDetails CreateCharacter(CharacterCreate request)
     {
         var account = Account(request.AccountId); Offline(account);
@@ -108,8 +115,8 @@ public sealed class PlayerAdministration(AdminChanges changes)
         if (edit.Level > 0 && edit.Level < Settings.ExperienceList.Count && edit.Experience >= Settings.ExperienceList[edit.Level - 1]) throw new InvalidDataException("经验必须低于所选等级升至下一级的门槛。");
         var expiry = AdminChanges.Expiry(edit.Banned, edit.BanUntil); var mute = AdminChanges.Expiry(edit.Muted, edit.MuteUntil); var reason = BanReason(edit.Banned, edit.BanReason);
         var oldExpiry = c.ExpiryDate; var oldMute = c.ChatBanExpiryDate;
-        changes.Commit(() => { c.Level = (ushort)edit.Level; c.Experience = edit.Experience; c.PKPoints = edit.PkPoints; c.Banned = edit.Banned; c.BanReason = reason; c.ExpiryDate = expiry; c.ChatBanned = edit.Muted; c.ChatBanExpiryDate = mute; },
-            () => { c.Level = (ushort)before.Level; c.Experience = before.Experience; c.PKPoints = before.PkPoints; c.Banned = before.Banned; c.BanReason = before.BanReason; c.ExpiryDate = oldExpiry; c.ChatBanned = before.Muted; c.ChatBanExpiryDate = oldMute; });
+        changes.Commit(() => { c.AccountInfo.Gold = edit.Gold ?? before.Gold; c.Level = (ushort)edit.Level; c.Experience = edit.Experience; c.PKPoints = edit.PkPoints; c.Banned = edit.Banned; c.BanReason = reason; c.ExpiryDate = expiry; c.ChatBanned = edit.Muted; c.ChatBanExpiryDate = mute; },
+            () => { c.AccountInfo.Gold = before.Gold; c.Level = (ushort)before.Level; c.Experience = before.Experience; c.PKPoints = before.PkPoints; c.Banned = before.Banned; c.BanReason = before.BanReason; c.ExpiryDate = oldExpiry; c.ChatBanned = before.Muted; c.ChatBanExpiryDate = oldMute; });
         World.RemoveRank(c);
         if (c.Level > 0 && !c.AccountInfo.AdminAccount && !c.Deleted) World.CheckRankUpdate(c);
     }
@@ -137,7 +144,7 @@ public sealed class PlayerAdministration(AdminChanges changes)
         if (c.Level == 0 || c.Deleted) throw new InvalidOperationException("发放物品前，请先初始化此角色。");
         var info = World.ItemInfoList.SingleOrDefault(i => i.Index == request.ItemId) ?? throw new InvalidDataException("未找到物品定义。");
         if (request.Count is < 1 or > 65535) throw new InvalidDataException("发放数量必须为1至65,535。");
-        var inventory = info.Type == ItemType.Quest ? c.QuestInventory : c.Inventory;
+        var inventory = Server.Helpers.MaterialInventoryRules.Contains(info, World) ? c.QuestInventory : c.Inventory;
         var stack = Math.Max(1, (int)info.StackSize); var needed = (request.Count + stack - 1) / stack;
         var free = Enumerable.Range(0, inventory.Length).Where(i => inventory[i] == null).Take(needed).ToArray();
         if (free.Length < needed) throw new InvalidOperationException("背包空位不足，未发放任何物品。");

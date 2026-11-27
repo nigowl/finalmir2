@@ -23,6 +23,7 @@ public static class ResourceService
         builder.Services.AddSingleton<DevelopmentFiles>();
         builder.Services.AddSingleton<SystemSettings>();
         builder.Services.AddSingleton<PublicShopSettings>();
+        builder.Services.AddSingleton<ItemPriceSettings>();
         builder.Services.AddSingleton<WorldDefinitions>();
         builder.Services.AddSingleton<MonsterDrops>();
         builder.Services.AddSingleton<MonsterDefinitions>();
@@ -70,9 +71,10 @@ public static class ResourceService
             { if (!context.Response.HasStarted) { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { error = error.Message }); } }
             finally { lease?.Dispose(); }
         });
-        app.MapGet("/health", (GameRuntime runtime) => new { ready = runtime.Ready, gamePort = runtime.GamePort, version = catalog.Version, gameVersion = paths.VersionName });
-        app.MapGet("/assets/manifest", (GameRuntime runtime) => new { version = catalog.Version, gamePort = runtime.GamePort, protocol = "Crystal TCP", frameFormat = 1, checksumAlgorithm = "sha256", healthDisplay = true, heroRecovery = true, heroDeletion = true, characterLocation = true, publicShop = true, publicShopLayout = true, questNavigation = true, functionKeys = 12, attackModes = 8, playerMoveMilliseconds = Settings.PlayerTiming.MoveMilliseconds, playerActionSpeedPercent = Settings.PlayerTiming.ActionSpeedPercent, itemRecycling = true });
-        app.MapGet("/game/item-catalog", (GameRuntime runtime, CancellationToken token) => runtime.Invoke(() => Server.MirEnvir.Envir.Main.ItemInfoList.Select(item => new ItemCatalogEntry(item.Index, item.FriendlyName, item.Type)).ToArray(), token));
+        app.MapGet("/health", (GameRuntime runtime) => new { ready = runtime.Ready, programVersion = ProgramVersion.Current, gamePort = runtime.GamePort, version = catalog.Version, gameVersion = paths.VersionName });
+        app.MapGet("/assets/manifest", (GameRuntime runtime) => new { version = catalog.Version, gamePort = runtime.GamePort, protocol = "Crystal TCP", frameFormat = 1, checksumAlgorithm = "sha256", healthDisplay = true, heroRecovery = true, heroDeletion = true, characterLocation = true, publicShop = true, publicShopLayout = true, questNavigation = true, functionKeys = 12, attackModes = 8, playerMoveMilliseconds = Settings.PlayerTiming.MoveMilliseconds, playerActionSpeedPercent = Settings.PlayerTiming.ActionSpeedPercent, itemRecycling = true, equipmentAppraisal = true, npcRoles = true, equipmentGlow = true, itemPrices = true });
+        app.MapGet("/game/item-catalog", (GameRuntime runtime, CancellationToken token) => runtime.Invoke(() => Server.MirEnvir.Envir.Main.ItemInfoList.Select(item =>
+            new ItemCatalogEntry(item.Index, item.FriendlyName, item.Type, Server.Helpers.MaterialInventoryRules.Contains(item, Server.MirEnvir.Envir.Main))).ToArray(), token));
         app.MapGet("/game/storage-unlocks", (GameRuntime runtime, CancellationToken token) => runtime.Invoke(StorageUnlocks.Read, token));
         var assets = app.MapGroup("/assets/{requested}");
         assets.AddEndpointFilter(async (context, next) => context.HttpContext.Request.RouteValues["requested"]?.ToString() == catalog.Version ? await next(context) : Results.StatusCode(410));

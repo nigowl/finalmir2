@@ -17,7 +17,7 @@ internal static class CompanionScenario
         var world=Envir.Main;if(!world.LoadDB())throw new InvalidDataException("测试世界读取失败。");
         world.BuffInfoList.AddRange(Server.MirDatabase.BuffInfo.Load());world.LoadAccounts();
         var character=world.CharacterList.Single(c=>c.Index==characterId);
-        if(character.Equipment[0]==null||CompanionSupplyRules.Count(character.Inventory,Stat.HP)<CompanionSupplyRules.Target(Stat.HP,character.Class,50)||
+        if(character.Equipment[0]==null||CompanionSupplyRules.Count(character.Inventory,Stat.HP)<CompanionSupplyRules.Target(Stat.HP,character.Class,50,character.Level)||
             CompanionSupplyRules.TownCount(character.Inventory,character.Class,character.Gender,character.Level)==0)
             throw new InvalidDataException("仅出售场景须已装备武器、药品和回城卷齐全。");
         var info=world.ItemInfoList.Single(item=>item.Name=="NativeDuplicateArmour");

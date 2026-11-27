@@ -16,11 +16,11 @@ public static class CompanionInventory
         var spare = CompanionInventoryRules.SurplusArmour(player.Info.Inventory,player.Info.Equipment[(int)EquipmentSlot.Armour],protectedItems,player.Level)
             .Concat(CompanionInventoryRules.SurplusWeapons(player.Info.Inventory, player.Info.Equipment[(int)EquipmentSlot.Weapon],
                 player.Class, player.Gender, player.Level, caster, protectedItems)).Select(item => new KnownSale(item.UniqueID, item.Count))
-            .Concat(CompanionInventoryRules.SurplusMaterials(player.Info.Inventory, protectedItems, player.Level))
-            .Concat(player.Info.Inventory.Where(item=>CompanionInventoryRules.PlainMeat(item,protectedItems,player.Level))
+            .Concat(CompanionInventoryRules.SurplusMaterials(player.CarriedItems, protectedItems, player.Level))
+            .Concat(player.CarriedItems.Where(item=>CompanionInventoryRules.PlainMeat(item,protectedItems,player.Level))
                 .Select(item=>new KnownSale(item.UniqueID,item.Count))).ToArray();
         if (spare.Length == 0) return null;
-        var inventory = player.Info.Inventory.Where(item => item != null).ToDictionary(item => item.UniqueID);
+        var inventory = player.CarriedItems.ToDictionary(item => item.UniqueID);
         if (recycleOnly)
         {
             var allowed = spare.Where(sale => ItemRecycling.Rejection(inventory[sale.UniqueId]).Length == 0).ToArray();

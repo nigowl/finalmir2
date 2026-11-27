@@ -7,7 +7,7 @@ using Server.MirEnvir;
 internal static class Fixture
 {
     // Keep deterministic gameplay changes in disposable data, never in the reference world.
-    public static void Create(string destination, bool tradeAccounts = false, bool guildAccount = false, bool catalog = false, bool guidedCompanions = false, bool gmAccount = false, bool skillEffects = false, bool companionRespawns = false, bool publicServices = false, bool actionItems = false, bool social = false, bool movementStates = false, bool guildWars = false, bool guildCreation = false, bool objectNames = false, bool itemOwners = false, bool healthDisplay = false)
+    public static void Create(string destination, bool tradeAccounts = false, bool guildAccount = false, bool catalog = false, bool guidedCompanions = false, bool gmAccount = false, bool skillEffects = false, bool companionRespawns = false, bool publicServices = false, bool actionItems = false, bool social = false, bool movementStates = false, bool guildWars = false, bool guildCreation = false, bool objectNames = false, bool itemOwners = false, bool healthDisplay = false, bool itemPrices = false)
     {
         var reference = new Mir2.Hosting.ProjectPaths().Data;
         var root = Path.GetFullPath(destination);
@@ -166,6 +166,13 @@ internal static class Fixture
             if (publicServices) PublicServicesFixture.Configure(world, potion, sword);
             if (actionItems) ClientActionItemsFixture.Configure(world);
             if (movementStates) MovementStateFixture.Configure(world, map, root);
+            if (itemPrices)
+            {
+                first.Respawns.Clear(); second.Respawns.Clear(); first.SafeZones[0].Size = 20;
+                var role = world.CharacterList.Single(character => character.Name == "NativeGM");
+                role.AccountInfo.Gold = 10000; role.HP = role.MP = 10000; role.Inventory = new UserItem[80];
+                world.SaveAccounts();
+            }
             world.SaveDB();
             if (tradeAccounts)
             {

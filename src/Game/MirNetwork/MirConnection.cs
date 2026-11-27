@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Net.Sockets;
 using Server.MirDatabase;
 using Server.MirEnvir;
@@ -12,7 +12,7 @@ namespace Server.MirNetwork
 {
     public enum GameStage { None, Login, Select, Game, Observer, Disconnected }
 
-    public class MirConnection
+    public partial class MirConnection
     {
         protected static Envir Envir
         {
@@ -348,6 +348,18 @@ namespace Server.MirNetwork
                     break;
                 case (short)ClientPacketIds.HealthDisplayRequest:
                     if (Stage == GameStage.Game) Player.EnableHealthDisplay();
+                    break;
+                case (short)ClientPacketIds.ItemPricesRequest:
+                    if (Stage == GameStage.Game) EnableItemPrices();
+                    break;
+                case (short)ClientPacketIds.ClientPresentationRequest:
+                    if (Stage == GameStage.Game) Player.EnableClientPresentation();
+                    break;
+                case (short)ClientPacketIds.AppraiseEquipment:
+                    if (Stage == GameStage.Game) Player.AppraiseEquipment((C.AppraiseEquipment)p);
+                    break;
+                case (short)ClientPacketIds.StorageRequest:
+                    if (Stage == GameStage.Game) Player.RequestStorage();
                     break;
                 case (short)ClientPacketIds.Login:
                     Login((C.Login) p);
@@ -935,7 +947,7 @@ namespace Server.MirNetwork
                 return;
             }
 
-            if (!CanAccessStorageNpc())
+            if (!CanAccessStorage())
             {
                 Enqueue(new S.StorageUnlockResult { Result = 3, HasPassword = Account.HasStoragePassword });
                 return;
@@ -972,7 +984,7 @@ namespace Server.MirNetwork
                 return;
             }
 
-            if (!CanAccessStorageNpc())
+            if (!CanAccessStorage())
             {
                 Enqueue(new S.StoragePasswordResult { Result = 0, Removing = false, HasPassword = Account.HasStoragePassword, LastSetTime = Account.StoragePasswordLastSet });
                 return;
@@ -1012,7 +1024,7 @@ namespace Server.MirNetwork
                 return;
             }
 
-            if (!CanAccessStorageNpc())
+            if (!CanAccessStorage())
             {
                 Enqueue(new S.StoragePasswordResult { Result = 0, Removing = true, HasPassword = Account.HasStoragePassword, LastSetTime = Account.StoragePasswordLastSet });
                 return;
@@ -1040,23 +1052,7 @@ namespace Server.MirNetwork
             Player.SetStorageUnlocked(true);
             Enqueue(new S.StoragePasswordResult { Result = 4, Removing = true, HasPassword = false, LastSetTime = DateTime.MinValue });
         }
-        private bool CanAccessStorageNpc()
-        {
-            if (Player == null) return false;
-
-            if (Player.NPCPage == null || !String.Equals(Player.NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-                return false;
-
-            NPCObject ob = null;
-            for (int i = 0; i < Player.CurrentMap.NPCs.Count; i++)
-            {
-                if (Player.CurrentMap.NPCs[i].ObjectID != Player.NPCObjectID) continue;
-                ob = Player.CurrentMap.NPCs[i];
-                break;
-            }
-
-            return ob != null && Functions.InRange(ob.CurrentLocation, Player.CurrentLocation, Globals.DataRange);
-        }
+        private bool CanAccessStorage() => Player?.CanOpenStorage == true;
         private void Login(C.Login p)
         {
             if (Stage != GameStage.Login) return;
@@ -1155,6 +1151,7 @@ namespace Server.MirNetwork
             //    return;
             //}
 
+            itemPricesEnabled = false;
             Player = new PlayerObject(info, this);
             Player.StartGame();
         }
@@ -2337,6 +2334,7 @@ namespace Server.MirNetwork
             if (SentItemInfo.Contains(info)) return;
             Enqueue(new S.NewItemInfo { Info = info });
             SentItemInfo.Add(info);
+            SendItemPrice(info);
         }
 
         public void CheckMonsterInfo(int monsterIndex)
@@ -2413,5 +2411,7 @@ namespace Server.MirNetwork
         public List<long> CharactersMade = new List<long>();
         public void PruneAccounts(long now) => AccountsMade.RemoveAll(time => now - time >= 60 * 60 * 1000);
         public void PruneCharacters(long now) => CharactersMade.RemoveAll(time => now - time >= 60 * 60 * 1000);
+        public bool AccountsLimited(int limit, long now) { PruneAccounts(now); return limit > 0 && AccountsMade.Count >= limit; }
+        public bool CharactersLimited(int limit, long now) { PruneCharacters(now); return limit > 0 && CharactersMade.Count >= limit; }
     }
 }

@@ -13,6 +13,8 @@ macOS 上运行的传奇 Mir2：原 C# 游戏引擎、SQLite 存档、Godot 原�
 
 三端程序分别发布到 build/server、build/admin、build/client。服务端和管理端在各自的 appsettings.json 中配置 Mir2.VersionDirectory，默认 `../../data/versions/default`；相对路径以程序目录为准，MIR2_DATA_ROOT 可覆盖。重复发布保留这两份配置，运行中的发布程序需先正常停止。
 
+Linux 服务器仅发布服务端与管理端：`./publish.sh build/linux-x64 --server-only --runtime linux-x64`。三端共用根目录 `VERSION`，每次发布成功后末位自动加一，失败保留旧版本；发布始终在独立副本构建。服务器数据由运营人员另行上传，不随程序发布。固定 Linux 目录与 systemd/SSH 隧道见 [部署说明](docs/DEPLOYMENT.md#linux-服务器布局与运行)。
+
 每个版本目录包含独立的 SQLite、地图/素材、怪物/NPC/物品定义、世界配置与脚本、管理密钥、备份及导入资料。正常停服后复制 `data/versions/default` 为 `data/versions/复古`，再让服务端和管理端指向复古目录，即可独立修改和运行；复制会保留账户与角色存档。管理台显示版本名称并拒绝目录错配请求。部署只需程序和所需版本目录，不需要源码。
 
 服务端、管理端为自包含程序；客户端随包携带 Godot .NET 宿主，运行机器仍需 .NET 8 运行时。详细配置、复制和多版本并行运行见 [发布部署说明](docs/DEPLOYMENT.md)。

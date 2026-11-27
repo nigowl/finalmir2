@@ -207,7 +207,7 @@ namespace Server.MirDatabase
                     string[] splitName = s.Split('_');
                     s = splitName[splitName.Length - 1];
                 }
-                return s;
+                return NpcLabels.DisplayName(s, FileName);
             }
         }
 
@@ -220,7 +220,7 @@ namespace Server.MirDatabase
                     ObjectID = 0,
                     Index = Index,
                     FileName = FileName,
-                    Name = Name,
+                    Name = GameName,
                     MapIndex = MapIndex,
                     Location = Location,
                     Image = Image,

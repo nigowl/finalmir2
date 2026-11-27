@@ -8,7 +8,10 @@ public sealed partial class CompanionSession
     private async Task<bool> ProtectItems(long now)
     {
         if (state.User==null || pendingAsset!=null || logoutSent!=0) return false;
-        preferences.AutoHp=preferences.AutoMp=Knowledge?.NoDrug==false;
+        var stone=MagicBloodStone.Remaining(state.User.Equipment[(int)EquipmentSlot.Torch])>=60;
+        preferences.AutoHp=Knowledge?.NoDrug==false&&(!stone||now-monsterAttackedAt<5000||now<aggressorUntil);
+        preferences.AutoMp=Knowledge?.NoDrug==false;
+        preferences.MpPercent=stone?10:35;
         preferences.AutoTown=CompanionSafety.TownAllowed(Knowledge);
         preferences.TownPercent=Crowded(now)?65:35;
         preferences.AutoRandom=!retiring && Knowledge is { NoRandom:false, InSafeZone:false } && now-monsterAttackedAt<5000;

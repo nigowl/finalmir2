@@ -59,7 +59,7 @@ public partial class Main
                 AddNpcWords(row, line[offset..link.Index]);
                 var key = "[@" + link.Groups[2].Value.Split('/')[0] + "]";
                 if (link.Groups[1].Value.Replace(" ", "") == "关闭") closeRow ??= row;
-                row.AddChild(NpcLink(link.Groups[1].Value, () => Send(new C.CallNPC { ObjectID = npcDialogueId, Key = key })));
+                row.AddChild(NpcLink(link.Groups[1].Value, () => CallNpcLink(key)));
                 offset = link.Index + link.Length;
             }
             AddNpcWords(row, line[offset..]);
@@ -88,6 +88,7 @@ public partial class Main
 
     internal void RenderGoods(S.NPCGoods packet)
     {
+        lastNpcGoods = packet;
         Clear(npcText); ClearNpcGoods(); InvalidateNpcPurchase(); repairPanel.Hide(); npc.Show(); npcScroll.ScrollVertical = 0;
         foreach (var item in packet.List) State.Bind(item);
         foreach (var group in packet.List.Where(item => item.Info != null).GroupBy(item => (item.Info.Type, item.Info.FriendlyName)))
@@ -113,7 +114,7 @@ public partial class Main
     }
 
     private static uint ShopPrice(UserItem item, float rate)
-    { var single = item.Clone(); single.Count = 1; return (uint)Math.Clamp(single.Price() * (double)rate, 0, uint.MaxValue); }
+    { var single = item.Clone(); single.Count = 1; return (uint)Math.Clamp(single.BuyPrice() * (double)rate, 0, uint.MaxValue); }
 
     private void ClearNpcGoods()
     { icons.RemoveAll(pair => npcGoods.IsAncestorOf(pair.button)); Clear(npcGoods); }

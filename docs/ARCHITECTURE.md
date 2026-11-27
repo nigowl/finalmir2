@@ -58,7 +58,7 @@ MIR2_DATA_ROOT=/absolute/path/to/data MIR2_SERVER=http://127.0.0.1:15080 MIR2_AD
 ./start-client.sh -- --server=http://127.0.0.1:5080
 ```
 
-`MIR2_RUNTIME_ROOT` 可单独指定 SQLite、密钥、备份和进程记录位置；三个入口需保持一致。`MIR2_ADMIN_KEY` 可替代自动密钥文件，至少 32 个字符，后端和管理台需使用同一值。`MIR2_BIND_ADDRESS` 可改变游戏/资源监听 IP，管理 UI 仍只监听本机。
+`MIR2_RUNTIME_ROOT` 可单独指定 SQLite、密钥、备份和进程记录位置；三个入口需保持一致。`MIR2_ADMIN_KEY` 可替代自动密钥文件，允许任意非空长度，后端和管理台需使用同一值；未配置时仍自动生成随机密钥。`MIR2_BIND_ADDRESS` 可改变游戏/资源监听 IP；管理 UI 默认仅监听本机，经授权可用 `MIR2_ADMIN_BIND_ADDRESS` 显式对外绑定。
 
 ## 微端缓存与资源更新
 

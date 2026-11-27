@@ -1,0 +1,30 @@
+[Unit]
+Description=FinalMir2 管理控制台
+After=network.target finalmir2-server.service
+RequiresMountsFor=/devdata/finalmir2
+ConditionPathIsMountPoint=/devdata
+
+[Service]
+Type=simple
+User=finalmir2
+Group=finalmir2
+WorkingDirectory=/devdata/finalmir2/admin
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=MIR2_ADMIN_BIND_ADDRESS=0.0.0.0
+Environment=MIR2_ADMIN_PORT=5081
+ExecStart=/devdata/finalmir2/admin/start.sh
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=120
+SendSIGKILL=no
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/devdata/finalmir2/data
+
+[Install]
+WantedBy=multi-user.target

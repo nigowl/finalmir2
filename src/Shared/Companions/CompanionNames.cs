@@ -3,7 +3,7 @@ namespace Mir2.Companions;
 
 public static class CompanionNames
 {
-    public static readonly string[] All =
+    private static readonly string[] Original =
     [
         "下班才上线","摸鱼第一名","菜但爱玩","装备全靠捡","别打我路过","奶茶续命中","熬夜小熊","猫猫不认输","今天想暴富","认真摸鱼",
         "欧气借我点","爆率随缘","这把我能行","走位靠缘分","我真没挂机","小怪别追了","先让我喝药","背包又满了","回城买杯茶","随手捡个宝",
@@ -16,4 +16,13 @@ public static class CompanionNames
         "路边小透明","不卷也不摆","小心我卖萌","队伍气氛组","话多伤害低","组队捡快乐","一起快乐刮痧","见面先加血","回头看队友","独自也能玩",
         "一口一个怪","兜里没金币","原地发会呆","月亮也在卷","星星不掉线","晚风送人头","青铜小锦鲤","好运加载中","快乐不掉线","明天见兄弟"
     ];
+    public static readonly string[] All = Original.Concat(
+        from prefix in new[] { "清风", "明月", "青山", "白鹿", "星河", "晚霞", "长安", "江南", "烟雨", "流云", "孤舟", "落花", "竹影", "秋水", "寒江", "春山", "松间", "林下", "南风", "北辰", "朝露", "暮雪", "浅溪", "远山", "云海", "晴川", "霜林", "月溪", "浮生", "归鸿" }
+        from suffix in new[] { "问剑", "听雪", "揽月", "逐浪", "寻梅", "煮酒", "观星", "踏歌", "拾光", "乘风", "照夜", "听泉", "望岳", "知秋", "追云", "行舟", "醉梦", "寄春", "寻幽", "看花", "入画", "留香", "临风", "忆江", "拾翠", "听松", "探月", "归山", "游川", "沐阳", "迎春", "寻梦" }
+        select prefix + suffix).Distinct(StringComparer.OrdinalIgnoreCase).Take(1000).ToArray();
+
+    public static string[] Normalize(IEnumerable<string> names) => names.Select(name => name.Trim()).Where(name => name.Length > 0)
+        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    public static string[] Fill(IEnumerable<string> names) => Normalize(names.Concat(All)).Take(1000).ToArray();
 }

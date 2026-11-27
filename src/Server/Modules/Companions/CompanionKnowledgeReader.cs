@@ -6,7 +6,7 @@ namespace Server.ConsoleHost;
 
 public static class CompanionKnowledgeReader
 {
-    public static CompanionKnowledge? Read(CompanionRecord record, ISet<string>? blocked = null, CompanionRecord[]? records = null, bool allowPk = false, KnownGoal? previousGoal = null, Lazy<ILookup<Map, MapObject>>? objectsByMap = null, Dictionary<int, KnownQuest>? taskDefinitions = null)
+    public static CompanionKnowledge? Read(CompanionRecord record, ISet<string>? blocked = null, CompanionRecord[]? records = null, bool allowPk = false, KnownGoal? previousGoal = null, Lazy<ILookup<Map, MapObject>>? objectsByMap = null, Dictionary<int, KnownQuest>? taskDefinitions = null, string guildPreference = "", List<KnownGoal>? taskChoices = null, int preferredQuest = 0, IReadOnlyDictionary<Guid,string>? guildPreferences = null)
     {
         var world=Envir.Main;
         var player=world.CharacterList.FirstOrDefault(c=>c.Index==record.CharacterId)?.Player;
@@ -29,12 +29,12 @@ public static class CompanionKnowledgeReader
             return task;
         }).ToArray();
         var exits=CompanionPlanning.WalkingExits(map.Info).Take(500).Select(e=>new KnownExit(map.Info.Index,e.Source.X,e.Source.Y,e.MapIndex)).ToArray();
-        var guild=CompanionGuildDevelopment.Read(player,record,records??[record],blocked,allowPk);
-        var goal=CompanionPlanning.Choose(player,record.Profile,blocked,guild?.Goal,previousGoal,objectsByMap);
+        var guild=CompanionGuildDevelopment.Read(player,record,records??[record],blocked,allowPk,guildPreference,guildPreferences);
+        var goal=CompanionPlanning.Choose(player,record.Profile,blocked,guild?.Goal,previousGoal,objectsByMap,taskChoices,preferredQuest);
         var party=CompanionParty.Read(player,record.Profile,records??[record]);
         if(party?.Goal is { } follow && (goal==null||goal.Kind is "hunt" or "wait" &&
             goal.QuestId==0&&
-            !goal.Key.StartsWith("fund/",StringComparison.Ordinal)&&!goal.Key.StartsWith("supply/",StringComparison.Ordinal)))goal=follow;
+            !goal.Key.StartsWith("fund/",StringComparison.Ordinal)&&!goal.Key.StartsWith("supply/",StringComparison.Ordinal)&&guild?.Action!="prepare"))goal=follow;
         // 守卫是否威胁本人沿用原攻击权限，不能把友好守卫改成可猎杀目标来绕过避险。
         var enemies=objectsByMap.Value[map].OfType<MonsterObject>().Where(monster=>(monster.Dead||player.IsAttackTarget(monster))&&
                 Functions.InRange(monster.CurrentLocation,player.CurrentLocation,Globals.DataRange))
@@ -46,7 +46,7 @@ public static class CompanionKnowledgeReader
         var townOnRoute = goal is { Kind: "accept" or "turn-in" or "service", QuestId: > 0 } &&
             CanUseTownOnRoute(player, goal);
         var revision=AdminChanges.Version(new{map.Info.Index,map.Info.NoFight,map.Info.NoDrug,map.Info.NoEscape,map.Info.NoTownTeleport,npcData,taskData,spawns,exits,goal,enemies,loot,
-            guild,party,map.Info.NoRandom,townOnRoute,map.Info.NoHero,player.InSafeZone,player.CurrentBagWeight,player.Account.Gold,inventory=player.Info.Inventory.Select(item=>item==null?"":$"{item.UniqueID}/{item.Count}")});
+            guild,party,map.Info.NoRandom,townOnRoute,map.Info.NoHero,player.InSafeZone,player.CurrentBagWeight,player.Account.Gold,inventory=player.CarriedItems.Select(item=>item==null?"":$"{item.UniqueID}/{item.Count}")});
         return new(revision,map.Info.Index,map.Info.NoFight,map.Info.NoDrug,map.Info.NoEscape,npcData,taskData,spawns,exits,InSafeZone:player.InSafeZone,Goal:goal,Enemies:enemies,LootTargets:loot,NoTownTeleport:map.Info.NoTownTeleport,Guild:guild,Party:party,
             NoRandom:map.Info.NoRandom,TownOnRoute:townOnRoute,NoHero:map.Info.NoHero);
     }

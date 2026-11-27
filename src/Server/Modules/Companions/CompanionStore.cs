@@ -45,6 +45,7 @@ public sealed partial class CompanionStore
     private static readonly JsonSerializerOptions Strict=new(){UnmappedMemberHandling=JsonUnmappedMemberHandling.Disallow};
     public Dictionary<Guid, CompanionRecord> Records { get; } = [];
     public List<PersonalityPreset> CustomPresets { get; } = [];
+    private readonly List<CompanionSchedulePreset> schedules = [];
     public CompanionConfiguration Configuration { get; private set; }
     public string? LoadError { get; private set; }
     public CompanionStore(SqliteDatabaseStorage storage, AdminChanges changes, ProjectPaths paths)
@@ -60,6 +61,10 @@ public sealed partial class CompanionStore
             var presets=Read("companions/presets.json", Array.Empty<PersonalityPreset>());
             if(presets==null||presets.Any(p=>p==null||p.Key==null||p.Name==null||p.Traits==null))throw new InvalidDataException("人格修订内容无效。");
             CustomPresets.AddRange(presets);
+            var savedSchedules = Read("companions/schedules.json", CompanionSchedulePresets.Defaults());
+            if (savedSchedules == null || savedSchedules.Length > 100 || savedSchedules.Select(p => p?.Id).Distinct().Count() != savedSchedules.Length)
+                throw new InvalidDataException("日程预设数量或编号无效。");
+            foreach (var schedule in savedSchedules) { CompanionValidation.SchedulePreset(schedule); schedules.Add(schedule); }
             foreach (var key in storage.List("companions/profiles", "*.json"))
             {
                 var record = Read<CompanionRecord>(key, null!);
@@ -73,10 +78,11 @@ public sealed partial class CompanionStore
             {
                 if (!storage.Contains("companions/settings.json")) Write("companions/settings.json", Configuration);
                 if (!storage.Contains("companions/presets.json")) Write("companions/presets.json", CustomPresets.ToArray());
+                if (!storage.Contains("companions/schedules.json")) Write("companions/schedules.json", schedules.ToArray());
             });
         }
         catch (Exception e) when (e is JsonException or InvalidDataException or EndOfStreamException)
-        { Records.Clear();CustomPresets.Clear();Configuration=new(new(),"",paths.VersionId,default,0);LoadError = "陪玩数据不能读取，已保留原记录并禁止写入：" + e.Message; }
+        { Records.Clear();CustomPresets.Clear();schedules.Clear();Configuration=new(new(),"",paths.VersionId,default,0);LoadError = "陪玩数据不能读取，已保留原记录并禁止写入：" + e.Message; }
     }
     public PersonalityPreset[] Presets => PersonalityPresets.All.Concat(CustomPresets).ToArray();
     public CompanionSettings Settings => Configuration.Settings with { HasLlmKey = false,
@@ -178,9 +184,10 @@ public sealed partial class CompanionStore
     public void SaveBatch(CompanionProfile[] profiles,string[] nicknames,CompanionArrivalState? arrivals=null)
     {
         PrepareWrite();var old=Configuration;
-        var records=profiles.Select(p=>new CompanionRecord{Profile=p with{Version=""},Seed=RandomNumberGenerator.GetInt32(int.MaxValue),
-            Account="c"+Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant(),Password=Convert.ToHexString(RandomNumberGenerator.GetBytes(7))}).ToArray();
-        var next=old with{Settings=old.Settings with{Nicknames=nicknames.Select(n=>n.Trim()).Where(n=>n.Length>0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()},Arrivals=arrivals??old.Arrivals};
+        var accounts=NewAccounts(profiles.Length);
+        var records=profiles.Select((p,i)=>new CompanionRecord{Profile=p with{Version=""},Seed=RandomNumberGenerator.GetInt32(int.MaxValue),
+            Account=accounts[i],Password=Convert.ToHexString(RandomNumberGenerator.GetBytes(7))}).ToArray();
+        var next=old with{Settings=old.Settings with{Nicknames=CompanionNames.Normalize(nicknames).Where(Server.MirEnvir.Envir.IsCharacterNameValid).ToArray()},Arrivals=arrivals??old.Arrivals};
         changes.Commit(()=>
         {
             foreach(var r in records){Write(Key(r.Profile.Id),r);Records.Add(r.Profile.Id,r);}

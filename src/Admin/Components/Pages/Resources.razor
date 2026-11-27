@@ -13,7 +13,7 @@
     </MudPaper>
     <MudExpansionPanels Class="mb-5"><MudExpansionPanel Text="@($"导入时地图冲突：{listing.Conflicts.Length} 项（统一采用服务端版本）")">@foreach (var conflict in listing.Conflicts) { <MudText Typo="Typo.body2" Class="path">@conflict.Replace(": server map retained; client source differs", "：保留服务端地图，客户端原文件内容不同")</MudText> }</MudExpansionPanel></MudExpansionPanels>
 }
-<MudGrid Spacing="2" Class="mb-4">
+<MudGrid Spacing="2" Class="mb-4 admin-resource-filters">
     <MudItem xs="12" sm="3">
         <MudSelect Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true" T="string" Label="类型筛选" Value="kind" ValueChanged="FilterKind">
             <MudSelectItem Value="@string.Empty">全部类型</MudSelectItem>
@@ -23,7 +23,7 @@
         </MudSelect>
     </MudItem>
     <MudItem xs="12" sm="7"><MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="string" @bind-Value="search" Label="搜索资源路径" /></MudItem>
-    <MudItem xs="12" sm="2"><MudButton OnClick="Load" Disabled="busy" Class="mt-4" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">搜索 / 刷新</MudButton></MudItem>
+    <MudItem xs="12" sm="2"><MudButton OnClick="Load" Disabled="busy" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">搜索 / 刷新</MudButton></MudItem>
 </MudGrid>
 @if (listing != null)
 {
@@ -31,9 +31,9 @@
         <HeaderContent><MudTh>类型</MudTh><MudTh>路径</MudTh><MudTh>大小</MudTh><MudTh>SHA-256</MudTh><MudTh>操作</MudTh></HeaderContent>
         <RowTemplate>
             <MudTd>@(context.Kind switch { "libraries" => "素材库", "maps" => "地图", "sounds" => "声音", _ => context.Kind })</MudTd><MudTd Class="path">@context.Path</MudTd><MudTd>@((context.Size / 1024d).ToString("N1")) KiB</MudTd><MudTd><MudTooltip Text="@context.Sha256"><span class="path">@context.Sha256[..12]</span></MudTooltip></MudTd>
-            <MudTd>
+            <MudTd Class="admin-row-actions">
                 @if (context.Kind is "libraries" or "maps") { <MudButton Size="Size.Small" OnClick="@(() => Inspect(context))" Variant="Variant.Text" Color="Color.Primary">预览</MudButton> }
-                <MudLink Href="@($"/asset-download/{context.Kind}/{AdminApi.Escape(context.Path)}")">下载</MudLink>
+                <MudButton Href="@($"/asset-download/{context.Kind}/{AdminApi.Escape(context.Path)}")" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">下载</MudButton>
             </MudTd>
         </RowTemplate>
         <NoRecordsContent><MudText>没有符合条件的资源。</MudText></NoRecordsContent>

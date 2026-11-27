@@ -46,6 +46,11 @@ internal static class ClientPickupChecks
         check(pickup.Next(state, preferences, 10000)?.Id == 3, "背包满时金币被当作普通物品跳过");
         preferences.PickupWhitelist = true; preferences.PickupNames = ["鲜鹿肉"];
         check(pickup.Next(state, preferences, 10000) == null, "拣取金币绕过了白名单或背包容量");
+        state.MaterialItemNames.Add("鲜鹿肉"); state.User.QuestInventory = new UserItem[40];
+        check(pickup.Next(state, preferences, 10000)?.Id == 2, "普通包满时错误跳过材料栏仍可放入的材料");
+        Array.Fill(state.User.QuestInventory, new UserItem(new ItemInfo { Type = ItemType.CraftingMaterial }));
+        check(pickup.Next(state, preferences, 10000) == null, "材料栏满时仍持续请求拣取材料");
+        state.MaterialItemNames.Clear();
         Array.Clear(state.User.Inventory); preferences.PickupWhitelist = false;
         preferences.PickupNames = [];
         check(pickup.Begin(state, preferences, state.Actors[2], 10000), "有效拾取不能重新开始");

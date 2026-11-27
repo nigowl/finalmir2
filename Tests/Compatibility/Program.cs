@@ -12,9 +12,10 @@ if (args.Contains("--guild-war-soak"))
 { var at = Array.IndexOf(args, "--guild-war-soak"); await GuildWarSoak.Run(int.Parse(args[at + 1]), int.Parse(args[at + 2]), args[at + 3]); return; }
 if (args.Contains("--fixture"))
 {
-    Fixture.Create(args[Array.IndexOf(args, "--fixture") + 1], args.Contains("--trade-fixture"), args.Contains("--guild-fixture"), args.Contains("--catalog-fixture"), args.Contains("--guided-companions"), args.Contains("--gm-fixture"), args.Contains("--skill-fixture"), args.Contains("--companion-fixture"), args.Contains("--public-services-fixture"), args.Contains("--action-items-fixture"), args.Contains("--social-fixture"), args.Contains("--movement-state-fixture"), args.Contains("--guild-war-fixture"), args.Contains("--guild-creation-fixture"), args.Contains("--object-name-fixture"), args.Contains("--item-owner-fixture"), args.Contains("--health-display-fixture"));
+    Fixture.Create(args[Array.IndexOf(args, "--fixture") + 1], args.Contains("--trade-fixture"), args.Contains("--guild-fixture"), args.Contains("--catalog-fixture"), args.Contains("--guided-companions"), args.Contains("--gm-fixture"), args.Contains("--skill-fixture"), args.Contains("--companion-fixture"), args.Contains("--public-services-fixture"), args.Contains("--action-items-fixture"), args.Contains("--social-fixture"), args.Contains("--movement-state-fixture"), args.Contains("--guild-war-fixture"), args.Contains("--guild-creation-fixture"), args.Contains("--object-name-fixture"), args.Contains("--item-owner-fixture"), args.Contains("--health-display-fixture"), args.Contains("--item-price-fixture"));
     return;
 }
+if (args.Contains("--item-price-session")) { await ItemPriceSession.Run(args); return; }
 if (args.Contains("--admin-session")) { await AdminSession.Run(args); return; }
 if (args.Contains("--city-travel-tcp")) { await CityTravelSession.Run(args); return; }
 if (args.Contains("--city-travel-fixture")) { CityTravelFixture.Prepare(new ProjectPaths()); return; }
@@ -25,21 +26,29 @@ if (args.Contains("--skill-assets")) { SkillAssetChecks.Run(); return; }
 if (args.Contains("--hero-shared-fixture")) { HeroFixture.PrepareShared(new ProjectPaths()); return; }
 if (args.Contains("--hero-fixture")) { HeroFixture.Prepare(new ProjectPaths()); return; }
 if (args.Contains("--hero-movement-fixture")) { HeroFixture.PrepareMovement(new ProjectPaths()); return; }
+if (args.Contains("--equipment-appraisal-fixture")) { EquipmentAppraisalFixture.Prepare(new ProjectPaths()); return; }
+if (args.Contains("--equipment-play-fixture")) { EquipmentPlayFixture.Prepare(new ProjectPaths()); return; }
+if (args.Contains("--equipment-appraisal-upgrade")) { EquipmentAppraisalChecks.Upgrade(new ProjectPaths()); return; }
+if (args.Contains("--npc-name-audit")) { var at = Array.IndexOf(args, "--npc-name-audit"); NpcLabelChecks.Audit(args[at + 1], args[at + 2]); return; }
 if (args.Contains("--hero-archer-fixture")) { HeroFixture.Prepare(new ProjectPaths(), true); return; }
 if (args.Contains("--quest-navigation-fixture")) { QuestNavigationChecks.Prepare(new ProjectPaths()); return; }
 if (args.Contains("--public-services-session")) { await PublicServicesSession.Run(args); return; }
 if (args.Contains("--mengchong-daily-fixture")) { MengchongDailyChecks.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args, "--mengchong-daily-fixture") + 1]), args.Contains("--daily-travel")); return; }
 if (args.Contains("--gm-checks")) { await GmCommandSession.Run(args); return; }
 if (args.Contains("--auto-learn-session")) { await AutoLearnSession.Run(args); return; }
+if (args.Contains("--class-balance-audit")) { ClassBalanceAudit.Run(new ProjectPaths(), args[Array.IndexOf(args, "--class-balance-audit") + 1]); return; }
 if (args.Contains("--companion-supplies")) { CompanionScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-supplies")+1])); return; }
 if (args.Contains("--companion-stocked-sale")) { CompanionScenario.PrepareStockedSale(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-stocked-sale")+1])); return; }
 if (args.Contains("--companion-meat")) { CompanionMeatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-meat")+1])); return; }
 if (args.Contains("--companion-exit")) { CompanionExitScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-exit")+1])); return; }
 if (args.Contains("--companion-running")) { CompanionMovementScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-running")+1]),args.Contains("--heavy"),args.Contains("--classic-map")); return; }
 if (args.Contains("--companion-repair")) { CompanionRepairScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-repair")+1])); return; }
+if (args.Contains("--companion-pickup")) { CompanionPickupScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-pickup")+1]), args.Contains("--combat")); return; }
+if (args.Contains("--companion-appraisal")) { CompanionAppraisalScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-appraisal")+1]),args.Contains("--scroll"),args.Contains("--audit"),args.Contains("--stone"));return; }
 if (args.Contains("--companion-quests")) { CompanionQuestScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-quests")+1]),args.Contains("--travel-threat"),args.Contains("--full-bag"),args.Contains("--blocked-reward"),args.Contains("--reward-room")); return; }
 if (args.Contains("--companion-progression")) { CompanionProgressionScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-progression")+1])); return; }
-if (args.Contains("--companion-funding")) { CompanionFundingScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-funding")+1]),args.Contains("--no-source"),args.Contains("--harvest-source"),args.Contains("--evasive-source"),args.Contains("--harvest-ground"),args.Contains("--remote-delivery"),args.Contains("--unarmed"),args.Contains("--crowded-source"),args.Contains("--caster"),args.Contains("--blocked-exit"),args.Contains("--blocked-route"),args.Contains("--friendly-guard")); return; }
+if (args.Contains("--companion-funding")) { CompanionFundingScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-funding")+1]),args.Contains("--no-source"),args.Contains("--harvest-source"),args.Contains("--evasive-source"),args.Contains("--harvest-ground"),args.Contains("--remote-delivery"),args.Contains("--unarmed"),args.Contains("--crowded-source"),args.Contains("--caster"),args.Contains("--blocked-exit"),args.Contains("--blocked-route"),args.Contains("--friendly-guard"),args.Contains("--passive-neighbours")); return; }
+if (args.Contains("--organized-siege")) { var i=Array.IndexOf(args,"--organized-siege");CompanionOrganizedSiegeScenario.Run(new ProjectPaths(),args.Skip(i+1).Take(4).Select(int.Parse).ToArray(),args[i+5]);return; }
 if (args.Contains("--companion-supply-priority")) { CompanionSupplyPriorityScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-supply-priority")+1]),args.Contains("--emergency-gold")?uint.Parse(args[Array.IndexOf(args,"--emergency-gold")+1]):null,args.Contains("--vendor-routes"),args.Contains("--threat-route"),args.Contains("--crowded-route"),args.Contains("--handoff-threat")); return; }
 if (args.Contains("--companion-harvest")) { CompanionHarvestScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-harvest")+1]),args.Contains("--needed")); return; }
 if (args.Contains("--companion-storage")) { CompanionStorageScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-storage")+1]),args[^1]); return; }
@@ -49,9 +58,11 @@ if (args.Contains("--companion-town")) { CompanionScenario.PrepareTown(new Proje
 if (args.Contains("--companion-protection")) { var i=Array.IndexOf(args,"--companion-protection");CompanionProtectionScenario.Prepare(new ProjectPaths(),int.Parse(args[i+1]),args[i+2]);return; }
 if (args.Contains("--companion-tree")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-tree")+1]),true); return; }
 if (args.Contains("--companion-guild")) { var i=Array.IndexOf(args,"--companion-guild"); CompanionGuildScenario.Run(new ProjectPaths(),int.Parse(args[i+1]),int.Parse(args[i+2]),args[i+3]); return; }
+if (args.Contains("--companion-multiple-guilds")) { var i=Array.IndexOf(args,"--companion-multiple-guilds"); CompanionMultipleGuildScenario.Prepare(new ProjectPaths(),args[(i+1)..].Select(int.Parse).ToArray());return; }
 if (args.Contains("--companion-ranged")) { CompanionCombatScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-ranged")+1]),false,args.Contains("--empty-mana"),args.Contains("--retire-threat"),args.Contains("--persistent-threat"),args.Contains("--penalty-mana"),args.Contains("--amulet-case")?args[Array.IndexOf(args,"--amulet-case")+1]:"",args.Contains("--retreat-corner")); return; }
 if (args.Contains("--companion-variant")) { CompanionScenario.Prepare(new ProjectPaths(), int.Parse(args[Array.IndexOf(args,"--companion-variant")+1]),true); return; }
 if (args.Contains("--companion-social")) { await CompanionSocialSession.Run(args); return; }
+if (args.Contains("--llm-value-session")) { await LlmValueSession.Run(args); return; }
 if (args.Contains("--companion-development")) { CompanionDevelopmentScenario.Prepare(new ProjectPaths(),int.Parse(args[Array.IndexOf(args,"--companion-development")+1]),args.Contains("--blocked-supply"),args.Contains("--switching-shops"),args.Contains("--public-companions"));return; }
 if (args.Contains("--companion-heroes-fixture")) { var i=Array.IndexOf(args,"--companion-heroes-fixture"); CompanionHeroScenario.Run(new ProjectPaths(),int.Parse(args[i+1]),args[i+2]);return; }
 if (args.Contains("--open-companion-supply")) { CompanionDevelopmentScenario.OpenSupply(new ProjectPaths());return; }
@@ -63,9 +74,25 @@ if (args.Contains("--chinese-checks")) { ChineseTranslationChecks.Run(new Projec
 if(args.Contains("--companion-supervision-setup")){CompanionSupervisionChecks.Prepare(new ProjectPaths());return;}
 
 var checks = 0;
+if (args.Contains("--companion-pickup-checks"))
+{ await CompanionPickupChecks.Run(Check); CompanionLootChecks.Run(Check); Console.WriteLine($"PASS {checks} companion pickup/equipment/priority checks."); return; }
+if (args.Contains("--companion-decisions-checks"))
+{ await CompanionGuildDecisionChecks.Run(Check); CompanionGuildChecks.Run(Check); CompanionGuildSiegeChecks.Run(Check); await CompanionLlmChecks.Run(Check); Console.WriteLine($"PASS {checks} companion multiple guild/LLM/duel/authority checks."); return; }
+if (args.Contains("--admin-key-checks"))
+{ AdminKeyChecks.Run(Check); Console.WriteLine($"PASS {checks} admin key checks."); return; }
+if (args.Contains("--archer-attack-checks"))
+{ ArcherAttackChecks.Run(Check); Console.WriteLine($"PASS {checks} archer player/hero damage/authority checks."); return; }
+if (args.Contains("--material-inventory-checks"))
+{ QuestInventoryChecks.Run(Check); MaterialInventoryChecks.Run(Check); CompanionPurchaseChecks.Run(Check); Console.WriteLine($"PASS {checks} material inventory/routing/crafting/storage/persistence checks."); return; }
+if (args.Contains("--equipment-appearance-checks"))
+{ EquipmentAppearanceChecks.Run(Check); Console.WriteLine($"PASS {checks} equipment glow/scroll/999 stacks/compact tooltip/manual drop checks."); return; }
+if (args.Contains("--equipment-appraisal-checks"))
+{ EquipmentAppraisalChecks.Run(Check); Console.WriteLine($"PASS {checks} equipment appraisal/legacy flags/NPC labels/protocol checks."); return; }
 if (args.Contains("--hero-combat-fixture")) { HeroCombatFixture.Prepare(new ProjectPaths()); return; }
 if (args.Contains("--hero-combat-session")) { await HeroCombatSession.Run(args); return; }
 if (args.Contains("--shop-catalog-session")) { await ShopCatalogSession.Run(args); return; }
+if (args.Contains("--progression-feature-fixture")) { ProgressionFeatureFixture.Prepare(new ProjectPaths()); return; }
+if (args.Contains("--progression-feature-session")) { await ProgressionFeatureSession.Run(args); return; }
 void Check(bool result, string message)
 {
     if (!result) throw new Exception(message);
@@ -118,7 +145,7 @@ if (args.Contains("--movement-checks"))
 if (args.Contains("--supplies-storage-checks"))
 { SuppliesStorageChecks.Run(Check); BasicDropBalanceChecks.Run(Check); Console.WriteLine($"PASS {checks} supplies/storage/equipment checks."); return; }
 if (args.Contains("--item-ui-checks"))
-{ ItemPresentationChecks.Run(Check); ClientNoticeChecks.Run(Check); ClientItemChecks.Run(Check); ItemWeightChecks.Run(Check); DamageIndicatorChecks.Run(Check); QuestInventoryChecks.Run(Check); ClassSelectionChecks.Run(Check); Console.WriteLine($"PASS {checks} item, weight, quest inventory, damage and class selection checks."); return; }
+{ ItemPresentationChecks.Run(Check); ClientNoticeChecks.Run(Check); ClientItemChecks.Run(Check); ItemWeightChecks.Run(Check); DamageIndicatorChecks.Run(Check); QuestInventoryChecks.Run(Check); MaterialInventoryChecks.Run(Check); ClassSelectionChecks.Run(Check); Console.WriteLine($"PASS {checks} item, weight, quest inventory, damage and class selection checks."); return; }
 if (args.Contains("--settings-checks"))
 {
     SystemDefaultsChecks.Run(Check);
@@ -150,7 +177,7 @@ if(args.Contains("--companion-path-checks"))
 if(args.Contains("--quest-parsing-checks"))
 {QuestParsingChecks.Run(Check);Console.WriteLine($"PASS {checks} quest whitespace parsing checks.");return;}
 if(args.Contains("--companion-guild-checks"))
-{CompanionGuildChecks.Run(Check);CompanionGuildSiegeChecks.Run(Check);Console.WriteLine($"PASS {checks} companion guild checks.");return;}
+{CompanionGuildChecks.Run(Check);CompanionGuildSiegeChecks.Run(Check);CompanionGuildPreparationChecks.Run(Check);Console.WriteLine($"PASS {checks} companion guild checks.");return;}
 if(args.Contains("--companion-funding-checks"))
 {CompanionFundingChecks.Run(Check);Console.WriteLine($"PASS {checks} companion funding checks.");return;}
 if(args.Contains("--companion-supply-checks"))
@@ -159,6 +186,8 @@ if(args.Contains("--companion-accuracy-checks"))
 {CompanionAccuracyChecks.Run(Check);Console.WriteLine($"PASS {checks} companion physical hit chance planning checks.");return;}
 if(args.Contains("--companion-development-checks"))
 {CompanionDevelopmentChecks.Run(Check);Console.WriteLine($"PASS {checks} companion development and survival planning checks.");return;}
+if(args.Contains("--companion-appraisal-checks"))
+{CompanionAppraisalChecks.Run(Check);Console.WriteLine($"PASS {checks} companion appraisal and hero mode checks.");return;}
 if(args.Contains("--companion-combat-reader-checks"))
 {CompanionCombatReaderChecks.Run(Check);Console.WriteLine($"PASS {checks} companion combat snapshot checks.");return;}
 if(args.Contains("--companion-quest-checks"))
@@ -180,6 +209,8 @@ var temporary = Path.Combine(Path.GetTempPath(), "mir2-test-" + Guid.NewGuid());
 Directory.CreateDirectory(temporary);
 try
 {
+    if(args.Contains("--item-price-checks")){ItemPriceChecks.Run(Check,temporary);ShopCatalogChecks.Run(Check);Console.WriteLine($"PASS {checks} item price/catalog/persistence/protocol checks.");return;}
+    if(args.Contains("--companion-management-checks")){CompanionChecks.Run(Check,temporary);CompanionManagementChecks.Run(Check,temporary);CompanionStorageCredentialChecks.Run(Check,temporary);await CompanionLlmChecks.Run(Check);Console.WriteLine($"PASS {checks} companion selected operations/schedule/nicknames/model checks.");return;}
     if(args.Contains("--companion-supervision-checks")){CompanionSupervisionChecks.Run(Check,temporary);CompanionRecoveryChecks.Run(Check,temporary);Console.WriteLine($"PASS {checks} companion supervision checks.");return;}
     CompanionSupervisionChecks.Run(Check,temporary);
     CompanionRecoveryChecks.Run(Check,temporary);
@@ -238,10 +269,13 @@ try
         Check(Directory.GetFiles(upgradeBackups, "mir2.sqlite3", SearchOption.AllDirectories).Length == 1, "Current player format repeatedly creates upgrade backups");
     }
 
+    ItemPriceChecks.Run(Check, temporary);
     AdministrationChecks.Run(Check, temporary);
     DataBootstrapChecks.Run(Check);
     DropScriptNameChecks.Run(Check);
     CompanionChecks.Run(Check, temporary);
+    CompanionManagementChecks.Run(Check, temporary);
+    CompanionStorageCredentialChecks.Run(Check, temporary);
     SystemSettingsChecks.Run(Check, temporary);
     CompanionAllChecks.Run(Check, temporary);
     CompanionDispatchChecks.Run(Check, temporary);
@@ -269,6 +303,9 @@ try
     SkillEffectChecks.Run(Check);
     SkillDamageChecks.Run(Check);
     GameBalanceChecks.Run(Check, temporary);
+    ArcherAttackChecks.Run(Check);
+    MaterialInventoryChecks.Run(Check);
+    CompanionPurchaseChecks.Run(Check);
     AttackModeChecks.Run(Check);
     CompanionPlanningChecks.Run(Check);
     CompanionQuestChecks.Run(Check);
@@ -276,6 +313,7 @@ try
     CompanionFundingChecks.Run(Check);
     CompanionAccuracyChecks.Run(Check);
     CompanionDevelopmentChecks.Run(Check);
+    CompanionAppraisalChecks.Run(Check);
     CompanionCombatReaderChecks.Run(Check);
     CompanionPathChecks.Run(Check);
     CompanionMovementChecks.Run(Check);
@@ -284,6 +322,7 @@ try
     CompanionHealingChecks.Run(Check);
     CompanionInventoryChecks.Run(Check);
     CompanionLootChecks.Run(Check);
+    await CompanionPickupChecks.Run(Check);
     CompanionStorageChecks.Run(Check);
     SuppliesStorageChecks.Run(Check);
     ClientItemChecks.Run(Check);
@@ -303,6 +342,8 @@ try
     TradeChecks.Run(Check);
     GuildChecks.Run(Check);
     CompanionGuildChecks.Run(Check);
+    await CompanionGuildDecisionChecks.Run(Check);
+    CompanionGuildPreparationChecks.Run(Check);
     CompanionGuildSiegeChecks.Run(Check);
     GuildStorageChecks.Run(Check, temporary);
     using (var storage = new SqliteDatabaseStorage(path))
@@ -367,9 +408,9 @@ try
     state.User.Inventory = new UserItem[46];
     var potionInfo = new ItemInfo { Index = 8, Type = ItemType.Potion, StackSize = 5 };
     state.Apply(new S.NewItemInfo { Info = potionInfo });
-    state.Apply(new S.GainedItem { Item = new UserItem(potionInfo) { UniqueID = 1, Count = 4 } });
+    state.Apply(new S.GainedItem { Item = new UserItem(potionInfo) { UniqueID = 1, Count = 998 } });
     state.Apply(new S.GainedItem { Item = new UserItem(potionInfo) { UniqueID = 2, Count = 3 } });
-    Check(state.User.Inventory[0].Count == 5 && state.User.Inventory[1].Count == 2, "Partial stack overflow differs from original client/server");
+    Check(state.User.Inventory[0].Count == 999 && state.User.Inventory[1].Count == 2, "Partial stack overflow differs from original client/server");
     state.Apply(new S.GainedItem { Item = new UserItem(info) { UniqueID = 3 } });
     Check(state.User.Inventory[6]?.UniqueID == 3, "Equipment loot did not prefer bag slots");
     state.Apply(new S.DuraChanged { UniqueID = 3, CurrentDura = 42 });
@@ -439,12 +480,12 @@ try
     Check(!state.CompletedQuests.Contains(2) && !state.CanAcceptQuest(quest), "Completed quest reset merged stale daily state");
     var tokenInfo = new ItemInfo { Index = 20, Type = ItemType.Quest, StackSize = 5 };
     state.Apply(new S.NewItemInfo { Info = tokenInfo });
-    state.Apply(new S.GainedQuestItem { Item = new UserItem(tokenInfo) { UniqueID = 20, Count = 4 } });
+    state.Apply(new S.GainedQuestItem { Item = new UserItem(tokenInfo) { UniqueID = 20, Count = 998 } });
     state.Apply(new S.GainedQuestItem { Item = new UserItem(tokenInfo) { UniqueID = 21, Count = 3 } });
-    Check(state.User.QuestInventory[0].Count == 5 && state.User.QuestInventory[1].Count == 2, "Quest inventory stacking differs from the original rules");
+    Check(state.User.QuestInventory[0].Count == 999 && state.User.QuestInventory[1].Count == 2, "Quest inventory stacking differs from the original rules");
     state.Apply(new S.DeleteQuestItem { UniqueID = 20, Count = 2 });
-    Check(state.User.QuestInventory[0].Count == 3 && state.User.Inventory[8] == stored, "Quest item deletion changed the regular inventory");
-    state.Apply(new S.DeleteQuestItem { UniqueID = 20, Count = 10 });
+    Check(state.User.QuestInventory[0].Count == 997 && state.User.Inventory[8] == stored, "Quest item deletion changed the regular inventory");
+    state.Apply(new S.DeleteQuestItem { UniqueID = 20, Count = 1000 });
     Check(state.User.QuestInventory[0] == null, "Quest item removal underflowed");
     state.Apply(new S.LogOutSuccess { Characters = [] });
     Check(state.User == null && state.Storage.Length == 0 && !state.StorageUnlocked && state.Quests.Count == 0 && state.CompletedQuests.Count == 0, "Character logout leaked private per-character state");
@@ -471,6 +512,7 @@ try
     finally { foreach (var pair in pathEnvironment) Environment.SetEnvironmentVariable(pair.Key, pair.Value); }
 
     var managed = new ProjectPaths(Path.Combine(temporary, "managed"));
+    AdminKeyChecks.Run(Check);
     var key = managed.AdminKey();
     Check(key.Length == 64 && key == managed.AdminKey() && ProjectPaths.KeyEquals(key, key) && !ProjectPaths.KeyEquals("invalid", key), "Management key generation or constant-time comparison failed");
     if (!OperatingSystem.IsWindows())
@@ -530,7 +572,7 @@ try
         world.ItemInfoList.Add(testDefinition); world.ItemIndex = 1;
         var definitions = new WorldDefinitions(managed, catalog); var original = definitions.Read("items", 20);
         failing.WritesBeforeFailure = 2;
-        try { definitions.Save(original with { Price = 99 }); throw new Exception("Storage failure was swallowed"); }
+        try { definitions.Save(original with { StackSize = 2 }); throw new Exception("Storage failure was swallowed"); }
         catch (IOException) { checks++; }
         Check(definitions.Read("items", 20) == original, "Failed save changed the in-memory item definition");
         using (var snapshot = sqlite.Read(Server.MirEnvir.Envir.DatabasePath))

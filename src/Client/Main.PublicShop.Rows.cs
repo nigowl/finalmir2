@@ -56,7 +56,7 @@ public partial class Main
 
     private void ShowPublicShopPurchase(PublicShopEntry entry, int count)
     {
-        if (publicPurchases.Pending || State.Me?.Dead != false) return;
+        if (appraisalPending != null || publicPurchases.Pending || State.Me?.Dead != false) return;
         publicShopSelection = entry;
         publicShopCount.MaxValue = Math.Min(entry.MaxCount, (State.User?.Gold ?? 0) / Math.Max(1, entry.Price));
         publicShopCount.Value = count; RefreshPublicShopConfirmation(); publicShopConfirm.PopupCentered();

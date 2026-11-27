@@ -1,6 +1,8 @@
-"""隔离原TCP仓库：材料守恒、实际链接/密码/容量、拆分取回/补药、重启与复制改图号。"""
+"""隔离原TCP仓库：存取守恒、实际链接/密码/容量、拆分取回/补药、重启与复制改图号。"""
 import hashlib,json,os,pathlib,shutil,socket,sqlite3,subprocess,tempfile,time,urllib.request
 repo=pathlib.Path(__file__).resolve().parents[2]
+server=pathlib.Path(os.environ.get('MIR2_COMPANION_SERVER_DLL',str(repo/'src/Server/bin/Release/net8.0/Mir2.Server.dll')))
+compat=repo/'tests/Compatibility/bin'/server.parent.parent.name/'net8.0/Compatibility.dll'
 root=pathlib.Path(tempfile.mkdtemp(prefix='mir2-companions-storage-')).resolve();data=root/'version-a'
 def port():
     with socket.socket() as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
@@ -23,7 +25,7 @@ def wait(predicate,seconds=60):
 def start():
     global process,log,key,starts
     log=open(root/f'server-{starts}.log','w');starts+=1
-    process=subprocess.Popen(['dotnet',str(repo/'src/Server/bin/Release/net8.0/Mir2.Server.dll'),f'--mir2-instance={repo}:{data/"runtime"}:server'],cwd=root,env=environment(),stdout=log,stderr=subprocess.STDOUT)
+    process=subprocess.Popen(['dotnet',str(server),f'--mir2-instance={repo}:{data/"runtime"}:server'],cwd=root,env=environment(),stdout=log,stderr=subprocess.STDOUT)
     def ready():
         try:return call('/health')['ready']
         except OSError:return False
@@ -33,7 +35,7 @@ def stop():
     process.terminate();process.wait(60);assert process.returncode==0,pathlib.Path(log.name).read_text()[-2000:]
     process=None;log.close();log=None
 def prepare(mode):
-    subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--companion-storage',str(cid),mode],cwd=root,env=environment(),check=True)
+    subprocess.run(['dotnet',str(compat),'--companion-storage',str(cid),mode],cwd=root,env=environment(),check=True)
     return json.loads((data/'runtime/companion-storage-fixture.json').read_text())
 def command(action):
     row=call(base+'/'+ident)['row'];call(base+'/'+ident+'/command',{'action':action,'version':row['profile']['version']})
@@ -60,7 +62,7 @@ def check_stock(fixture,expected):
     samples.append({'detail':d,'character':c,'account':a})
     return d,c,a
 try:
-    subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--fixture',str(data)],cwd=repo,env=os.environ|{'MIR2_DATA_ROOT':str(repo/'data/versions/default')},check=True)
+    subprocess.run(['dotnet',str(compat),'--fixture',str(data)],cwd=repo,env=os.environ|{'MIR2_DATA_ROOT':os.environ.get('MIR2_DATA_ROOT',str(repo/'data/versions/default'))},check=True)
     start();overview=call(base+'/overview');call(base+'/settings',{'settings':overview['settings']|{'enabled':True}},'PUT')
     p=call(base,{'name':'StorageBot','class':2,'gender':0,'enabled':True,'acceptGroup':False,'llmMode':0,
         'schedule':{'timeZone':'UTC','windows':[{'days':127,'allDay':True}],'attendance':100,'jitterMinutes':0,'sessionMinutes':30,'restMinutes':0,'dailyMinutes':60}})
@@ -92,6 +94,7 @@ try:
         d,c,a=check_stock(fixture,total)
         return (d,c,a) if sum(i['count'] for i in c['inventory'] if i['itemId']==fixture['material'])==5 and 'storage-unlock:成功' in events and 'storage-take:成功' in events else False
     d,c,a=wait(retrieved,60);assert c['mapId']>=71 and 'storage-password:成功' not in events
+    assert a['accountID'].startswith('pw') and a['accountID']!='LegacyStorage','账号迁移未完成'
     (root/'copy-samples.json').write_text(json.dumps(samples,ensure_ascii=False));off();stop()
     fixture=prepare('equipment');start();command('start');samples=[];events.clear();allowed=set(fixture['equipmentAllowed'])
     def stored_equipment():
@@ -126,8 +129,9 @@ try:
     assert any(int(i['uniqueId'])==fixture['materialId'] and i['count']==200 for i in c['inventory'])
     wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop();prepare('verify-password')
     with sqlite3.connect(data/'runtime/mir2.sqlite3') as db:assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
-    print('PASS 原TCP跨图仓库：实际链接/初次密码，整叠200→仓库195+背包5，原编号与特殊/未来任务物保留，补足药品/扣170，无重复；重启/B复制改图号后原密码解锁/拆回3份；低负重满46格时原编号暂存2项链/1戒指，保留最好1项链/2戒指、已穿/强化/改最大耐久/未来任务装备，金币不变及重启；满仓不写锁定扩展格，无密码正常存取，人工密码拒绝且不重置。',flush=True)
+    print('PASS 原TCP跨图仓库：实际链接/初次密码，普通食品200→仓库195+背包5，原编号与特殊/未来任务物保留，NPC补药/扣170，无重复；重启/B复制改图号及账号改名后新自动凭据解锁/拆回3份；低负重满背包时原编号暂存2项链/1戒指，保留最好1项链/2戒指、已穿/强化/改最大耐久/未来任务装备，金币不变及重启；满仓不写锁定扩展格，无密码正常存取，人工密码拒绝且不重置。',flush=True)
 finally:
+    if samples:(root/'last-samples.json').write_text(json.dumps(samples[-5:],ensure_ascii=False))
     if process is not None and process.poll() is None:process.terminate();process.wait(60)
     if log is not None:log.close()
     print('Storage fixture: '+str(root))

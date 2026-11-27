@@ -1,6 +1,6 @@
 public sealed record PublicShopCatalog
 {
-    public int Schema { get; set; } = 1;
+    public int Schema { get; set; } = 3;
     public PublicShopTab[] Tabs { get; set; } = [];
 }
 
@@ -14,5 +14,5 @@ public sealed record PublicShopTab
 public sealed record PublicShopProduct
 {
     public int ItemIndex { get; set; }
-    public uint Price { get; set; }
+    public decimal? PriceRate { get; set; }
 }

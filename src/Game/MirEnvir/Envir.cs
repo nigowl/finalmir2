@@ -1,4 +1,4 @@
-﻿using ClientPackets;
+using ClientPackets;
 using Server.Library.MirDatabase;
 using Server.Library.Utils;
 using Server.MirDatabase;
@@ -57,7 +57,7 @@ namespace Server.MirEnvir
 
         public const int MinVersion = 60;
         public const int Version = 117;
-        public const int CustomVersion = 3;
+        public const int CustomVersion = 4;
         public static readonly string DatabasePath = Path.Combine(".", "Server.MirDB");
         public static readonly string AccountPath = Path.Combine(".", "Server.MirADB");
         public static readonly string BackUpPath = Path.Combine(".", "Back Up");
@@ -90,6 +90,7 @@ namespace Server.MirEnvir
 
         public bool Running { get; private set; }
         public bool NetworkStarted { get; private set; }
+        public Exception LastError { get; private set; }
 
 
         private static uint _objectID;
@@ -2201,6 +2202,7 @@ namespace Server.MirEnvir
                     // Get the line number from the stack frame
                     var line = frame.GetFileLineNumber();
 
+                    LastError = ex;
                     MessageQueue.Enqueue(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.InnerWorkloopErrorLine), line, ex));
                 }
 
@@ -2219,6 +2221,7 @@ namespace Server.MirEnvir
                 // Get the line number from the stack frame
                 var line = frame.GetFileLineNumber();
 
+                LastError = ex;
                 MessageQueue.Enqueue(GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.OuterWorkloopErrorLine), line, ex));
             }
 
@@ -3020,6 +3023,7 @@ namespace Server.MirEnvir
                         RespawnTick = new RespawnTimer(reader);
                 }
                 Settings.LinkGuildCreationItems(ItemInfoList);
+                Helpers.ItemPriceRules.Load(this);
                 PublicShopCatalog = Helpers.PublicShopCatalogRules.Load(this);
             }
 
@@ -3364,6 +3368,7 @@ namespace Server.MirEnvir
         {
             if (Running || _thread != null) return;
 
+            LastError = null;
             Running = true;
 
             _thread = new Thread(WorkLoop) { IsBackground = true };
@@ -3771,9 +3776,7 @@ namespace Server.MirEnvir
 
             if (ConnectionLogs.TryGetValue(c.IPAddress, out MirConnectionLog currentlog))
             {
-                // 先清理过期记录，否则达到上限后不会再进入原有清理分支。
-                currentlog.PruneAccounts(Time);
-                if (currentlog.AccountsMade.Count > 2)
+                if (currentlog.AccountsLimited(Settings.MaxAccountsPerIPHour, Time))
                 {
                     IPBlocks[c.IPAddress] = Now.AddHours(24);
                     c.Enqueue(new ServerPackets.NewAccount { Result = 0 });
@@ -3783,7 +3786,7 @@ namespace Server.MirEnvir
             }
             else
             {
-                ConnectionLogs[c.IPAddress] = new MirConnectionLog() { IPAddress = c.IPAddress };
+                ConnectionLogs[c.IPAddress] = new MirConnectionLog() { IPAddress = c.IPAddress, AccountsMade = [Time] };
             }
 
 
@@ -4092,8 +4095,7 @@ namespace Server.MirEnvir
 
             if (ConnectionLogs.TryGetValue(c.IPAddress, out MirConnectionLog currentlog))
             {
-                currentlog.PruneCharacters(Time);
-                if (currentlog.CharactersMade.Count > 4)
+                if (currentlog.CharactersLimited(Settings.MaxCharactersPerIPHour, Time))
                 {
                     IPBlocks[c.IPAddress] = Now.AddHours(24);
                     c.Enqueue(new ServerPackets.NewCharacter { Result = 0 });
@@ -4103,7 +4105,7 @@ namespace Server.MirEnvir
             }
             else
             {
-                ConnectionLogs[c.IPAddress] = new MirConnectionLog() { IPAddress = c.IPAddress };
+                ConnectionLogs[c.IPAddress] = new MirConnectionLog() { IPAddress = c.IPAddress, CharactersMade = [Time] };
             }
 
 
@@ -4497,7 +4499,7 @@ namespace Server.MirEnvir
         {
             return CreateDropItem(GetItemInfo(index));
         }
-        public UserItem CreateDropItem(ItemInfo info)
+        public UserItem CreateDropItem(ItemInfo info, bool appraisable = false)
         {
             if (info == null) return null;
 
@@ -4508,11 +4510,13 @@ namespace Server.MirEnvir
                 CurrentDura = (ushort)Math.Min(info.Durability, Random.Next(info.Durability) + 1000)
             };
 
-            UpgradeItem(item);
+            if (appraisable && EquipmentAppraisal.Supports(info))
+                item.EquipmentQuality = EquipmentAppraisal.Roll(Random.Next(10000));
+            else UpgradeItem(item);
 
             UpdateItemExpiry(item);
 
-            if (!info.NeedIdentify) item.Identified = true;
+            if (!info.NeedIdentify && item.EquipmentQuality == EquipmentGrade.Legacy) item.Identified = true;
             return item;
         }
 

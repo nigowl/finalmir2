@@ -11,6 +11,8 @@ internal static class CompanionMovementChecks
         TravelPolicy(check);
         TravelShield(check);
         EquivalentExits(check);
+        FundingThreats(check);
+        CombatProgress(check);
         var path=new CompanionPath();var occupied=new HashSet<Point>();var calls=0;
         bool Clear(Point p){calls++;return p.X>=0&&p.X<30&&p.Y==5;}
         check(path.Next(new(5,5),new(15,5),0,Clear,occupied,run:true)==new Point(7,5),"直线路线没有合并两格");
@@ -44,6 +46,38 @@ internal static class CompanionMovementChecks
         state.UserBuffs[BuffType.SwiftFeet]=new ClientBuff();check(!CompanionSafety.CanRun(state,10000,9500),"疾风步三格状态被当两格跑步");state.UserBuffs.Clear();
         state.StorageActive=true;check(!CompanionSafety.CanRun(state,10000,9500),"仓库交互仍跑步");state.StorageActive=false;
         state.Apply(new S.TradeAccept{Name="队友"});check(!CompanionSafety.CanRun(state,10000,9500),"交易交互仍跑步");
+    }
+
+    private static void CombatProgress(Action<bool,string> check)
+    {
+        var progress=new CompanionCombatProgress();
+        check(!progress.TooHard(1,100,1000),"首次攻击就判为打不动");
+        check(!progress.TooHard(1,100,15999)&&progress.TooHard(1,100,16000),"15秒无伤害没有降级");
+        progress.Reset();progress.TooHard(1,100,1000);
+        check(!progress.TooHard(1,90,15000)&&!progress.TooHard(1,80,29000)&&progress.TooHard(1,70,31000),"持续刮痧没有在30秒降级");
+        progress.Reset();progress.TooHard(1,100,1000);
+        check(!progress.TooHard(1,70,15000)&&!progress.TooHard(1,40,29000)&&!progress.TooHard(1,30,31000),"有效收尾战斗被打断");
+        check(!progress.TooHard(2,100,50000),"换怪沿用上个目标的失败时间");
+        progress.Reset();check(!progress.TooHard(2,100,90000),"赶路后没有重新统计战斗时间");
+        progress.Reset();progress.TooHard(3,100,0,true);
+        check(!progress.TooHard(3,100,29999,true)&&progress.TooHard(3,100,30000,true),"逃跑目标持续追逐没有降级换怪");
+        check(!progress.WaitingForPlan("public-recycle",30000),"普通目标排除误锁后续行动");
+        progress.Decline("hunt/1",30000);
+        check(progress.WaitingForPlan("hunt/1",30001)&&!progress.WaitingForPlan("hunt/2",30001),"降级等待阻止替代目标或继续攻击旧目标");
+        check(!progress.WaitingForPlan("hunt/1",120000),"降级排除到期后永久卡在同一目标");
+    }
+
+    private static void FundingThreats(Action<bool,string> check)
+    {
+        foreach(var ai in new byte[]{1,2})
+        {
+            check(CompanionSafety.ThreatRadius(ai,false,false,true)==0,$"被动AI{ai}仍阻断新手筹资路线");
+            check(CompanionSafety.ThreatRadius(ai,false,true,true)==8,$"AI{ai}实际攻击本人后没有恢复筹资避让");
+            check(CompanionSafety.ThreatRadius(ai,true,true,false)==1,$"可应付AI{ai}受击赶路保护丢失");
+        }
+        check(CompanionSafety.ThreatRadius(0,false,false,true)==8,"主动强怪的筹资8格保护被移除");
+        check(CompanionSafety.ThreatRadius(3,false,false,true)==8,"原Tree沿途威胁保护被移除");
+        check(CompanionSafety.ThreatRadius(0,true,false,true)==0,"可应付且未攻击本人的弱怪仍封路");
     }
 
     private static void EquivalentExits(Action<bool,string> check)

@@ -259,6 +259,7 @@ public partial class WorldView
             DrawSprite(art.Hair, index + art.BodyOffset, position, opacity, tint);
             if (!weaponBehind && actor.Weapon >= 0) DrawSprite(art.Weapon, index + art.WeaponOffset, position, opacity, tint);
             if (weaponBehind && art.SecondWeapon.Length > 0) DrawSprite(art.SecondWeapon, index + art.WeaponOffset, position, opacity, tint);
+            QueueEquipmentGlow(actor, art, index, body, position, opacity, now);
             DrawPlayerEffects(actor, now, position);
         }
         else if (actor.Kind == ObjectType.Merchant)

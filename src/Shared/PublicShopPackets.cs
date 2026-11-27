@@ -8,7 +8,7 @@ public static class PublicShopRules
     public static int Category(ItemInfo item) => item.Type switch
     {
         ItemType.Potion when item.Shape == 0 && (item.Stats[Stat.HP] > 0 || item.Stats[Stat.MP] > 0) => 0,
-        ItemType.Scroll when item.Shape is 1 or 2 => 1,
+        ItemType.Scroll when item.Shape is 1 or 2 || EquipmentAppraisal.IsScroll(item) => 1,
         ItemType.Book when item.Shape > 0 && item.Bind == BindMode.None => 4,
         ItemType.Amulet when item.Shape is >= 0 and <= 2 && AmuletSizes.Any(size =>
             item.Name == $"{GroupName(item)}（{size.Size}）" && item.StackSize == size.Count) => 2,

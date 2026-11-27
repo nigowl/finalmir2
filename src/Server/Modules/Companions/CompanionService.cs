@@ -23,6 +23,13 @@ public sealed partial class CompanionService(GameRuntime runtime, CompanionStore
     {
         public string State="排队中",Reason="等待登录",Error="",Knowledge="";
         public KnownGuildPlan? Guild;
+        public KnownGuildPlan[] GuildChoices = [];
+        public string GuildChoiceContext = "", GuildPreference = "", LastGuildRequest = "";
+        public DateTimeOffset GuildPreferenceUntil, NextGuildRequest, NextSameGuildRequest, GuildPendingUntil;
+        public KnownGoal[] TaskChoices = [];
+        public int PreferredQuest;
+        public string TaskChoiceContext = "", LastTaskRequest = "";
+        public DateTimeOffset TaskPreferenceUntil, NextTaskRequest, NextSameTaskRequest;
         public string Session=Guid.NewGuid().ToString("N");
         public DateTimeOffset Started=DateTimeOffset.UtcNow,Heartbeat=DateTimeOffset.UtcNow,ReservedUntil,NextKnowledge;
         public DateTimeOffset? StoppingAt;
@@ -31,9 +38,11 @@ public sealed partial class CompanionService(GameRuntime runtime, CompanionStore
         public KnownGoal? Goal;
         public Dictionary<string,DateTimeOffset> BlockedGoals=[];
     }
-    public CompanionOverview Overview() => new(paths.VersionName,paths.VersionId,CompanionProtocol.Fingerprint,store.Settings,store.Presets,Capabilities(),live.Count,Limits(),store.Records.Values.Count(r=>r.Profile.Enabled),store.StartAllVersion,CompanionValidation.AvailableClasses,
+    public CompanionOverview Overview() => new(paths.VersionName,paths.VersionId,CompanionProtocol.Fingerprint,store.Settings,store.Presets,Capabilities(),
+        store.Records.Values.Count(r=>r.CharacterId>0&&Envir.Main.CharacterList.Any(c=>c.Index==r.CharacterId&&c.Player!=null)),Limits(),store.Records.Values.Count(r=>r.Profile.Enabled),store.StartAllVersion,CompanionValidation.AvailableClasses,
         ArrivalStatus(),new(store.Records.Values.Count(r=>!live.ContainsKey(r.Profile.Id)&&Eligibility(r,DateTimeOffset.UtcNow).Allowed),
-            store.Records.Values.Count(r=>r.Profile.Enabled&&r.RestUntil>DateTimeOffset.UtcNow),live.Values.Count(l=>l.StoppingAt!=null)));
+            store.Records.Values.Count(r=>r.Profile.Enabled&&r.RestUntil>DateTimeOffset.UtcNow),live.Values.Count(l=>l.StoppingAt!=null)),
+        store.Schedules, Envir.Main.CharacterList.Select(c=>c.Name).Concat(store.Records.Values.Select(r=>r.Profile.Name)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
     public int StartAll(CompanionCommand command)
     {
         if(command.Action!="start")throw new InvalidDataException("未知批量陪玩操作。");
@@ -48,7 +57,7 @@ public sealed partial class CompanionService(GameRuntime runtime, CompanionStore
         Math.Max(0,Math.Min(store.Settings.MaxOnline,Math.Min(Settings.MaxUser-store.Settings.ReservePlayers,Settings.MaxIP-1))));
     public CompanionPage List(int page=0,string? search=null,int pageSize=20,string? status=null)
     {
-        if(pageSize is <1 or >50)throw new InvalidDataException("每页条数须为1–50。");
+        if(pageSize is <1 or >100)throw new InvalidDataException("每页条数须为1–100。");
         if(status is not (null or "" or "online" or "offline" or "queued" or "paused" or "resting" or "error" or "disabled"))throw new InvalidDataException("未知的陪玩状态筛选。");
         var queue=QueuePositions(DateTimeOffset.UtcNow);
         bool Matches(CompanionRecord r)=>status switch
@@ -98,7 +107,7 @@ public sealed partial class CompanionService(GameRuntime runtime, CompanionStore
         {
             if(old.Profile.Class!=p.Class||old.Profile.Gender!=p.Gender||old.Profile.Name!=p.Name)throw new InvalidOperationException("角色创建期间不能修改身份，请先下线。");
         }
-        store.SaveProfile(p,"c"+Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant(),Convert.ToHexString(RandomNumberGenerator.GetBytes(7)));
+        store.SaveProfile(p,store.NewAccounts(1)[0],Convert.ToHexString(RandomNumberGenerator.GetBytes(7)));
         return store.Public(store.Get(p.Id));
     }
     public CompanionProfile Create(CompanionProfile p)
@@ -137,12 +146,12 @@ public sealed partial class CompanionService(GameRuntime runtime, CompanionStore
         new("智能托管",store.Settings.SmartRecovery?"已启用":"未启用",$"每30秒检查，{store.Records.Values.Count(r=>r.RecoveryAt!=null&&!CompanionSupervision.Death(r))}名等待技术恢复，{store.Records.Values.Count(CompanionSupervision.Death)}名等待死亡恢复；名额不足时先技术后死亡，核对旧连接和安全复活点，记录历史后重开死亡预算，保留人工意愿和资产未知等保护。"),
         new("版本隔离/人格/日程",store.LoadError==null?"可用":"阻断",store.LoadError??"全部资料与用量保存在当前版本 SQLite；人格修订固定。"),
         new("独立 TCP 客户端",CompanionWorker.Installed?"可用":"阻断","正常注册、创建角色与登录。"),
-        new("真实成长","可用","服务器提供NPC/任务/刷新点与实际掉落来源，规则规划接取、寻怪收集和返回交付；支持战斗、拾取、换装、学书、补给与修理。"),
-        new("英雄","受限","满足当前版本等级、NPC与职业条件后创建首名英雄，原封印激活、召唤及死亡60秒恢复；共用角色背包装备、普通技能书与富余药品。尚不自动切换/封印/删除英雄或操作复杂专属剧情。"),
+        new("真实成长","可用","按实际战力接交任务、拾取、换装、学书、回收、鉴定及修理；久攻、追逐无效或承伤过高时暂时降级，有余钱优先购买魔血石并保留应急药品。"),
+        new("英雄","受限","按原NPC许可创建首英雄、封印激活及死亡60秒恢复；共用包主动购装学书、血蓝恢复、魔血石、鉴定和原编号修理，低血跟随、恢复后参战。不自动删除/封印/切换已有英雄或操作复杂专属剧情。"),
         new("背包仓库","受限","普通余料及同定义重复防具/首饰经NPC和密码校验暂存；留最好1件备装，戒指/手镯留2件，材料可安全取回至5份；任务/特殊物不动，人工密码不重置。"),
         new("剧情与跨图","受限","按当前版本编号规划公开入口步行路线；支持击杀/掉落收集，隐藏剧情和特殊入口仍需适配。无进度保持在线重新规划。"),
         new("组队/聊天","可用","陪玩自主邀请，优先同行会和互补职业；原队伍回执确认后跟随公开跨图路线、协助合法怪物和治疗队友，补给/筹资及任务交付优先。"),
-        new("行会发展/攻城","受限","可选主动入会/自主建会，按NPC、等级、费用、材料与权限执行；开启PK且有资格时参与已开战城池、攻击合法目标和王宫/据点驻守，不自动宣战或操作行会资产。"),
+        new("行会发展/攻城","受限","按原规则筹资、采购建会材料及分阵营建会/入会；开启PK与本会攻城后，会长可向原NPC报名、会聊集结，成员响应合法参战，不自动普通宣战或操作行会资产。"),
         new("PK","可用","总开关默认关闭；开启后仅短时红褐模式自卫或收到点名切磋的30秒约战，低血撤退。"),
         new("玩家交易/行会资产","受限","尚未接入自动报价/确认和行会资产操作；陪玩不自动发起。"),
         new("LLM 增强",store.Settings.Models.Any(m=>m.Enabled)?"可用":"未配置，使用规则","多模型独立密钥/角色选择与连接测试；5秒超时、每日请求额度、无效输出回落规则。")

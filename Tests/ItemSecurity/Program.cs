@@ -65,8 +65,8 @@ foreach (ushort count in new ushort[] { 1, 49, 50, 51, 60, 99, 100 })
         p.Info.Inventory[0] == item, "Self-merge changed inventory");
 }
 
-foreach (ushort source in new ushort[] { 1, 40, 60, 90 })
-foreach (ushort destination in new ushort[] { 10, 40, 60, 99 })
+foreach (ushort source in new ushort[] { 1, 40, 600, 990 })
+foreach (ushort destination in new ushort[] { 10, 400, 600, 998 })
 {
     var p = Player();
     var a = Item(1, source);
@@ -79,7 +79,7 @@ foreach (ushort destination in new ushort[] { 10, 40, 60, 99 })
     catch (MergeCompleted) { }
     Check(p.Packets.Last() is S.MergeItem { Success: true } &&
         (p.Info.Inventory[0]?.Count ?? 0) + b.Count == source + destination &&
-        b.Count == Math.Min(100, source + destination), "Valid merge did not conserve items");
+        b.Count == Math.Min(999, source + destination), "Valid merge did not conserve items");
 }
 
 Action<UserItem>[] restrictions = {
@@ -276,7 +276,10 @@ foreach (var restrict in restrictions)
     Check(p.Account.Gold == uint.MaxValue && p.Info.Mail.Count == 0, "Shop price wrapped");
     product.GoldPrice = 1; product.Count = 40000;
     p.GameshopBuy(product.GIndex, 2, 1);
-    Check(p.Account.Gold == uint.MaxValue - 2 && p.Info.Mail.Single().Items.Sum(item => item.Count) == 80000,
+    Check(p.Account.Gold == uint.MaxValue && p.Info.Mail.Count == 0, "Shop bypassed five-stack mail limit");
+    product.Count = 2000;
+    p.GameshopBuy(product.GIndex, 2, 1);
+    Check(p.Account.Gold == uint.MaxValue - 2 && p.Info.Mail.Single().Items.Sum(item => item.Count) == 4000 && p.Info.Mail.Single().Items.All(item => item.Count <= 999),
         "Large shop bundle lost quantities or charged incorrect price");
     Envir.Main.GameShopList.Remove(product);
     Envir.Main.ItemInfoList.Remove(info);

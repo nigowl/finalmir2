@@ -10,7 +10,7 @@ public partial class Main
     private void ItemTooltip(Button button, UserItem? item, string empty = "空格")
     {
         button.TooltipText = item == null ? empty : ItemText(item);
-        if (button is ItemTipButton rich) rich.TooltipBuilder = item == null ? null : () => BuildItemTooltip(item);
+        if (button is ItemTipButton rich) { rich.Item = item; rich.TooltipBuilder = item == null ? null : () => BuildItemTooltip(item); rich.QueueRedraw(); }
     }
 
     internal Control BuildItemTooltip(UserItem item)
@@ -26,11 +26,11 @@ public partial class Main
             foreach (var slot in ItemPresentation.Slots(item.Info.Type))
                 if (SubjectEquipment.ElementAtOrDefault(slot) is { } worn && worn.Info != null)
                 {
-                    columns.AddChild(new VSeparator());
+                    columns.AddChild(new ItemTooltipSeparator { Vertical = true });
                     AddItemTooltipColumn(columns, worn, $"已装备 · {((EquipmentSlot)slot).ToLocalizedString()}", item);
                 }
         }
-        scroll.ContentRevision = () => State.ItemOwnerNameRevision; scroll.RefreshContent = Populate;
+        scroll.ContentRevision = () => HashCode.Combine(State.ItemOwnerNameRevision, State.InventoryRevision, HeroInventoryContext); scroll.RefreshContent = Populate;
         Populate();
         return scroll;
     }
@@ -43,21 +43,43 @@ public partial class Main
         var text = new RichTextLabel { FitContent = true, ScrollActive = false,
             MouseFilter = MouseFilterEnum.Ignore, Name = candidate == null ? "ItemDetails" : "EquippedComparison" };
         text.AddThemeFontSizeOverride("normal_font_size", 11); column.AddChild(text);
-        void Line(string value, Color? colour = null) { text.PushColor(colour ?? new Color("eadbb6")); text.AddText(value + "\n"); text.Pop(); }
-        Line(title, Colors.Wheat); Line(ItemPresentation.Name(item), Colors.White);
-        Line(ItemPresentation.Category(item));
-        foreach (var value in ItemPresentation.Stats(item)) Line(value);
+        void Line(string value, Color? colour = null) { text.PushColor(colour ?? Colors.White); text.AddText(value + "\n"); text.Pop(); }
+        var qualityColour = EquipmentAppraisal.Colour(item);
+        var colour = new Color(qualityColour.R / 255f, qualityColour.G / 255f, qualityColour.B / 255f);
+        Line(title); Line(ItemPresentation.Name(item), colour);
+        if (item.Info?.IsEquipment == true)
+        {
+            text.PushColor(Colors.White); text.AddText(item.Info.Type.ToLocalizedString() + " · "); text.Pop();
+            Line(EquipmentAppraisal.Name(item), colour);
+        }
+        else Line(ItemPresentation.Category(item));
+        foreach (var line in ItemPresentation.StatLines(item))
+        {
+            foreach (var part in line)
+            {
+                text.PushColor(part.Quality ? colour : Colors.White);
+                text.AddText(part.Text); text.Pop();
+            }
+            text.AddText("\n");
+        }
         Line(ItemPresentation.Details(item));
         foreach (var requirement in ItemPresentation.Requirements(item, State, HeroInventoryContext)) Line(requirement.Text, requirement.Met ? null : new Color("ff6060"));
         if (!string.IsNullOrWhiteSpace(item.Info?.ToolTip)) Line(item.Info.ToolTip);
         if (candidate != null)
         {
-            column.AddChild(new HSeparator());
+            column.AddChild(new ItemTooltipSeparator());
             text = new RichTextLabel { Name = "ComparisonDifference", FitContent = true, ScrollActive = false, MouseFilter = MouseFilterEnum.Ignore };
             text.AddThemeFontSizeOverride("normal_font_size", 11); column.AddChild(text);
-            Line("换上左侧装备后", Colors.Wheat);
-            foreach (var (value, change) in ItemPresentation.Comparison(candidate, item))
-                Line(value, change > 0 ? new Color("78d888") : change < 0 ? new Color("ff6060") : Colors.Wheat);
+            Line("对比");
+            foreach (var line in ItemPresentation.ComparisonLines(candidate, item))
+            {
+                foreach (var part in line)
+                {
+                    text.PushColor(part.Change > 0 ? new Color("78d888") : part.Change < 0 ? new Color("ff6060") : Colors.White);
+                    text.AddText(part.Text); text.Pop();
+                }
+                text.AddText("\n");
+            }
         }
     }
 }

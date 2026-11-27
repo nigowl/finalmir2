@@ -46,7 +46,10 @@ internal static class ShopCatalogSession
             async Task Price(uint price)
             {
                 var document = (await http.GetFromJsonAsync<PublicShopDocument>("/management/shop"))!;
-                document.Catalog.Tabs.Single(tab => tab.Id == 7).Products.Single().Price = price;
+                var product = document.Catalog.Tabs.Single(tab => tab.Id == 7).Products.Single();
+                var unit = state.Items[product.ItemIndex];
+                var basis = new UserItem(unit) { Count = PublicShopRules.UnitCount(unit), CurrentDura = unit.Durability, MaxDura = unit.Durability }.BuyPrice();
+                product.PriceRate = price == 0 ? null : Math.Floor(price / (decimal)basis * 1_000_000_000_000m) / 1_000_000_000_000m;
                 using var response = await http.PutAsJsonAsync("/management/shop", new PublicShopEdit(document.Catalog, document.Version));
                 Check(response.IsSuccessStatusCode, "商城报价变更失败：" + await response.Content.ReadAsStringAsync());
             }

@@ -22,7 +22,7 @@ internal static class SuppliesStorageChecks
         var state = new GameState { User = new S.UserInformation { Class = MirClass.Archer, Equipment = new UserItem[14], Inventory = new UserItem[46], Magics = [] } };
         gear.Type = ItemType.Armour; gear.RequiredClass = (RequiredClass)31;
         check(!ItemPresentation.Requirements(new UserItem(gear), state).Any(requirement => requirement.Text.Contains("职业")), "不限职业装备仍显示职业限制");
-        PotionChecks(check); PageChecks(check); UnusedChecks(check);
+        PotionChecks(check); PageChecks(check); UnusedChecks(check); PersonalStorageChecks.Run(check);
     }
     private static void PotionChecks(Action<bool, string> check)
     {

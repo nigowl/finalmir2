@@ -11,7 +11,7 @@
 @if (busy) { <MudProgressLinear Indeterminate="true" Class="mb-3" /> }
 <MudTable T="CatalogRow" Items="rows" Dense="true" Hover="true" RowsPerPage="10" aria-label="游戏定义列表">
     <HeaderContent><MudTh>编号</MudTh><MudTh>名称</MudTh><MudTh>属性</MudTh><MudTh>操作</MudTh></HeaderContent>
-    <RowTemplate><MudTd DataLabel="编号">@context.Id</MudTd><MudTd DataLabel="名称">@context.Name</MudTd><MudTd DataLabel="属性">@context.Details</MudTd><MudTd DataLabel="操作"><MudButton Disabled="busy" Size="Size.Small" OnClick="@(() => Edit(context.Id))" Variant="Variant.Text" Color="Color.Primary">编辑</MudButton></MudTd></RowTemplate>
+    <RowTemplate><MudTd DataLabel="编号">@context.Id</MudTd><MudTd DataLabel="名称">@context.Name</MudTd><MudTd DataLabel="属性">@context.Details</MudTd><MudTd DataLabel="操作" Class="admin-row-actions"><MudButton Disabled="busy" Size="Size.Small" OnClick="@(() => Edit(context.Id))" Variant="Variant.Text" Color="Color.Primary">编辑</MudButton></MudTd></RowTemplate>
     <PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
 </MudTable>
 @if (definition != null || map != null || npc != null || quest != null)
@@ -29,7 +29,7 @@
                 <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最小物理攻击" @bind-Value="minDc" Min="0" /></MudItem><MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="最大物理攻击" @bind-Value="maxDc" Min="0" Max="1000000" /></MudItem>
                 @if (definition.Kind == "items")
                 {
-                    <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="uint" Label="价格" @bind-Value="price" /></MudItem><MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="堆叠上限" @bind-Value="stack" Min="1" Max="65535" /></MudItem>
+                    <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="uint" Label="定义基值（交易价格在商城管理）" @bind-Value="price" ReadOnly="true" /></MudItem><MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="int" Label="堆叠上限" @bind-Value="stack" Min="1" Max="65535" /></MudItem>
                 }
                 else { <MudItem xs="12" sm="3"><MudNumericField Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" T="uint" Label="经验奖励" @bind-Value="experience" /></MudItem> }
             }

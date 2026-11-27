@@ -12,6 +12,8 @@
         "access"=>[
             ("最大在线连接数",value.MaxUser.ToString(),"登录、选角和游戏内连接的总上限"),
             ("同 IP 最大连接数",value.MaxIP.ToString(),"陪玩共用本机 IP，另预留 1 个本机名额"),
+            ("同 IP 每小时注册次数",value.MaxAccountsPerIPHour==0?"不限":value.MaxAccountsPerIPHour.ToString(),"过去一小时的注册请求次数；0为不限，保存立即生效"),
+            ("同 IP 每小时建角次数",value.MaxCharactersPerIPHour==0?"不限":value.MaxCharactersPerIPHour.ToString(),"过去一小时的建角请求次数；0为不限，保存立即生效"),
             ("注册账户",On(value.AllowNewAccount),"按注册频率限制排队"),("登录",On(value.AllowLogin),"关闭后拒绝新的登录，已有玩家保持在线"),
             ("修改密码",On(value.AllowChangePassword),"允许玩家修改账户密码"),("创建角色",On(value.AllowNewCharacter),"允许玩家及陪玩创建角色"),
             ("启用战士职业",On(value.AllowCreateWarrior),"允许创建战士"),("启用法师职业",On(value.AllowCreateWizard),"允许创建法师"),
@@ -19,7 +21,7 @@
             ("删除角色",On(value.AllowDeleteCharacter),"允许玩家删除角色"),("仓库密码",On(value.RequireStoragePassword),"存取前验证仓库密码")],
         "game"=>[
             ("经验倍率",$"{value.ExpRate:0.##} 倍","影响击杀和任务经验"),("掉落倍率",$"{value.DropRate:0.##} 倍","也影响任务金币奖励"),
-            ("公共商店价格倍率",$"{value.PublicShopPriceRate:0.##} 倍","相对 NPC 最低售价，1.5 表示贵 50%；立即生效"),
+            ("公共商店价格倍率",$"{value.PublicShopPriceRate:0.##} 倍","未单独设置倍率的商品跟随此值；商品倍率留空恢复跟随"),
             ("普通掉落保留",$"{value.ItemTimeOut} 分钟","应用于后续掉落"),("死亡掉落保留",$"{value.PlayerDiedItemTimeOut} 分钟","应用于后续死亡掉落"),
             ("PK 值衰减间隔",$"{value.PKDelay} 秒","下一次衰减后使用新间隔"),("怪物等级差经验",On(value.ExpMobLevelDifference),"按角色与怪物的等级差调整经验")],
         "protection"=>[

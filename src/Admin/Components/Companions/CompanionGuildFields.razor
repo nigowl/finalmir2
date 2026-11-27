@@ -2,11 +2,12 @@
     <MudSelectItem T="string" Value="@("off")">关闭</MudSelectItem>
     <MudSelectItem T="string" Value="@("join")">主动入会</MudSelectItem>
     <MudSelectItem T="string" Value="@("create")">自主建会</MudSelectItem>
-    <MudSelectItem T="string" Value="@("auto")">优先入会，无合适行会时筹备建会</MudSelectItem>
+    <MudSelectItem T="string" Value="@("auto")">自动发展：分阵营建会与入会</MudSelectItem>
 </MudSelect>
 <MudTextField T="string" Margin="Margin.Dense" Variant="Variant.Outlined" Label="目标行会 / 拟建名称（留空自动）" MaxLength="20" Immediate="true" Disabled="@(Preferences.Mode=="off")" @bind-Value="Preferences.Name" />
 <MudCheckBox T="bool" Label="参与本行会攻城" Disabled="@(Preferences.Mode=="off")" @bind-Value="Preferences.Siege" />
-<MudAlert Severity="Severity.Info" Class="my-2">建会走实际NPC，满足当前版本等级、金币和材料要求后执行，并保留至少半数金币。入会需邀请确认；允许招收的陪玩会长会接纳申请。攻城还须开启陪玩PK总开关，只参与本会有资格的已开战城池；不会自动宣战、退会或操作行会仓库。</MudAlert>
+<MudText Typo="Typo.caption">自动策略按稳定编号分三股发展，保留已有会籍。开启候选决策增强时，模型可选择建会、入会、暂缓发展及已获许可的攻城；费用、PK与参战权限仍由原服校验。</MudText>
+<MudAlert Severity="Severity.Info" Class="my-2">建会先筹资并按原商城购买缺少的材料，再走实际NPC，保留建会后补给资金。入会需邀请确认。开启陪玩PK与本会攻城后，会长可按原NPC资格报名并组织集结，成员响应参战；不自动退会、发起普通行会宣战或操作行会仓库。</MudAlert>
 @code {
     [Parameter,EditorRequired] public CompanionGuildPreferences Preferences { get; set; } = null!;
 }

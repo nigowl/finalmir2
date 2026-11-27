@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Mir2.Companions;
 using Mir2.Hosting;
 using Server;
 using Server.ConsoleHost;
@@ -28,6 +29,11 @@ internal static class CompanionStorageScenario
                 foreach(var map in world.MapInfoList){map.Index+=70;foreach(var exit in map.Movements)exit.MapIndex+=70;}
                 foreach(var npc in world.NPCInfoList)npc.MapIndex+=70;
                 c.CurrentMapIndex+=70;c.BindMapIndex+=70;world.MapIndex+=70;
+                var store=new CompanionStore(storage,new(paths,storage),paths);
+                var record=store.Records.Values.Single(r=>r.CharacterId==cid);
+                c.AccountInfo.AccountID="LegacyStorage";
+                c.AccountInfo.StoragePassword=CompanionStorageRules.Password("LegacyStorage",record.Password);
+                store.Mutate(record,r=>r.Account="LegacyStorage",saveAccounts:true);
             }
             else if(mode is "full" or "wrong" or "optional")
             {
@@ -56,7 +62,7 @@ internal static class CompanionStorageScenario
     }
     private static ulong[] ConfigureEquipment(Envir world,CharacterInfo c)
     {
-        c.Inventory=new UserItem[46];c.Equipment=new UserItem[14];c.QuestInventory=new UserItem[40];c.Magics.Clear();
+        c.Inventory=new UserItem[Globals.BaseInventorySize];c.Equipment=new UserItem[14];c.QuestInventory=new UserItem[40];c.Magics.Clear();
         c.CurrentQuests.Clear();c.CompletedQuests.Clear();c.AccountInfo.Gold=1000;c.AccountInfo.Storage=new UserItem[160];
         c.CurrentMapIndex=c.BindMapIndex;c.CurrentLocation=c.BindLocation;c.HP=c.MP=1000;
         ItemInfo Add(string name,ItemType type,byte weight=1)
@@ -76,30 +82,33 @@ internal static class CompanionStorageScenario
         var future=Add("NativeStorageFutureNecklace",ItemType.Necklace,2);for(var i=0;i<3;i++)Put(future);
         var quest=new QuestInfo{Index=++world.QuestIndex,Name="Native Equipment Future Quest",FileName="NativeStorageEquipmentFuture"};
         File.WriteAllText(Path.Combine(Settings.QuestPath,quest.FileName+".txt"),$"[@ITEMTASKS]\n{future.Name} 3\n");quest.LoadInfo();world.QuestInfoList.Add(quest);
-        var filler=Add("NativeStorageInventoryFiller",ItemType.Ore,0);while(c.Inventory.Any(i=>i==null))Put(filler);
-        // 本场景专测重复备装；矿石现可自动存仓，另以任务保护隔离填充物。
-        File.AppendAllText(Path.Combine(Settings.QuestPath,quest.FileName+".txt"),$"{filler.Name} 46\n");quest.LoadInfo(true);
+        // 无恢复属性的测试药品不进入材料栏，也不会被使用，保持普通背包真实满格。
+        var filler=Add("NativeStorageInventoryFiller",ItemType.Potion,0);
+        while(c.Inventory.Any(i=>i==null))Put(filler).AddedStats[Stat.Accuracy]=c.Inventory.Count(i=>i!=null);
+        File.AppendAllText(Path.Combine(Settings.QuestPath,quest.FileName+".txt"),$"{filler.Name} {Globals.BaseInventorySize}\n");quest.LoadInfo(true);
         return allowed.ToArray();
     }
     private static void Configure(Envir world,CharacterInfo c)
     {
-        c.Level=10;c.HP=c.MP=1000;c.Experience=0;c.AccountInfo.Gold=1000;c.Magics.Clear();
+        c.Level=20;c.HP=c.MP=1000;c.Experience=0;c.AccountInfo.Gold=1000;c.Magics.Clear();
         c.Inventory=new UserItem[46];c.Equipment=new UserItem[14];c.QuestInventory=new UserItem[40];
         c.CurrentQuests.Clear();c.CompletedQuests.Clear();c.CurrentMapIndex=c.BindMapIndex;c.CurrentLocation=c.BindLocation;
         c.AccountInfo.Storage=new UserItem[160];foreach(var map in world.MapInfoList)map.Respawns.Clear();world.QuestInfoList.Clear();world.NPCInfoList.Clear();
+        foreach(var item in world.ItemInfoList.Where(item=>PublicShopRules.Category(item) is 0 or 1))item.Price=0;
         ItemInfo Add(string name,ItemType type,byte weight=1,uint price=10)
         {var i=new ItemInfo{Index=++world.ItemIndex,Name=name,Type=type,Weight=weight,Price=price,StackSize=999};world.ItemInfoList.Add(i);return i;}
         UserItem Put(ItemInfo i,ushort count)
         {var item=world.CreateFreshItem(i);item.Count=count;c.Inventory[Array.IndexOf(c.Inventory,null)]=item;return item;}
-        var material=Add("NativeStorageMaterial",ItemType.CraftingMaterial);Put(material,200);
-        var red=Add("NativeStorageRed",ItemType.Potion,1,20);red.Stats[Stat.HP]=30;red.StackSize=20;Put(red,14);
-        var blue=Add("NativeStorageBlue",ItemType.Potion,1,30);blue.Stats[Stat.MP]=30;blue.StackSize=20;Put(blue,3);
+        // 非装备重量已按百分之一折算，保持本场景达到减负线以触发跨图存仓。
+        var material=Add("NativeStorageMaterial",ItemType.Food,100);Put(material,200);
+        var red=Add("NativeStorageRed",ItemType.Potion,1,20);red.Shape=1;red.Stats[Stat.HP]=30;red.StackSize=20;Put(red,14);
+        var blue=Add("NativeStorageBlue",ItemType.Potion,1,30);blue.Shape=1;blue.Stats[Stat.MP]=30;blue.StackSize=20;Put(blue,3);
         var future=Add("NativeStorageFutureToken",ItemType.CraftingMaterial);Put(future,20);
         var special=Add("NativeStorageSpecial",ItemType.CraftingMaterial);Put(special,10).AddedStats[Stat.MaxDC]=1;
         var bound=Add("NativeStorageBound",ItemType.CraftingMaterial);bound.Bind=BindMode.DontStore;Put(bound,10);
         var tool=Add("NativeStorageBlade",ItemType.Weapon,0,0);tool.Shape=1;tool.Durability=5000;tool.Stats[Stat.BagWeight]=100;c.Equipment[0]=world.CreateFreshItem(tool);
         var product=Add("NativeStorageRecipe",ItemType.Script,0,0);Directory.CreateDirectory(Settings.RecipePath);
-        File.WriteAllText(Path.Combine(Settings.RecipePath,product.Name+".txt"),$"[Ingredients]\n{material.Name} 1\n");
+        File.WriteAllText(Path.Combine(Settings.RecipePath,product.Name+".txt"),$"[Tools]\n{material.Name} 1\n");
         world.QuestInfoList.Add(new QuestInfo{Index=1,Name="Native Future Quest",FileName="NativeStorageFuture"});world.QuestIndex=1;
         File.WriteAllText(Path.Combine(Settings.QuestPath,"NativeStorageFuture.txt"),$"[@ITEMTASKS]\n{future.Name} 3\n");world.QuestInfoList[0].LoadInfo();
         var origin=c.BindMapIndex;var remote=world.MapInfoList.Single(m=>m.Index!=origin).Index;

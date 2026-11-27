@@ -19,25 +19,12 @@ public partial class PlayerObject
 
     public IEnumerable<PublicShopEntry> PublicShopOffers()
     {
-        var npcPrices = PublicShopGoods().Where(pair => pair.Goods.Info.Price > 0)
-            .Select(pair =>
-            {
-                var item = pair.Goods.Clone(); item.Count = PublicShopRules.UnitCount(item.Info);
-                var npcPrice = Math.Floor(item.Price() * (double)NPCScript.PriceRate(this, pair.Npc));
-                return (item.Info.Index, Price: npcPrice);
-            }).GroupBy(pair => pair.Index).ToDictionary(group => group.Key, group => group.Min(pair => pair.Price));
-        var products = Envir.PublicShopCatalog == null ? Envir.ItemInfoList.Where(info => PublicShopRules.Category(info) >= 0 && info.Price > 0 && info.StackSize > 0 &&
-                (info.Type != ItemType.Book || npcPrices.ContainsKey(info.Index) && Envir.MagicInfoList.Any(m => (int)m.Spell == info.Shape)))
-                .Select(info => (Info: info, Category: (byte)PublicShopRules.Category(info), Price: 0u)) :
-            Envir.PublicShopCatalog.Tabs.SelectMany(tab => tab.Products.Select(product => (Info: Envir.GetItemInfo(product.ItemIndex), Category: tab.Id, product.Price)))
-                .Where(product => Helpers.PublicShopCatalogRules.CanList(product.Info));
-        return products.Select(product =>
-            {
-                var info = product.Info;
-                var unit = new UserItem(info) { Count = PublicShopRules.UnitCount(info), CurrentDura = info.Durability, MaxDura = info.Durability };
-                var price = product.Price > 0 ? product.Price : PublicShopRules.IsGuildHorn(info) ? 1_000_000 :
-                    Math.Ceiling(npcPrices.GetValueOrDefault(info.Index, unit.Price()) * Settings.PublicShopPriceRate);
-                return new PublicShopEntry { ItemIndex = info.Index, Category = product.Category,
+        return Helpers.PublicShopCatalogRules.Current(Envir).Tabs
+            .SelectMany(tab => tab.Products.Select(product => (Info: Envir.GetItemInfo(product.ItemIndex), Category: tab.Id, product.PriceRate)))
+            .Where(product => Helpers.PublicShopCatalogRules.CanList(product.Info) && Helpers.PublicShopCatalogRules.SkillBookAllowed(product.Info, Envir))
+            .Select(product => {
+                var price = Math.Ceiling(Helpers.PublicShopCatalogRules.UnitPrice(product.Info) * (product.PriceRate ?? (decimal)Settings.PublicShopPriceRate));
+                return new PublicShopEntry { ItemIndex = product.Info.Index, Category = product.Category,
                     Price = price is > 0 and <= uint.MaxValue ? (uint)price : 0, MaxCount = 999 };
             }).Where(offer => offer.Price > 0).OrderBy(offer => offer.Category).ThenBy(offer => offer.ItemIndex).Take(512);
     }
@@ -80,13 +67,14 @@ public partial class PlayerObject
         {
             var item = new UserItem(info) { Count = (ushort)Math.Min(remaining, info.StackSize), CurrentDura = info.Durability, MaxDura = info.Durability };
             Envir.UpdateItemExpiry(item); items.Add(item); remaining -= item.Count;
-            if (items.Count > Info.Inventory.Length) break;
+            if (items.Count > Info.Inventory.Length + Info.QuestInventory.Length) break;
         }
-        var inventory = remaining == 0 ? Server.Helpers.InventoryStacks.AfterAdding(Info.Inventory, items) : null;
+        var material = Helpers.MaterialInventoryRules.Contains(info, Envir);
+        var inventory = remaining == 0 ? Helpers.InventoryStacks.AfterAdding(material ? Info.QuestInventory : Info.Inventory, items) : null;
         if (inventory == null) { Result("购买失败：背包空间不足，且无法合堆。"); return; }
         // 毒符按整堆计重；合堆后未新增物品堆时不增加负重。
-        var weight = inventory.Sum(item => item?.Weight ?? 0);
-        if (weight > Stats[Stat.BagWeight])
+        var weight = material ? CurrentBagWeight : inventory.Sum(item => item?.Weight ?? 0);
+        if (!material && weight > Stats[Stat.BagWeight])
         { Result($"购买失败：负重不足（购买后 {weight:0.##}/{Stats[Stat.BagWeight]}）。"); return; }
         Account.Gold -= (uint)cost; Enqueue(new S.LoseGold { Gold = (uint)cost });
         foreach (var item in items) { item.UniqueID = Envir.CreateFreshItem(info).UniqueID; GainItem(item); }

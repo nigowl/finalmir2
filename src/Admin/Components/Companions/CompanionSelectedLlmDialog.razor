@@ -1,0 +1,33 @@
+@using System.Text.Json
+<AdminDialog Visible="true" Title="@($"批量LLM设置（已选{Profiles.Length}个）")" OnClose="OnClose" OnSave="Save" Busy="busy" CanSave="@(mode==0||Models.Any(m=>m.Enabled&&m.Id==(modelId==Guid.Empty?DefaultModelId:modelId)))" Dirty="@(original!=Draft)" SaveConfirmation="仅更新所选角色的增强模式和模型？不会修改日程、启停、历史用量或错误保护，也不会发起模型测试。">
+<DialogContent>
+    @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
+    <MudText Class="mb-2">@string.Join("、",Profiles.Take(12).Select(p=>p.Profile.Name))@(Profiles.Length>12?"……":"")</MudText>
+    <MudSelect T="int" Label="增强模式" @bind-Value="mode" Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true">
+        <MudSelectItem Value="0">关闭：完全使用规则</MudSelectItem><MudSelectItem Value="1">社交增强</MudSelectItem><MudSelectItem Value="2">社交、行会与候选决策</MudSelectItem>
+    </MudSelect>
+    <MudSelect T="Guid" Label="使用模型" @bind-Value="modelId" Disabled="@(mode==0)" Margin="Margin.Dense" Variant="Variant.Outlined" Dense="true">
+        <MudSelectItem Value="Guid.Empty">使用本版本默认模型</MudSelectItem>
+        @foreach(var model in Models.Where(m=>m.Enabled)){<MudSelectItem Value="model.Id">@model.Name · @model.Model</MudSelectItem>}
+    </MudSelect>
+    @if(mode>0&&!Models.Any(m=>m.Enabled&&m.Id==(modelId==Guid.Empty?DefaultModelId:modelId)))
+    {<MudAlert Severity="Severity.Warning" Dense="true" Class="my-2">请先在陪玩设置配置可用模型，或选择已启用的模型。</MudAlert>}
+    <MudText Typo="Typo.caption" Class="d-block my-2">关闭只停用增强，保留各角色已指定模型。增强仍受版本请求配额和冷却限制，不会绕过规则或提交资产操作。</MudText>
+</DialogContent>
+</AdminDialog>
+@code{
+    [Parameter,EditorRequired]public CompanionRow[] Profiles{get;set;}=[];
+    [Parameter]public CompanionLlmModel[] Models{get;set;}=[];
+    [Parameter]public Guid DefaultModelId{get;set;}
+    [Parameter]public EventCallback OnClose{get;set;}
+    [Parameter]public EventCallback OnSaved{get;set;}
+    private int mode;private Guid modelId;private bool busy;private string? error;private string original="";
+    private string Draft=>JsonSerializer.Serialize(new{mode,modelId});
+    protected override void OnInitialized(){mode=Profiles[0].Profile.LlmMode;modelId=Profiles[0].Profile.LlmModelId;original=Draft;}
+    private async Task Save()
+    {
+        busy=true;error=null;
+        try{await Api.Post<ActionResult>("management/companions/selected-llm",new CompanionSelectedLlm(Profiles.Select(p=>new CompanionSelection(p.Profile.Id,p.Profile.Version)).ToArray(),mode,modelId));await OnSaved.InvokeAsync();}
+        catch(Exception e){error=e.Message;}finally{busy=false;}
+    }
+}

@@ -11,7 +11,9 @@ const [root,address]=process.argv.slice(2);
         const page=await browser.newPage({viewport:{width:1440,height:1100}});const errors=[];
         page.on('pageerror',e=>errors.push(e.message));
         await page.goto(address+'/companions',{waitUntil:'networkidle'});
-        const footer=page.getByText(/第 \d+ 页，共 \d+ 条，每页 10 条/);
+        await expect(page.getByRole('link',{name:'商城管理',exact:true})).toHaveAttribute('href','/shop');
+        await expect(page.getByText(/注册与建角频率由系统设置控制/)).toBeVisible();
+        const footer=page.getByText(/第 \d+ 页，共 \d+ 条，每页 \d+ 条/);
         const rows=page.locator('table').first().locator('tbody tr');
         await expect(footer).toHaveText('第 1 页，共 25 条，每页 10 条');await expect(rows).toHaveCount(10);
         await page.getByRole('button',{name:'下一页',exact:true}).click();await expect(footer).toContainText('第 2 页');
@@ -30,7 +32,21 @@ const [root,address]=process.argv.slice(2);
         await page.screenshot({path:path.join(root,'listing-empty.png'),fullPage:true});
         await page.getByLabel('昵称 / 别名 / 标签 / 人格',{exact:true}).fill('');await filter('全部状态');
         await expect(footer).toContainText('共 25 条');await expect(rows).toHaveCount(10);
+        await page.getByRole('checkbox',{name:'选择分页测试00',exact:true}).check();
+        await page.getByRole('button',{name:'下一页',exact:true}).click();
+        const sizes=page.locator('.mud-input-control.mud-select').filter({has:page.getByText('每页条数',{exact:true})});
+        const setSize=async size=>{await sizes.locator('div.mud-input-slot[tabindex="0"]').click();await page.locator('.mud-popover-open').getByText(String(size),{exact:true}).click();};
+        for(const size of [20,30,50,100]){
+            await setSize(size);await expect(footer).toHaveText(`第 1 页，共 25 条，每页 ${size} 条`);await expect(rows).toHaveCount(Math.min(size,25));
+            await expect(page.getByRole('checkbox',{name:'选择分页测试00',exact:true})).toBeChecked();
+        }
+        await page.getByRole('button',{name:'刷新',exact:true}).click();await expect(footer).toHaveText('第 1 页，共 25 条，每页 100 条');
+        await filter('已停用');await expect(footer).toHaveText('第 1 页，共 23 条，每页 100 条');await expect(rows).toHaveCount(23);
+        await filter('全部状态');await setSize(20);await page.getByRole('button',{name:'下一页',exact:true}).click();
+        await expect(footer).toHaveText('第 2 页，共 25 条，每页 20 条');await expect(rows).toHaveCount(5);
+        await setSize(10);await expect(footer).toHaveText('第 1 页，共 25 条，每页 10 条');await expect(rows).toHaveCount(10);
+        await require('../Management/style.cjs')(page);
         await page.screenshot({path:path.join(root,'listing.png'),fullPage:true});assert.deepEqual(errors,[]);
-        console.log('PASS 浏览器10条分页、状态切换回首页、尾页、搜索交集、刷新保留状态和空结果。');
+        console.log('PASS 浏览器10/20/30/50/100条分页、切换回首页/保留筛选与跨页勾选、状态切换回首页、尾页、搜索交集、刷新保留状态和空结果。');
     }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

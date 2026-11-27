@@ -9,6 +9,7 @@ public partial class Main
     private SpinBox npcTransactionCount = null!;
     private UserItem? npcTransactionItem;
     private S.NPCGoods? npcTransactionGoods;
+    private S.NPCGoods? lastNpcGoods;
     private uint npcTransactionNpc;
     private int npcTransactionMap;
     private bool npcTransactionPending;
@@ -56,20 +57,23 @@ public partial class Main
         var count = (ushort)Math.Clamp(npcTransactionCount.Value, 1, ushort.MaxValue);
         npcTransactionText.Text = npcTransactionGoods is { } goods ?
             $"购买 {item.Info.FriendlyName} ×{count}？\n单价 {ShopPrice(item, goods.Rate):N0} · 合计 {TransactionPrice(item, count, goods.Rate):N0}\n以商人实际使用的货币结算。" :
-            $"出售 {item.Info.FriendlyName} ×{count}？\n成交价格按商人的当前价格结算。";
+            $"出售 {item.Info.FriendlyName} ×{count}？\n预计获得 {SalePrice(item, count):N0} 金币，以商人实际结算为准。";
     }
 
+    private static uint SalePrice(UserItem item, ushort count)
+    { var priced = item.Clone(); priced.Count = count; return priced.SellPrice(); }
+
     private static uint TransactionPrice(UserItem item, ushort count, float rate)
-    { var priced = item.Clone(); priced.Count = count; return (uint)Math.Clamp(priced.Price() * (double)rate, 0, uint.MaxValue); }
+    { var priced = item.Clone(); priced.Count = count; return (uint)Math.Clamp(priced.BuyPrice() * (double)rate, 0, uint.MaxValue); }
 
     private void SubmitNpcTransaction()
     {
-        if (npcTransactionPending || npcTransactionItem is not { } item || State.Me?.Dead != false || !npc.Visible ||
+        if (appraisalPending != null || npcTransactionPending || npcTransactionItem is not { } item || State.Me?.Dead != false || !npc.Visible ||
             npcDialogueId != npcTransactionNpc || State.Map?.MapIndex != npcTransactionMap || !NearQuestNpc(npcTransactionNpc))
         { InvalidateNpcPurchase(); return; }
         var count = (ushort)Math.Clamp(npcTransactionCount.Value, 1, Math.Min(ushort.MaxValue, npcTransactionCount.MaxValue));
         if (npcTransactionGoods == null && (shopMode != PanelType.Sell ||
-            State.User?.Inventory.Any(current => current?.UniqueID == item.UniqueID && current.Count >= count) != true ||
+            State.User?.Inventory.Concat(State.User.QuestInventory).Any(current => current?.UniqueID == item.UniqueID && current.Count >= count) != true ||
             automation.PendingItem == item.UniqueID || pendingDrop == item.UniqueID)) { InvalidateNpcPurchase(); return; }
         npcTransactionPending = true; npcTransactionSentAt = Environment.TickCount64;
         npcPendingSale = npcTransactionGoods == null ? item.UniqueID : 0;
@@ -83,7 +87,12 @@ public partial class Main
 
     private void NpcTransactionPacket(Packet packet)
     {
-        if (packet is S.MapChanged or S.Death or S.Disconnect) InvalidateNpcPurchase();
+        if (packet is S.ItemPriceChanged changed)
+        {
+            if (npcTransactionItem?.ItemIndex == changed.Prices.ItemIndex) InvalidateNpcPurchase();
+            if (npc.Visible && lastNpcGoods is { } goods && goods.List.Any(item => item.ItemIndex == changed.Prices.ItemIndex)) RenderGoods(goods);
+        }
+        if (packet is S.MapChanged or S.Death or S.Disconnect) { lastNpcGoods = null; InvalidateNpcPurchase(); }
         if (npcTransactionPending && (packet is S.SellItem sold && sold.UniqueID == npcPendingSale ||
             npcPendingSale == 0 && packet is S.Chat { Type: ChatType.System or ChatType.System2 } chat &&
             (chat.Message.StartsWith("购买成功", StringComparison.Ordinal) || chat.Message.StartsWith("购买失败", StringComparison.Ordinal))))

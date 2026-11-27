@@ -58,6 +58,11 @@ internal static class CompanionSupplyChecks
         info.Type=ItemType.Potion;info.Shape=0;info.Stats[Stat.HP]=30;info.Stats[Stat.MP]=0;
         red.Count=0;check(CompanionSupplyRules.PurchaseLimit(red,40,120,50,0)==0,"无库存商品进入最低保命采购");
         red.Count=2;
+        check(CompanionSupplyRules.Target(Stat.HP,MirClass.Warrior,50,1)==4 &&
+            !CompanionSupplyRules.NeedsRefill([red],Stat.HP,MirClass.Warrior,50,1),"新手已有基础红药仍被地牢储备要求卡住");
+        check(CompanionSupplyRules.Target(Stat.HP,MirClass.Warrior,50,10)==8 &&
+            CompanionSupplyRules.NeedsRefill([red],Stat.HP,MirClass.Warrior,50,10),"进入10级后没有提高补给储备");
+        check(CompanionSupplyRules.Target(Stat.HP,MirClass.Warrior,50,20)==15,"20级后的原地牢储备被降低");
         check(CompanionSupplyRules.NeedsRefill([red],Stat.HP,MirClass.Warrior,95),"节俭人格仅剩两瓶仍出发进入洞穴");
         red.Count=(ushort)CompanionSupplyRules.Target(Stat.HP,MirClass.Warrior,95);
         check(red.Count>=12&&!CompanionSupplyRules.NeedsRefill([red],Stat.HP,MirClass.Warrior,95),"达到补给目标后仍要求回店");

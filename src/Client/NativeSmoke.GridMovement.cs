@@ -29,7 +29,7 @@ public partial class NativeSmoke
             GD.Print("PASS native grid hero restart: five-slot capacity, deleted hero absent, four original identities retained.");
             await Client.Quit(); return;
         }
-        var guide = State.Actors.Values.Single(actor => actor.Name == "英雄使者");
+        var guide = State.Actors.Values.Single(actor => actor.Name == "云游子");
         async Task Page(string key)
         {
             packets.RemoveAll(packet => packet is S.NPCResponse or S.HeroCreateRequest or S.ManageHeroes);

@@ -17,6 +17,7 @@ public partial class WorldView
                 actor.Location, start + (spell == Spell.SlashingBurst ? actor.PlayerTiming.Scale(300) : 0), sound: i == 0 ? OriginalSoundRules.CastingSound(spell, actor.Gender) : 0);
         if (clips.Length == 0) RequestSound(OriginalSoundRules.CastingSound(spell, actor.Gender), actor.Location);
         if (!cast) return;
+        ShowEquipmentCast(actor, start);
         var launch = start + ActionDuration(actor);
         if (OriginalSpellEffects.Missile(spell) != null)
         {

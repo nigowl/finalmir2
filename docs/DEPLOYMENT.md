@@ -33,7 +33,18 @@ finalmir2/
 ./publish.sh
 ```
 
-构建机需要 .NET SDK、Python 3 和 Godot 4.7.2 .NET 应用。默认输出到 build，也可执行 `./publish.sh /absolute/path/to/build`。所有程序先在暂存目录生成，成功后替换三端目录；构建失败保留已有发布，替换异常会恢复旧目录。再次发布保留服务端、管理端已有的 appsettings.json，且不复制、覆盖或清空 data。
+构建机需要 .NET SDK、Python 3、rsync，包含客户端时另需 Godot 4.7.2 .NET 应用。默认输出到 build，也可执行 `./publish.sh /absolute/path/to/build`。发布始终在独立源码副本编译，不覆盖运行中的开发程序集。所有程序先在暂存目录生成，成功后替换所选程序目录；构建失败保留已有发布，替换异常会恢复旧目录。再次发布保留服务端、管理端已有的 appsettings.json，且不复制、覆盖或清空 data。
+
+根目录 `VERSION` 是三端共用的程序版本，`Directory.Build.props` 将其写入程序集；每次发布将末位加一，全部构建和目录替换成功后才保存新版本，失败不递增。发布锁避免同一源码目录同时递增。每个实际发布的程序目录附带 `VERSION`，服务端和管理端支持 `start.sh --version`，`/health` 的 `programVersion` 同步返回程序版本；管理台顶栏与客户端标题栏显示各自实际程序版本。此版本与玩法目录名称、资源内容哈希及协议编号相互独立。
+
+仅发布服务器程序（包含配套陪玩组件，不生成或修改客户端包、不带游戏数据）：
+
+```bash
+./publish.sh build/linux-x64 --server-only --runtime linux-x64
+python3 tests/Deployment/publish.py
+```
+
+支持 `linux-x64`、`linux-arm64`、`osx-arm64`、`osx-x64`；含客户端的发布仍限 macOS。仅发布两端后，现有客户端包保持原版本；下次构建客户端读取新的共用版本，不能把未重建的旧客户端称作新包。
 
 开发启动和发布构建从已导入版本（默认 `data/versions/default`，可用 `MIR2_DATA_ROOT` 指定）提取登录、选角、建角、通用窗口和基础 HUD 使用的帧，以及登录音乐、选角音乐和按钮音效，随客户端程序集携带。首屏不等待资源服务，重连保留本地皮肤。源码仓库不提交生成的美术包；更换这些内置美术需要重新构建客户端，选角数据仍需要连接服务器。
 
@@ -70,6 +81,8 @@ VersionDirectory 是完整版本目录，支持绝对路径；相对路径始终
 三个入口分别运行在三个终端；Ctrl+C 正常停止，服务端退出前保存。发布入口直接运行已经发布的程序，不自动编译或替换旧实例。默认端口仍是游戏 TCP 7000、资源/管理 API 5080、管理 UI 5081。
 
 管理密钥在所选版本的 runtime/admin.key 内。管理界面显示版本名称；管理端请求携带版本目录身份，服务端会拒绝目录不匹配的请求，即使两个复制版本仍使用相同的管理密钥。
+
+管理密钥文件与 `MIR2_ADMIN_KEY` 均不限制非空密钥长度，单字符或短密钥也可使用；空白环境变量沿用文件配置，空白文件拒绝启动。读取已有密钥不会重置或改写它，未提供密钥时仍生成64位十六进制随机值。文件600/目录700权限、固定时间比较、登录限流、防伪/Cookie及版本校验保持不变；公网使用短密钥时更容易被猜中。
 
 根目录 start-server.sh、start-admin.sh、start-client.sh 是 Debug/Development 开发入口，先构建并安全替换所属实例，默认使用 data/versions/default；管理仅本机开发免密。publish.sh 和发布程序仍为 Release，管理密钥登录不变。
 
@@ -109,3 +122,46 @@ python3 tests/Deployment/smoke.py
 部署测试将三端复制到项目外的临时目录，在不把 dotnet 或 Godot 加入 PATH 的环境运行发布程序。测试通过完整目录复制生成两个版本，检查并行运行、账户/怪物/地图/NPC 脚本隔离、管理版本标签和错配拒绝、Blazor 静态资源、Godot 完整游玩及存档重启、SQLite 完整性，以及重复发布保留配置。素材库在测试 fixture 中只读复用，正式版本数据不参与测试；失败保留隔离目录供排查。
 
 陪玩执行组件随服务端发布在 `server/companion/`，由宿主启动；不要混用不同构建的 `Mir2.Shared.dll`。发布脚本确保两者协议指纹一致。陪玩人格、昵称池、模型/密钥、日程和用量随版本SQLite复制，改为新目录后总开关默认关闭；使用方法见 [陪玩管理](COMPANIONS_OPERATIONS.md)。
+
+## Linux 服务器布局与运行
+
+服务器部署采用以下布局，`data` 本身就是所选玩法版本根目录，不再多套一层 `data/versions/default`：
+
+```text
+/devdata/finalmir2/
+  server/                    Linux 自包含服务端及 companion/
+  admin/                     Linux 自包含管理端
+  data/
+    assets/                  用户手动上传 maps、libraries、sounds、import-report.json
+    world/                   对应版本的 Configs、Envir 等
+    runtime/                 对应版本的 mir2.sqlite3、管理密钥及备份
+    import/                  仅首次原始导入时需要
+```
+
+两端 `appsettings.json` 的 `Mir2.VersionDirectory` 都设为 `../data`，管理端 `Mir2.ServerUrl` 为 `http://127.0.0.1:5080`。程序自带 .NET 8，不在服务器安装 SDK；仍依赖系统 glibc、ICU、OpenSSL 等原生运行库，应以目标机实际启动验证兼容性。
+
+`scripts/deployment/finalmir2-{server,admin}.service` 是上述固定布局的 systemd 单元，使用独立低权限用户 `finalmir2`，程序目录只读，只有 `data` 可写。两端依赖 `/devdata` 挂载；数据盘通过文件系统 UUID 写入 `/etc/fstab`。已有数据盘须先检查并保留数据，格式化必须另外明确授权。
+
+首次部署若未上传 SQLite、资源导入完成标记和 world/Configs，游戏单元保持等待，避免创建空世界或反复失败重启。管理台可先登录，但游戏操作须等待游戏服务就绪。请将完整、配套的版本数据手动放进 `data/`；只上传美术素材不足以启动已有世界。迁移运行中的版本，必须先正常保存停服再复制 SQLite 和配套 world/runtime；不要直接上传仍在写入的数据库。
+
+上传完成后在服务器执行：
+
+```bash
+chown -R finalmir2:finalmir2 /devdata/finalmir2/data
+chmod 700 /devdata/finalmir2/data/runtime
+systemctl restart finalmir2-server finalmir2-admin
+systemctl status finalmir2-server finalmir2-admin
+curl -fsS http://127.0.0.1:5080/health
+```
+
+管理程序默认监听 `127.0.0.1:5081`。本次 Linux 服务模板按授权设置 `MIR2_ADMIN_BIND_ADDRESS=0.0.0.0`，可直接通过 `http://服务器地址:5081` 访问；仅接受 localhost/合法 IP 的 Host，不接受任意域名。密钥登录、Cookie、防伪和版本校验保持生效。公网 HTTP 会明文传输登录密钥，建议另配 HTTPS 或限制可信来源；也可将绑定恢复回环并使用 SSH 隧道。以服务器地址代替下例占位符：
+
+```bash
+ssh -N -L 15081:127.0.0.1:5081 root@服务器地址
+# 浏览器打开 http://127.0.0.1:15081
+ssh root@服务器地址 'cat /devdata/finalmir2/data/runtime/admin.key'
+```
+
+游戏监听 TCP 7000，客户端资源地址为 `http://服务器地址:5080`；云安全组需放行这两个端口，管理台按需放行 5081（建议限制可信来源）。不要为了公网管理而关闭现有 Host、登录或版本保护。
+
+更新时先在 `.incoming-版本号` 等独立目录上传并核对两端 `--version`、Shared 一致性，再正常停止 `finalmir2-admin`、`finalmir2-server`。确认退出并完整备份 SQLite/world/runtime，保留原 `appsettings.json` 后再替换程序目录，最后启动并检查健康、日志与实际 TCP。旧目录留作回退；若新程序已经升级并保存存档，回退必须连同配套数据备份处理，不能只换旧程序。

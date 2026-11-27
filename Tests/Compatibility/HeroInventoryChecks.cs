@@ -21,6 +21,7 @@ internal static class HeroInventoryChecks
         protected override void SendHealthChanged() => Owner.Enqueue(new S.HeroHealthChanged { HP = HP, MP = MP });
         public override void Revive(int hp, bool effect) { Dead = false; HP = hp; MP = Stats[Stat.MP]; }
         public void Stone() => ProcessMagicBloodStone();
+        public void Potions() { AutoPotTime = long.MinValue; ProcessAutoPot(); }
     }
 
     public static void Run(Action<bool, string> check)
@@ -71,9 +72,10 @@ internal static class HeroInventoryChecks
         check(bow.HasClassWeapon, "弓箭英雄没有识别角色通用的原造型弓");
         bow.Info.Equipment[0].Info.Shape = 1;
         check(!bow.HasClassWeapon, "弓箭英雄把普通剑当成弓");
+        AutoPotions(check, player);
 
         var state = new GameState(); var potion = Item(200, 4); var weapon = new UserItem(new ItemInfo { Type = ItemType.Weapon }) { UniqueID = 201 };
-        state.Apply(new S.UserInformation { ObjectID = 1, Inventory = [potion, weapon, null], Equipment = new UserItem[14], Magics = [new() { Spell = Spell.FireBall, Level = 2, Experience = 70 }] });
+        state.Apply(new S.UserInformation { ObjectID = 1, Inventory = [potion, weapon, null], Equipment = new UserItem[14], QuestInventory = [], Magics = [new() { Spell = Spell.FireBall, Level = 2, Experience = 70 }] });
         state.Apply(new S.HeroInformation { ObjectID = 2, Inventory = [Item(999)], Equipment = new UserItem[14] });
         check(ReferenceEquals(state.Hero!.Inventory, state.User!.Inventory) && !state.Hero.Inventory.Any(item => item?.UniqueID == 999), "英雄建立了第二份背包真相");
         state.Apply(new S.EquipItem { Grid = MirGridType.HeroInventory, UniqueID = 201, To = 0, Success = true });
@@ -96,5 +98,40 @@ internal static class HeroInventoryChecks
         check(state.User.Inventory[1] == null && state.Hero.Inventory[1] == null, "共享物品删除产生残留");
         state.Apply(new S.LogOutSuccess());
         check(state.Hero == null && state.User == null, "退出后保留上一角色的英雄背包");
+    }
+
+    private static void AutoPotions(Action<bool, string> check, Player player)
+    {
+        var actor = new Hero(new HeroInfo(new ClientPackets.NewHero()) { HP = 10, MP = 10, Inventory = [] }, player)
+            { CurrentMap = new Map(new MapInfo()), Stats = new Stats { [Stat.HP] = 100, [Stat.MP] = 100 } };
+        UserItem Potion(ulong id, Stat stat, short amount, ushort count) => new(new ItemInfo
+            { Index = (int)id, Type = ItemType.Potion, Stats = new Stats { [stat] = amount } }) { UniqueID = id, Count = count };
+        var red = Potion(310, Stat.HP, 30, 5); var blue = Potion(311, Stat.MP, 30, 3);
+        player.Info.Inventory = [red, blue]; player.Packets.Clear();
+        actor.Potions();
+        check(red.Count == 4 && actor.PotHealthAmount == 30 && actor.HP == 10 && !actor.AutoPot,
+            "未配置旧版药品的英雄没有自动取共用红药，或绕过原持续恢复");
+        actor.Potions();
+        check(red.Count == 4 && blue.Count == 2 && actor.PotManaAmount == 30, "持续回血未防止重复喝红，或没有自动补蓝");
+        actor.Potions();
+        check(red.Count == 4 && blue.Count == 2 && player.Packets.OfType<S.UseItem>().Count() == 2,
+            "持续恢复中继续扣药或缺少英雄原编号回执");
+        actor.PotHealthAmount = actor.PotManaAmount = 0;
+        actor.Info.Equipment[3] = new UserItem(new ItemInfo { Type = ItemType.Torch, Stats = new Stats { [Stat.MagicBlood] = 1000 } });
+        actor.HP = actor.MP = 40; actor.Potions();
+        check(red.Count == 4 && blue.Count == 2, "魔血石可持续恢复时仍浪费共用药品");
+        actor.HP = 20; actor.Potions();
+        check(red.Count == 3 && actor.PotHealthAmount == 30, "魔血石阻止了英雄低血应急喝红");
+        actor.HP = 100; actor.MP = 5; actor.Potions();
+        check(blue.Count == 1 && actor.PotManaAmount == 30, "魔血石阻止了英雄低蓝应急喝蓝");
+        actor.Info.Equipment[3] = null; actor.PotHealthAmount = actor.PotManaAmount = 0; actor.HP = 10;
+        actor.CurrentMap.Info.NoDrug = true; actor.Potions();
+        check(red.Count == 3, "英雄自动恢复绕过禁药地图");
+        actor.CurrentMap.Info.NoDrug = false; red.Info.Bind = BindMode.NoHero; actor.Potions();
+        check(red.Count == 3, "英雄自动恢复绕过NoHero绑定");
+        red.Info.Bind = BindMode.None; red.Count = 2; actor.Potions();
+        check(red.Count == 2 && blue.Count == 1, "英雄自动喝药用掉主人应急储备");
+        red.Count = 3; actor.Dead = true; actor.Potions();
+        check(red.Count == 3, "阵亡英雄继续自动消耗药品");
     }
 }

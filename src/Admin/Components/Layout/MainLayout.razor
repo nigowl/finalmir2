@@ -6,6 +6,7 @@
     <MudAppBar Elevation="0" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" OnClick="@(() => drawer = !drawer)" aria-label="打开导航" Size="Size.Small" />
         <MudText Typo="Typo.h6">FinalMir2 · 管理控制台</MudText><MudSpacer />
+        <MudText Typo="Typo.caption" Class="mr-3">程序 v@(Mir2.Hosting.ProgramVersion.Current)</MudText>
         <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">版本：@Paths.VersionName</MudChip>
         <form action="/auth/logout" method="post"><AntiforgeryToken /><button class="logout" type="submit">退出</button></form>
     </MudAppBar>
@@ -20,7 +21,7 @@
             <MudNavLink Href="/characters" Icon="@Icons.Material.Filled.Person">角色管理</MudNavLink>
             <MudNavLink Href="/guilds" Icon="@Icons.Material.Filled.Groups">行会管理</MudNavLink>
             <MudNavLink Href="/companions" Icon="@Icons.Material.Filled.SmartToy">陪玩管理</MudNavLink>
-            <MudNavLink Href="/shop" Icon="@Icons.Material.Filled.Storefront">商城</MudNavLink>
+            <MudNavLink Href="/shop" Icon="@Icons.Material.Filled.Storefront">商城管理</MudNavLink>
             <MudNavLink Href="/population" Icon="@Icons.Material.Filled.Pets">刷怪管理</MudNavLink>
             <MudNavLink Href="/npcs" Icon="@Icons.Material.Filled.PersonPinCircle">NPC管理</MudNavLink>
             <MudNavLink Href="/resources" Icon="@Icons.Material.Filled.Folder">资源管理</MudNavLink>

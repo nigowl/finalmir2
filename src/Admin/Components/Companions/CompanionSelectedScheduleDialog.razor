@@ -1,0 +1,25 @@
+@using System.Text.Json
+<AdminDialog Visible="true" Title="@($"批量日程设置（已选{Profiles.Length}个）")" OnClose="OnClose" OnSave="Save" Busy="busy" Dirty="@(original!=Draft)" SaveConfirmation="仅更新所选角色的日程？历史用量、当前已排会话及启停状态保留，调度按新日程和配额检查。">
+<DialogContent>
+    @if(error!=null){<MudAlert Severity="Severity.Error">@error</MudAlert>}
+    <MudText Class="mb-2">@string.Join("、",Profiles.Take(12).Select(p=>p.Profile.Name))@(Profiles.Length>12?"……":"")</MudText>
+    <MudCheckBox T="bool" Label="按日程自动上线" @bind-Value="scheduled" Dense="true" />
+    <ScheduleFields @bind-Schedule="schedule" Presets="Presets" @bind-RandomSchedule="randomSchedule" />
+    <MudText Typo="Typo.caption">此操作不启用停用角色，不清除错误保护、死亡次数或历史用量。</MudText>
+</DialogContent>
+</AdminDialog>
+@code{
+    [Parameter,EditorRequired]public CompanionRow[] Profiles{get;set;}=[];
+    [Parameter]public CompanionSchedulePreset[] Presets{get;set;}=[];
+    [Parameter]public EventCallback OnClose{get;set;}
+    [Parameter]public EventCallback OnSaved{get;set;}
+    private CompanionSchedule schedule=new();private bool scheduled=true,busy,randomSchedule;private string? error;private string original="";
+    private string Draft=>JsonSerializer.Serialize(new{schedule,scheduled,randomSchedule});
+    protected override void OnInitialized(){schedule=CompanionSchedulePresets.Copy(Profiles[0].Profile.Schedule);original=Draft;}
+    private async Task Save()
+    {
+        busy=true;error=null;
+        try{await Api.Post<ActionResult>("management/companions/selected-schedule",new CompanionSelectedSchedule(Profiles.Select(p=>new CompanionSelection(p.Profile.Id,p.Profile.Version)).ToArray(),scheduled,schedule,randomSchedule));await OnSaved.InvokeAsync();}
+        catch(Exception e){error=e.Message;}finally{busy=false;}
+    }
+}

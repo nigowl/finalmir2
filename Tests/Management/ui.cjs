@@ -368,13 +368,13 @@ const server = process.env.MIR2_SERVER;
         assert(Math.abs(beforeZoom[0]-4)<.01 && Math.abs(beforeZoom[1]-4)<.01 && beforeZoom[2] < .1, '圆形范围须按真实格距显示并使用浅色');
         const mapWidth = (await page.locator('.population-map').boundingBox()).width;
         await page.getByRole('button', { name: '放大', exact: true }).click();
-        await expect(page.getByText('1.5 ×', { exact: true })).toBeVisible();
+        await expect(page.locator('.map-display-scale')).toHaveText(/%|1:1/);
         await expect.poll(async () => (await page.locator('.population-map').boundingBox()).width).toBeGreaterThan(mapWidth * 1.49);
         const afterZoom = await geometry();
         assert(Math.abs(afterZoom[0]-4)<.01 && Math.abs(afterZoom[1]-4)<.01, '放大后范围与地图覆盖比例发生变化');
         await page.screenshot({ animations: 'disabled', path: path.join(root, 'spawn-circular-range.png') });
         await page.getByRole('button', { name: '全图', exact: true }).click();
-        await expect(page.getByText('1 ×', { exact: true })).toBeVisible();
+        assert((await page.locator('.population-map').boundingBox()).width <= spawnMap.width*48+.01);
         await singleRow.getByRole('button', { name: '管理', exact: true }).click();
         await dialog.getByRole('button', { name: '删除刷怪点', exact: true }).click();
         await confirm('取消');
@@ -391,9 +391,11 @@ const server = process.env.MIR2_SERVER;
         }
         const svg = page.locator('.population-map');
         for (let i = 0; i < 4; i++) await page.getByRole('button', { name: '放大', exact: true }).click();
-        await expect(svg).toHaveAttribute('style', /width:300%/);
+        await expect(svg).toHaveAttribute('data-scale', /[0-9]/);
+        assert((await svg.boundingBox()).width <= spawnMap.width*48+.01);
         for (const point of blocked) {
             await svg.scrollIntoViewIfNeeded();
+            await svg.evaluate((node, point) => {const scale=Number(node.dataset.scale);node.parentElement.scrollTo((point.x+.5)*48*scale-100,(point.y+.5)*32*scale-100);},point);
             const pixel = await svg.evaluate((node, point) => { const pixel = new DOMPoint(point.x + .5, point.y + .5).matrixTransform(node.getScreenCTM()); return { x: pixel.x, y: pixel.y }; }, point);
             await page.mouse.click(pixel.x, pixel.y);
             await expect(dialog.getByLabel('X', { exact: true })).toHaveValue(String(point.x));

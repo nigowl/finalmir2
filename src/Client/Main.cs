@@ -78,7 +78,7 @@ public partial class Main : Control
         var address = OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--server="))?[9..]
             ?? Environment.GetEnvironmentVariable("MIR2_SERVER") ?? "http://127.0.0.1:5080";
         _ = Connect(address);
-        if (OS.GetCmdlineUserArgs().Any(a => a is "--verify-grid-movement" or "--verify-default-client" or "--verify-social" or "--verify-hero-management" or "--verify-hero-inventory" or "--verify-hero-recovery" or "--verify-gm-login" or "--verify-health-display" or "--verify-movement-state" or "--verify-npc-input" or "--verify-skill-removal" or "--verify-name-colours" or "--verify-guild-war" or "--verify-guild-creation" or "--verify-object-names" or "--verify-item-owners" or "--verify-shop-catalog")) AddChild(new NativeSmoke { Client = this });
+        if (OS.GetCmdlineUserArgs().Any(a => a is "--verify-item-prices" or "--verify-material-inventory" or "--verify-equipment-play" or "--verify-equipment-appraisal" or "--verify-hero-portrait" or "--verify-grid-movement" or "--verify-default-client" or "--verify-social" or "--verify-hero-management" or "--verify-hero-inventory" or "--verify-hero-recovery" or "--verify-gm-login" or "--verify-health-display" or "--verify-movement-state" or "--verify-npc-input" or "--verify-skill-removal" or "--verify-name-colours" or "--verify-guild-war" or "--verify-guild-creation" or "--verify-object-names" or "--verify-item-owners" or "--verify-shop-catalog")) AddChild(new NativeSmoke { Client = this });
         if (OS.GetCmdlineUserArgs().Any(a => a is "--verify-client-polish" or "--verify-city-travel" or "--verify-connection-failures" or "--verify-resource-startup" or "--verify-visual-fixes" or "--verify-locomotion" or "--verify-action-items" or "--verify-audio" or "--smoke" or "--verify-save" or "--reference-world" or "--verify-auto-login" or "--verify-ui" or "--verify-quest-ui" or "--verify-public-services" or "--verify-storage-pages" or "--profile-actors" or "--verify-actors" or "--profile-motion" or "--verify-smooth" or "--verify-movement" or "--verify-automation" or "--verify-accounts" or "--verify-combat" or "--verify-npc-templates" or "--verify-shadows" or "--verify-item-ui" or "--verify-inventory" or "--verify-item-weight" or "--verify-npc-shop" or "--verify-class-selection"))
             AddChild(new NativeSmoke { Client = this });
         if (OS.GetCmdlineUserArgs().Any(a => a is "--spell-effects" or "--class-combos")) AddChild(new NativeSpellSmoke { Client = this });
@@ -125,7 +125,8 @@ public partial class Main : Control
         if (rect.Texture == null && Assets.Sprite(library, index) is { } image)
         {
             rect.Texture = library == "Title" && index == 196 && rect.GetParent() == inventory
-                ? OriginalArt.InventorySkin(image) : OriginalArt.InterfaceTexture(library, index, image);
+                ? OriginalArt.InventorySkin(image) : library == "Title" && index == 196 && rect.GetParent() == questBag
+                    ? OriginalArt.MaterialInventorySkin(image) : OriginalArt.InterfaceTexture(library, index, image);
             rect.Size = rect.Texture.GetSize();
         }
     }
@@ -202,7 +203,7 @@ public partial class Main : Control
         BuildPublicShop(); BuildQuests(); BuildGroup(); BuildTrade(); BuildGuild(); BuildSocial();
         BuildSettings();
         BuildItemDrag();
-        BuildSkillLearning();
+        BuildSkillLearning(); BuildAppraisalScroll();
         BuildAutoBattleConfirmation();
         foreach (var dialog in new[] { inventory, equipment, npc }) Draggable(dialog);
     }
@@ -220,7 +221,7 @@ public partial class Main : Control
     {
         inventory = Panel(game, 700, 35, 316, 236 + ClientUi.InventoryExtraHeight); inventory.Visible = false;
         Picture(inventory, "Title", 196, 0, 0, nativeFrame: true); WindowTitle(inventory, "背包", 90);
-        var questTab = ArtButton(inventory, "Title", 739, 112, 4, "任务物品", () => { questBag.Visible = !questBag.Visible; RenderQuestBag(); }, "任务物品");
+        var questTab = ArtButton(inventory, "Title", 739, 112, 4, "材料物品", () => { questBag.Visible = !questBag.Visible; RenderQuestBag(); }, "材料物品");
         questTab.Name = "InventoryQuestItems"; questTab.Size = new Vector2(82, ClientUi.ButtonHeight);
         questTab.HoverIndex = questTab.PressedIndex = 198;
         var warehouse = Button(inventory, "仓库物品", 198, 4, 82, OpenInventoryStorage); warehouse.Name = "InventoryStorage";
@@ -289,6 +290,7 @@ public partial class Main : Control
     }
     public void Send(Packet packet)
     {
+        if (BlockAppraisalConflict(packet)) { Log("正在等待鉴定结果，请稍候。", ChatType.Hint); return; }
         if (BlockHeroItemConflict(packet)) { Log("正在等待英雄物品回执，请稍候。", ChatType.Hint); return; }
         if (packet is C.CallNPC call) { CloseNpcInput(); InvalidateNpcPurchase(); npcDialogueId = call.ObjectID; }
         if (HandshakeReady || packet is C.ClientVersion) { inventoryOrganizer.Sent(packet); _ = Connection.Send(packet); }
@@ -326,7 +328,7 @@ public partial class Main : Control
             if (hudRefresh <= 0) { UpdateHud(); RefreshSkillBar(); RefreshCompanionPortraits(); hudRefresh = .1; }
             if (revision != State.InventoryRevision) { RenderInventory(); RenderStorage(); RenderQuestBag(); RenderTrade(); RenderGuildStorage(); if (settingsDialog.Visible && itemRuleOwnedOnly.ButtonPressed) FillItemRuleRows(); revision = State.InventoryRevision; }
             ProcessPublicShop(); ProcessQuestNavigation(); ProcessStorage(); ProcessQuests(); ProcessGroup(); ProcessTrade(); ProcessGuild(); ProcessSocial(); ProcessAutomation(); ProcessActions(); ProcessFootsteps();
-            ProcessNpc(); ProcessInventoryOrganization(Environment.TickCount64);
+            ProcessNpc(); ProcessAppraisal(); ProcessInventoryOrganization(Environment.TickCount64);
         }
         ProcessItemDrag();
         ProcessItemNotices(Environment.TickCount64);
@@ -340,6 +342,7 @@ public partial class Main : Control
     }
     private void Handle(Packet packet)
     {
+        AppraisalPacket(packet);
         HeroManagementPacket(packet);
         if (packet is S.ManageHeroes or S.ChangeHero) RequestHeroRecovery();
         SkillLearningPacket(packet);
@@ -396,7 +399,7 @@ public partial class Main : Control
             case S.DeleteCharacterSuccess p: CharacterDeleted(p.CharacterIndex); break;
             case S.DeleteCharacter p: CharacterDeletionFailed(p.Result); break;
             case S.StartGame p: if (p.Result != 4) Log($"进入游戏失败：{p.Result}"); break;
-            case S.UserInformation p: healthDisplayRequested = false; RequestHealthDisplay(); SetScene("game"); MiniMap.SetExpanded(false); pendingAttack = null; destination = null; actionTarget = 0; moveTime = lastAcceptedMoveTime = 0; moving = false; confirmedLocation = p.Location; lastMoved = 0; ResetRouteRetry(); RenderInventory(); RenderSkills(); SetMapMusic(); break;
+            case S.UserInformation p: healthDisplayRequested = false; RequestHealthDisplay(); RequestEquipmentGlow(); SetScene("game"); MiniMap.SetExpanded(false); pendingAttack = null; destination = null; actionTarget = 0; moveTime = lastAcceptedMoveTime = 0; moving = false; confirmedLocation = p.Location; lastMoved = 0; ResetRouteRetry(); RenderInventory(); RenderSkills(); SetMapMusic(); break;
             case S.MapInformation p: _ = World.Load(p.FileName); break;
             case S.MapChanged p: doorRequests.Clear(); MiniMap.SetExpanded(false); MiniMap.Route = []; pendingAttack = null; moveTime = lastAcceptedMoveTime = 0; npc.Hide(); shopMode = null; CloseStorage(); CloseQuests(); destination = null; actionTarget = 0; moving = false; lastMoved = 0; confirmedLocation = p.Location; ResetRouteRetry(); _ = World.Load(p.FileName); SetMapMusic(); break;
             case S.Death: destination = null; actionTarget = 0; pendingAttack = null; MiniMap.Route = []; moving = false; lastMoved = 0; ResetRouteRetry(); ShowDeathDialog(); break;
@@ -532,14 +535,16 @@ public partial class Main : Control
     }
     public void UseItem(ulong id)
     {
+        if (appraisalPending != null) { Log("正在等待鉴定结果，请稍候。", ChatType.Hint); return; }
         if (SkillPreparationBusy) { Log("正在等待毒符换装回执，请稍候。"); return; }
         if (inventoryOrganizer.Locked(id) || automation.PendingItem == id || pendingDrop == id || recyclePending?.UniqueID == id) { Log("正在等待该物品的服务端回执。"); return; }
-        var item = State.User?.Inventory.FirstOrDefault(i => i?.UniqueID == id);
+        var item = State.User?.Inventory.Concat(State.User.QuestInventory).FirstOrDefault(i => i?.UniqueID == id);
         if (item?.Info == null) return;
+        if (EquipmentAppraisal.IsScroll(item.Info)) { BeginAppraisalSelection(item); return; }
         if (HeroInventoryContext) { UseSubjectItem(item); return; }
         if (State.Trading) { OfferTradeItem(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
         if (GuildStorageOpen) { StoreGuildItem(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
-        if (storage.Visible && !storagePreview) { StoreInventory(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
+        if (storage.Visible) { StoreInventory(Array.FindIndex(State.User!.Inventory, i => i?.UniqueID == id)); return; }
         if (shopMode == PanelType.Sell) { ConfirmNpcSale(item); return; }
         if (shopMode is PanelType.Repair or PanelType.SpecialRepair) { SelectRepairItem(id); return; }
         UseSubjectItem(item);

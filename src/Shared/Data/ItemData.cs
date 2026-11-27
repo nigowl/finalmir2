@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 
 public class ItemInfo
 {
@@ -17,10 +17,13 @@ public class ItemInfo
     public ushort Image, Durability;
 
     public uint Price;
+    // 交易价格随版本单独保存，不改变原定义、物品和修理费用的二进制布局。
+    public ItemPrice TradingPrices;
     private ushort stackSize = 1;
     public ushort StackSize
     {
-        get => IsEquipment ? (ushort)1 : stackSize <= 1 && Type is ItemType.Meat or ItemType.Food or ItemType.CraftingMaterial or ItemType.Book ? (ushort)999 : stackSize;
+        get => IsEquipment ? (ushort)1 : Type is ItemType.Amulet or ItemType.Bait ? stackSize :
+            stackSize > 1 || Type is ItemType.Potion or ItemType.Scroll or ItemType.Meat or ItemType.Food or ItemType.CraftingMaterial or ItemType.Book ? (ushort)999 : stackSize;
         set => stackSize = value;
     }
     public bool IsEquipment => Type is ItemType.Weapon or ItemType.Armour or ItemType.Helmet or ItemType.Necklace or ItemType.Bracelet or ItemType.Ring
@@ -301,6 +304,7 @@ public class UserItem
     public bool DuraChanged;
     public int SoulBoundId = -1;
     public bool Identified = false;
+    public EquipmentGrade EquipmentQuality;
     public bool Cursed = false;
 
     public int WeddingRing = -1;
@@ -385,6 +389,9 @@ public class UserItem
         byte Bools = reader.ReadByte();
         Identified = (Bools & 0x01) == 0x01;
         Cursed = (Bools & 0x02) == 0x02;
+        // 原标志字节的空闲位保存实例品质，旧装备的零值保留原属性与鉴定语义。
+        EquipmentQuality = customVersion >= 4 ? (EquipmentGrade)((Bools >> 2) & 7) : EquipmentGrade.Legacy;
+        if (EquipmentQuality > EquipmentGrade.Supreme) throw new InvalidDataException("装备品质无效。");
 
         if (version <= 84)
         {
@@ -481,6 +488,7 @@ public class UserItem
         byte Bools = 0;
         if (Identified) Bools |= 0x01;
         if (Cursed) Bools |= 0x02;
+        Bools |= (byte)((byte)EquipmentQuality << 2);
         writer.Write(Bools);
 
         writer.Write(Slots.Length);
@@ -523,17 +531,22 @@ public class UserItem
         return AddedStats[type] + Info.Stats[type];
     }
 
-    public uint Price()
+    public uint BuyPrice() => Value(Info?.TradingPrices?.Buy ?? Info?.Price ?? 0);
+    public uint SellPrice() => Info?.TradingPrices is { } prices ? Value(prices.Sell) : Price() / 2;
+    public uint RecyclePrice() => Info?.TradingPrices is { } prices ? Value(prices.Recycle) : Price() / 2;
+    public uint Price() => Value(Info?.Price ?? 0);
+
+    private uint Value(uint basePrice)
     {
         if (Info == null) return 0;
-        if (MagicBloodStone.IsStone(Info)) return (uint)Math.Clamp((double)Info.Price * MagicBloodStone.Remaining(this) / Info.Stats[Stat.MagicBlood], 0, uint.MaxValue);
+        if (MagicBloodStone.IsStone(Info)) return (uint)Math.Clamp((double)basePrice * MagicBloodStone.Remaining(this) / Info.Stats[Stat.MagicBlood], 0, uint.MaxValue);
 
-        double p = Info.Price;
+        double p = basePrice;
 
 
         if (Info.Durability > 0)
         {
-            double r = ((Info.Price / 2D) / Info.Durability);
+            double r = ((basePrice / 2D) / Info.Durability);
 
             p = Math.Floor(MaxDura * r);
 
@@ -542,7 +555,7 @@ public class UserItem
             else
                 r = 0;
 
-            p = Math.Floor(p / 2D + ((p / 2D) * r) + Info.Price / 2D);
+            p = Math.Floor(p / 2D + ((p / 2D) * r) + basePrice / 2D);
         }
 
 
@@ -699,6 +712,7 @@ public class UserItem
             DuraChanged = DuraChanged,
             SoulBoundId = SoulBoundId,
             Identified = Identified,
+            EquipmentQuality = EquipmentQuality,
             Cursed = Cursed,
             WeddingRing = WeddingRing,
             BuybackExpiryDate = BuybackExpiryDate,
@@ -728,7 +742,7 @@ public class UserItem
             ExpireInfo?.ExpiryDate == other.ExpireInfo?.ExpiryDate &&
             SealedInfo?.ExpiryDate == other.SealedInfo?.ExpiryDate &&
             SealedInfo?.NextSealDate == other.SealedInfo?.NextSealDate &&
-            Cursed == other.Cursed && WeddingRing == other.WeddingRing && Identified == other.Identified &&
+            Cursed == other.Cursed && WeddingRing == other.WeddingRing && Identified == other.Identified && EquipmentQuality == other.EquipmentQuality &&
             CurrentDura == other.CurrentDura && MaxDura == other.MaxDura && GemCount == other.GemCount &&
             RefineAdded == other.RefineAdded && RefinedValue == other.RefinedValue &&
             RefineSuccessChance == other.RefineSuccessChance && AddedStats.Equals(other.AddedStats) &&

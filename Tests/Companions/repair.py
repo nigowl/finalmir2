@@ -2,6 +2,8 @@
 import hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.request
 
 repo=pathlib.Path(__file__).resolve().parents[2]
+server=pathlib.Path(os.environ.get('MIR2_COMPANION_SERVER_DLL',str(repo/'src/Server/bin/Release/net8.0/Mir2.Server.dll')))
+compat=repo/'tests/Compatibility/bin'/server.parent.parent.name/'net8.0/Compatibility.dll'
 root=pathlib.Path(tempfile.mkdtemp(prefix='mir2-companions-repair-')).resolve()
 data=root/'version-a'
 def port():
@@ -26,7 +28,7 @@ def wait(predicate,seconds=60):
 def start():
     global process,log,key,starts
     log=open(root/f'server-{starts}.log','w');starts+=1
-    process=subprocess.Popen(['dotnet',str(repo/'src/Server/bin/Release/net8.0/Mir2.Server.dll'),f'--mir2-instance={repo}:{data/"runtime"}:server'],cwd=root,env=env,stdout=log,stderr=subprocess.STDOUT)
+    process=subprocess.Popen(['dotnet',str(server),f'--mir2-instance={repo}:{data/"runtime"}:server'],cwd=root,env=env,stdout=log,stderr=subprocess.STDOUT)
     def ready():
         try:return call('/health')['ready']
         except OSError:return False
@@ -36,7 +38,7 @@ def stop():
     process.terminate();process.wait(60);assert process.returncode==0,pathlib.Path(log.name).read_text()
     process=None;log.close();log=None
 try:
-    subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--fixture',str(data)],cwd=repo,env=os.environ|{'MIR2_DATA_ROOT':str(repo/'data/versions/default')},check=True)
+    subprocess.run(['dotnet',str(compat),'--fixture',str(data)],cwd=repo,env=os.environ|{'MIR2_DATA_ROOT':os.environ.get('MIR2_DATA_ROOT',str(repo/'data/versions/default'))},check=True)
     start();base='/management/companions'
     overview=call(base+'/overview');call(base+'/settings',{'settings':overview['settings']|{'enabled':True}},'PUT')
     profile=call(base,{'name':'RepairWarrior','class':0,'gender':0,'enabled':True,'acceptGroup':False,'llmMode':0,
@@ -49,7 +51,7 @@ try:
     row=wait(entered,40);character_id=row['characterId']
     call(base+'/'+ident+'/command',{'action':'stop','version':row['profile']['version']})
     wait(lambda:not call('/management/admin/characters/'+str(character_id))['online'],15);stop()
-    subprocess.run(['dotnet',str(repo/'tests/Compatibility/bin/Release/net8.0/Compatibility.dll'),'--companion-repair',str(character_id)],cwd=root,env=env,check=True)
+    subprocess.run(['dotnet',str(compat),'--companion-repair',str(character_id)],cwd=root,env=env,check=True)
     fixture=json.loads((data/'runtime/companion-repair-fixture.json').read_text())
     start();row=call(base+'/'+ident)['row'];call(base+'/'+ident+'/command',{'action':'start','version':row['profile']['version']})
     samples=[];assets=set();maps=set();planned=False

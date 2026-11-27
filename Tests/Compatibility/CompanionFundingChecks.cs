@@ -57,12 +57,24 @@ internal static class CompanionFundingChecks
             map.Info.NoDropMonster=true;check(Choose()?.Kind=="wait","禁怪物掉落地图被当成筹资来源");map.Info.NoDropMonster=false;
             map.Info.NoFight=true;check(Choose()?.Kind=="wait","禁战地图仍安排筹资战斗");map.Info.NoFight=false;
             weak.IsBoss=true;check(Choose()?.Kind=="wait","缺药筹资仍选择首领");weak.IsBoss=false;
-            weak.Stats[Stat.HP]=100;check(Choose()?.Kind=="wait","缺药筹资仍选择过长战斗");weak.Stats[Stat.HP]=1;
+            weak.Stats[Stat.HP]=200;check(Choose()?.MonsterIds?.SequenceEqual(new[]{2})==true,"预计不掉血的普通小怪因超过8次攻击而无法筹资");
+            weak.Stats[Stat.HP]=400;check(Choose()?.Kind=="wait","缺药筹资仍选择过长战斗");weak.Stats[Stat.HP]=1;
             weak.Stats[Stat.MaxDC]=11;check(Choose()?.Kind=="wait","缺药筹资没有限制预计承伤");weak.Stats[Stat.MaxDC]=0;
             var threat=MonsterObject.GetMonster(new MonsterInfo{AI=0,ViewRange=8,Stats=new Stats{[Stat.HP]=1000,[Stat.MaxDC]=100}});
             threat.CurrentMap=map;threat.CurrentLocation=new(3,2);threat.Node=world.Objects.AddLast(threat);
             check(Choose()?.Kind=="wait","只看筹资弱怪，忽略周围真实强怪围攻");
             world.Objects.Remove(threat);check(Choose()?.Key.StartsWith("fund/")==true,"威胁离开后仍永久阻止原安全筹资点");
+            foreach(var ai in new byte[]{1,2})
+            {
+                var passive=MonsterObject.GetMonster(new MonsterInfo{AI=ai,ViewRange=8,Stats=new Stats{[Stat.HP]=10000,[Stat.MaxDC]=1000}});
+                var fleeing=typeof(Server.MirObjects.Monsters.Deer).GetField("_runAway",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+                fleeing.SetValue(passive,false);
+                passive.CurrentMap=map;passive.CurrentLocation=new(3,2);passive.Node=world.Objects.AddLast(passive);
+                check(Choose()?.MonsterIds?.SequenceEqual(new[]{2})==true,$"没有攻击本人的被动AI{ai}封死新手筹资区域");
+                passive.Target=player;check(Choose()?.Kind=="wait",$"被动AI{ai}已经攻击本人仍忽略危险");
+                fleeing.SetValue(passive,true);check(Choose()?.MonsterIds?.SequenceEqual(new[]{2})==true,"逃跑鹿的注视目标被误判为真实攻击目标");
+                world.Objects.Remove(passive);
+            }
             foreach(var ai in new byte[]{6,57,113})
             {
                 var guard=MonsterObject.GetMonster(new MonsterInfo{AI=ai,ViewRange=8,Stats=new Stats{[Stat.HP]=10000,[Stat.MaxDC]=10000}});

@@ -32,10 +32,17 @@ internal static class CompanionMovementScenario
         character.Level=30;character.HP=character.MP=1000;character.Experience=0;character.AccountInfo.Gold=0;
         character.Inventory=new UserItem[46];character.Equipment=new UserItem[14];character.QuestInventory=new UserItem[40];character.Magics.Clear();
         character.CurrentQuests.Clear();character.CompletedQuests.Clear();
+        foreach (var stat in new[] { Stat.HP, Stat.MP })
+        {
+            var info=world.ItemInfoList.First(item=>item.Type==ItemType.Potion&&item.Shape==0&&item.Stats[stat]>0);
+            var supply=world.CreateFreshItem(info);supply.Count=20;
+            character.Inventory[stat==Stat.HP?1:2]=supply;
+        }
+        character.Inventory[3]=world.CreateFreshItem(world.ItemInfoList.First(item=>item.Type==ItemType.Scroll&&item.Shape==1));
         if(heavy)
         {
-            var ore=new ItemInfo{Index=++world.ItemIndex,Name="NativeRunHeavyOre",Type=ItemType.Ore,Weight=255,StackSize=1000};
-            world.ItemInfoList.Add(ore);character.Inventory[0]=world.CreateFreshItem(ore);character.Inventory[0].Count=1000;
+            var food=new ItemInfo{Index=++world.ItemIndex,Name="NativeRunHeavyFood",Type=ItemType.Food,Weight=255,StackSize=999};
+            world.ItemInfoList.Add(food);character.Inventory[0]=world.CreateFreshItem(food);character.Inventory[0].Count=999;
         }
         world.QuestInfoList=[new QuestInfo{Index=1,Name="步跑跨图拜访",FileName="NativeRunVisit",RequiredMinLevel=1,RequiredMaxLevel=255,RequiredClass=RequiredClass.None}];
         world.QuestIndex=1;

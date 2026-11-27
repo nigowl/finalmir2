@@ -1,4 +1,4 @@
-﻿public enum MouseCursor : byte
+public enum MouseCursor : byte
 {
     None,
     Default,
@@ -1723,6 +1723,10 @@ public enum ServerPacketIds : short
     PublicShopTabs,
     HeroRecovery,
     DeleteHeroResult,
+    EquipmentAppraisalResult,
+    ObjectEquipmentGlow,
+    ManualItemDropped,
+    ItemPriceChanged,
 }
 
 public enum ClientPacketIds : short
@@ -1896,6 +1900,10 @@ public enum ClientPacketIds : short
     PublicShopCatalogRequest,
     HeroRecoveryRequest,
     DeleteHeroRequest,
+    ClientPresentationRequest,
+    AppraiseEquipment,
+    StorageRequest,
+    ItemPricesRequest,
 }
 
 public enum ConquestType : byte

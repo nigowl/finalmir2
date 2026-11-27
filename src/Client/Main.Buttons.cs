@@ -34,6 +34,16 @@ public partial class Main
             Theme.SetColor("font_hover_color", type, new Color("fff1ad"));
             Theme.SetColor("font_pressed_color", type, Colors.White);
         }
+        foreach (var (type, parent) in new[] { ("HeroHudButton", "Button"), ("HeroHudMode", "OptionButton") })
+        {
+            Theme.SetTypeVariation(type, parent);
+            foreach (var state in new[] { "normal", "hover", "pressed", "hover_pressed", "disabled" })
+            {
+                var skin = (StyleBoxTexture)Theme.GetStylebox(state, parent).Duplicate();
+                skin.ContentMarginTop = skin.ContentMarginBottom = 1; skin.ContentMarginLeft = skin.ContentMarginRight = 4;
+                Theme.SetStylebox(state, type, skin);
+            }
+        }
         Theme.SetTypeVariation("GamePercent", "LineEdit");
         Theme.SetStylebox("normal", "GamePercent", Theme.GetStylebox("normal", "OptionButton"));
         Theme.SetStylebox("focus", "GamePercent", Theme.GetStylebox("hover", "OptionButton"));

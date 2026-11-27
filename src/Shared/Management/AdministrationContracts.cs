@@ -12,9 +12,17 @@ public sealed record PasswordReset(string Password, bool RequireChange, string V
 public sealed record CharacterRow(int Id, string Name, int AccountId, string AccountName, string Class, int Level, bool Online, bool Deleted, bool Banned, int MapId, int X, int Y);
 public sealed record CharacterDetails(int Id, string Name, int AccountId, string AccountName, string Class, string Gender, int Level, long Experience, int PkPoints, int Hp, int Mp,
     bool Online, bool Deleted, bool Banned, string BanReason, DateTime? BanUntil, bool Muted, DateTime? MuteUntil, int MapId, int X, int Y, int BindMapId, int BindX, int BindY,
-    int GuildId, string GuildName, ManagedItem[] Inventory, string[] Spells, int[] ActiveQuests, int[] CompletedQuests, string Version);
+    int GuildId, string GuildName, ManagedItem[] Inventory, string[] Spells, int[] ActiveQuests, int[] CompletedQuests, string Version)
+{
+    public uint Gold { get; init; }
+    public string[] ActiveQuestNames { get; init; } = [];
+    public string[] CompletedQuestNames { get; init; } = [];
+}
 public sealed record CharacterCreate(int AccountId, string Name, int Class, int Gender);
-public sealed record CharacterEdit(int Id, int Level, long Experience, int PkPoints, bool Banned, string BanReason, DateTime? BanUntil, bool Muted, DateTime? MuteUntil, string Version, string Confirmation);
+public sealed record CharacterEdit(int Id, int Level, long Experience, int PkPoints, bool Banned, string BanReason, DateTime? BanUntil, bool Muted, DateTime? MuteUntil, string Version, string Confirmation)
+{
+    public uint? Gold { get; init; }
+}
 public sealed record CharacterTravel(int MapId, int X, int Y, bool SetBind, string Confirmation);
 public sealed record ItemGrant(int ItemId, int Count, string Version, string Confirmation);
 public sealed record GuildRow(int Id, string Name, int Level, uint Gold, int Members, int Online, string Leader);

@@ -41,6 +41,7 @@ internal static class CompanionLogoutChecks
                 await Send(new S.ObjectMonster{ObjectID=2,Name="退场近身威胁",Location=new(1,0)});
                 await Send(new S.Struck{AttackerID=2});
             }
+            check(await Read()==(short)ClientPacketIds.ItemPricesRequest,"陪玩未请求当前版本价格");
             check(await Read()==(short)ClientPacketIds.SwitchGroup,"陪玩退出检查缺少原组队设置");
             if(attacked)
             {

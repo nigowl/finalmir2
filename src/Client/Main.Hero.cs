@@ -55,7 +55,7 @@ public partial class Main
 
     private bool SendSubjectItem(Packet request)
     {
-        if (heroItemPending != null || inventoryOrganizer.Pending != null || recyclePending != null || automation.PendingItem != 0 ||
+        if (appraisalPending != null || heroItemPending != null || inventoryOrganizer.Pending != null || recyclePending != null || automation.PendingItem != 0 ||
             pendingDrop != 0 || npcTransactionPending || publicPurchases.Pending || SkillPreparationBusy)
         { Log("正在等待物品回执，请稍候。", ChatType.Hint); return false; }
         var resurrect = request is C.UseItem use && State.User?.Inventory.Any(item => item?.UniqueID == use.UniqueID && item.Info.Type == ItemType.Scroll && item.Info.Shape == 6) == true;

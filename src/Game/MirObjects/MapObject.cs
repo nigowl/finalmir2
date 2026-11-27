@@ -88,6 +88,8 @@ namespace Server.MirObjects
                 if (_hidden == value) return;
                 _hidden = value;
                 CurrentMap.Broadcast(new S.ObjectHidden { ObjectID = ObjectID, Hidden = value }, CurrentLocation);
+                if (!value && this is HumanObject human)
+                    foreach (var viewer in CurrentMap.Players) human.SendEquipmentGlow(viewer);
             }
         }
 
@@ -296,6 +298,7 @@ namespace Server.MirObjects
 
             player.Enqueue(GetInfo());
             SendExactHealth(player);
+            if (this is HumanObject human) human.SendEquipmentGlow(player);
 
             //if (Race == ObjectType.Player)
             //{

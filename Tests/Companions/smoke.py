@@ -18,9 +18,9 @@ class ModelStub(BaseHTTPRequestHandler):
                 body+=self.rfile.read(size);self.rfile.read(2)
         else:body=self.rfile.read(int(self.headers['Content-Length']))
         llm_requests.append(json.loads(body))
-        if self.path=='/slow':time.sleep(2)
-        if self.path=='/unauthorized':self.send_response(401);self.end_headers();return
-        if self.path=='/bad':
+        if self.path in ('/slow','/slow/chat/completions'):time.sleep(2)
+        if self.path in ('/unauthorized','/unauthorized/chat/completions'):self.send_response(401);self.end_headers();return
+        if self.path in ('/bad','/bad/chat/completions'):
             self.send_response(200);self.end_headers();self.wfile.write(b'{"choices":[{"message":{"content":"not json"}}]}');return
         body=json.dumps({'choices':[{'message':{'content':json.dumps({'text':'模型测试回复：我先补药。'},ensure_ascii=False)}}]}).encode()
         self.send_response(200);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)

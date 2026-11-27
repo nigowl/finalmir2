@@ -26,6 +26,7 @@ public sealed partial class CompanionService
         runtime.BeforeStop=Shutdown;
         using var timer=new PeriodicTimer(TimeSpan.FromMilliseconds(100));
         var nextControl = DateTimeOffset.MinValue;
+        var accountsPrepared = false;
         try
         {
             while(await timer.WaitForNextTickAsync(stoppingToken))
@@ -39,6 +40,7 @@ public sealed partial class CompanionService
                     if(!worker.Running&&live.Values.Any(l=>!l.WorkerStopped)){transportFailure=true;throw new IOException(CompanionSupervision.WorkerExit);}
                     var commands=await runtime.Invoke(() =>
                     {
+                        if (!accountsPrepared) { if (store.LoadError == null) store.NormalizeAccounts(); accountsPrepared = true; }
                         var now = DateTimeOffset.UtcNow;
                         var control = now >= nextControl;
                         if (control) nextControl = now.AddSeconds(1);
@@ -59,7 +61,7 @@ public sealed partial class CompanionService
                 }
                 catch(Exception e) when(!stoppingToken.IsCancellationRequested && e is not OutOfMemoryException)
                 {
-                    await WorkerFault(e,transportFailure);
+                    if (!runtime.Stopping) await WorkerFault(e,transportFailure);
                 }
                 finally{transport.Release();}
             }
@@ -138,10 +140,12 @@ public sealed partial class CompanionService
         CompanionRecord? pending=null;
         foreach(var candidate in candidates)
         {
-            if(!candidate.Registered&&(!Settings.AllowNewAccount||log?.AccountsMade.Count>2))
-            {queueReason="等待开放注册或同 IP 注册限频解除";continue;}
-            if(candidate.CharacterId==0&&log?.CharactersMade.Count>4)
-            {queueReason="等待同 IP 建角限频解除（每小时最多 5 次尝试）";continue;}
+            if(!candidate.Registered&&!Settings.AllowNewAccount)
+            {queueReason="等待当前版本开放注册";continue;}
+            if(!candidate.Registered&&log?.AccountsLimited(Settings.MaxAccountsPerIPHour,world.Time)==true)
+            {queueReason=$"等待同 IP 注册限频解除（每小时最多{Settings.MaxAccountsPerIPHour}次，约{Math.Ceiling((log.AccountsMade.Order().ElementAt(log.AccountsMade.Count-Settings.MaxAccountsPerIPHour)+3600000-world.Time)/60000d)}分钟后释放下一名额）";continue;}
+            if(candidate.CharacterId==0&&log?.CharactersLimited(Settings.MaxCharactersPerIPHour,world.Time)==true)
+            {queueReason=$"等待同 IP 建角限频解除（每小时最多{Settings.MaxCharactersPerIPHour}次尝试）";continue;}
             if(world.GetAccount(candidate.Account)?.Connection!=null)
             {Fail(candidate.Profile.Id,"账户已被其他连接占用，请先人工核对。");continue;}
             pending=candidate;break;
@@ -165,9 +169,9 @@ public sealed partial class CompanionService
         try
         {
             await worker.Stop();handshaken=false;
-            if(runtime.Ready)await runtime.Invoke(()=>{live.Clear();return true;});else live.Clear();
+            if(runtime.Ready)await runtime.Invoke(()=>{live.Clear();return true;}, allowStopping: true);else live.Clear();
             runId=Guid.NewGuid().ToString("N");
-            llmPending.Clear();while(llmResults.TryDequeue(out _)){}
+            llmPending.Clear();llmGoalPending.Clear();while(llmResults.TryDequeue(out _)){}
         }
         finally{transport.Release();}
     }

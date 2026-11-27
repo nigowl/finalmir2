@@ -15,6 +15,12 @@ internal static class AutoLearnSkillChecks
         public override void Enqueue(Packet packet) => Packets.Add(packet);
         public override void Broadcast(Packet packet) => Packets.Add(packet);
     }
+    private sealed class Hero(HeroInfo info, Player owner) : HeroObject(info, owner)
+    {
+        protected override void Load(CharacterInfo info, Server.MirNetwork.MirConnection connection)
+        { Info = info; HInfo = (HeroInfo)info; Info.Mount = new MountInfo(this); Stats = new Stats(); }
+        public override void Broadcast(Packet packet) { }
+    }
 
     public static void Run(Action<bool,string> check)
     {
@@ -57,7 +63,8 @@ internal static class AutoLearnSkillChecks
             check(File.ReadAllText(file)==content && Settings.AutoLearnSkills,"校验失败改变文件或运行值");
             world.MagicInfoList[0].Level1++;
             Reject(()=>service.Save(new(edit,saved.Version)),"技能定义变化后旧设置仍可覆盖"); world.MagicInfoList[0].Level1--;
-            foreach (var role in Enum.GetValues<MirClass>()) Learning(role,primary[(int)role],later[(int)role],check);
+            foreach (var role in Enum.GetValues<MirClass>())
+            { Learning(role,primary[(int)role],later[(int)role],check); HeroLearning(role,primary[(int)role],later[(int)role],check); }
             var warrior = NewPlayer(MirClass.Warrior,50); Settings.AutoLearnWarriorSkills = [Spell.FireBall]; warrior.AutoLearnSelectedSkills();
             check(warrior.Info.Magics.Count==0,"运行时错误职业配置绕过真实书籍职业限制");
             Settings.AutoLearnWarriorSkills = [Spell.Fencing]; Settings.AutoLearnSkills = false; warrior.AutoLearnSelectedSkills();
@@ -105,5 +112,31 @@ internal static class AutoLearnSkillChecks
         check(player.Info.Magics.Count==2&&player.Info.Magics.Any(m=>m.Spell==second&&m.Level==0&&!m.IsTempSpell),"跨多级没有补齐选中技能或错误升级技能："+role);
         check(player.Info.Inventory[0] is{UniqueID:12345,Count:3}&&player.Account.Gold==0,"自动学习消耗书籍/金币或修改物品编号："+role);
         check(player.Packets.OfType<S.Chat>().Count(packet=>packet.Type==ChatType.System&&packet.Message.StartsWith("升级自动学习："))==2,"学习结果没有系统反馈或重复提示："+role);
+    }
+
+    private static void HeroLearning(MirClass role, Spell first, Spell second, Action<bool, string> check)
+    {
+        var owner = NewPlayer(MirClass.Warrior, 60); owner.Account.Gold = 1234;
+        var hero = new Hero(new HeroInfo(new ClientPackets.NewHero { Name = "升级检查", Class = role, Gender = MirGender.Male })
+            { Level = 6, Inventory = [] }, owner);
+        owner.Hero = hero;
+        var book = Envir.Main.ItemInfoList.First(item => item.Shape == (short)first && item.RequiredGender == RequiredGender.None);
+        owner.Info.Inventory[6] = new UserItem(book) { UniqueID = 54321, Count = 3 };
+        hero.LevelUp(); check(hero.Info.Magics.Count == 0, "英雄按主人等级提前学习：" + role);
+        Settings.AutoLearnSkills = false; hero.Level = 7; hero.LevelUp();
+        check(hero.Info.Magics.Count == 0, "英雄忽略系统自动学习总开关：" + role); Settings.AutoLearnSkills = true;
+        hero.LevelUp();
+        check(hero.Info.Magics.Select(magic => magic.Spell).SequenceEqual(new[] { first }) && owner.Info.Magics.Count == 0 &&
+            owner.Packets.OfType<S.NewMagic>().Count(packet => packet.Hero) == 1, "英雄升级未按职业列表学习或污染主人技能/回执：" + role);
+        var learned = hero.Info.Magics.Single(); learned.Level = 2; learned.Key = 19; learned.Experience = 123;
+        hero.LevelUp(); check(learned.Level == 2 && learned.Key == 19 && learned.Experience == 123 && hero.Info.Magics.Count == 1, "英雄升级重置已有等级/熟练度/快捷键：" + role);
+        hero.Level = 19; hero.LevelUp(); check(hero.Info.Magics.Count == 1, "英雄绕过技能书等级条件：" + role);
+        hero.Level = 50; hero.LevelUp(); check(hero.Info.Magics.Any(magic => magic.Spell == second && magic.Level == 0 && !magic.IsTempSpell), "英雄跨级未补学系统选中技能：" + role);
+        check(owner.Info.Inventory[6] is { UniqueID: 54321, Count: 3 } && owner.Account.Gold == 1234 && hero.Info.Inventory.Length == 0, "英雄自动学习消耗共用包/金币或新建英雄背包：" + role);
+        var forbidden = Envir.Main.ItemInfoList.Where(item => item.Shape == (short)first).ToArray();
+        foreach (var item in forbidden) item.Bind = BindMode.NoHero;
+        hero.Info.Magics.Clear(); hero.AutoLearnSelectedSkills();
+        check(hero.Info.Magics.All(magic => magic.Spell != first), "英雄自动学习绕过NoHero书籍限制：" + role);
+        foreach (var item in forbidden) item.Bind = BindMode.None;
     }
 }

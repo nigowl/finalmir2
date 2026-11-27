@@ -20,7 +20,7 @@
 <GmCommandsDialog @bind-Visible="commandsOpen" Commands="commands" />
 <MudTable T="AccountRow" Items="rows" Dense="true" RowsPerPage="10" Hover="true">
     <HeaderContent><MudTh>编号 / 账户</MudTh><MudTh>状态</MudTh><MudTh>角色</MudTh><MudTh>金币 / 元宝</MudTh><MudTh>操作</MudTh></HeaderContent>
-    <RowTemplate><MudTd DataLabel="编号 / 账户">#@context.Id @context.AccountID</MudTd><MudTd DataLabel="状态">@(context.Online ? "在线" : "离线") @(context.IsGM ? "GM" : "") @(context.Banned ? "已封禁" : "")</MudTd><MudTd DataLabel="角色">@context.Characters</MudTd><MudTd DataLabel="金币 / 元宝">@context.Gold / @context.Credit</MudTd><MudTd><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))" Variant="Variant.Text" Color="Color.Primary">管理</MudButton></MudTd></RowTemplate>
+    <RowTemplate><MudTd DataLabel="编号 / 账户">#@context.Id @context.AccountID</MudTd><MudTd DataLabel="状态">@(context.Online ? "在线" : "离线") @(context.IsGM ? "GM" : "") @(context.Banned ? "已封禁" : "")</MudTd><MudTd DataLabel="角色">@context.Characters</MudTd><MudTd DataLabel="金币 / 元宝">@context.Gold / @context.Credit</MudTd><MudTd Class="admin-row-actions"><MudButton Size="Size.Small" OnClick="@(() => Open(context.Id))" Variant="Variant.Text" Color="Color.Primary">管理</MudButton></MudTd></RowTemplate>
     <PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
 </MudTable>
 <AdminDialog @bind-Visible="createOpen" Title="创建游戏账户" OnClose="CloseCreate" OnSave="Create" CanSave="@(!string.IsNullOrWhiteSpace(newName) && !string.IsNullOrEmpty(newPassword))" Busy="busy" Dirty="CreateDirty">

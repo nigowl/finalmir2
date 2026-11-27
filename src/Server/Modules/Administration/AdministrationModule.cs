@@ -74,11 +74,11 @@ public static class AdministrationModule
             context.Response.Headers.CacheControl = "no-store";
             return new { version = source.ImageVersion, revision = image.Revision };
         });
-        group.MapGet("/maps/{id:int}/tile", async (GameRuntime runtime, WorldPopulation population, MapThumbnails thumbnails, int id, string version, int x, int y, CancellationToken token) =>
+        group.MapGet("/maps/{id:int}/tile", async (GameRuntime runtime, WorldPopulation population, MapThumbnails thumbnails, int id, string version, int x, int y, int? level, CancellationToken token) =>
         {
             var source = await runtime.Invoke(() => population.Terrain(id), token);
             if (source.ImageVersion != version) return Results.StatusCode(410);
-            return Results.Bytes(await thumbnails.Native(source.FileName + ".map", source.AssetVersion, x, y, token), "image/png");
+            return Results.Bytes(await thumbnails.Native(source.FileName + ".map", source.AssetVersion, x, y, token, level ?? 0), "image/png");
         });
         group.MapPost("/spawns/batch", (GameRuntime runtime, WorldPopulation population, SpawnBatch value, CancellationToken token) => Apply(runtime, () => population.Batch(value), token));
         group.MapGet("/spawns", (GameRuntime runtime, WorldPopulation population, int? mapId, string? search, CancellationToken token) => runtime.Invoke(() => population.List(mapId, search), token));

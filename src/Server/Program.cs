@@ -3,6 +3,8 @@ using Mir2.Hosting;
 using Server;
 using Server.ConsoleHost;
 
+if (args.Contains("--version")) { Console.WriteLine(ProgramVersion.Current); return; }
+
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory, Args = [] });
 var paths = new ProjectPaths(versionDirectory: builder.Configuration["Mir2:VersionDirectory"]);
 Directory.CreateDirectory(paths.Data);
@@ -39,6 +41,6 @@ if (args.Contains("--prepare-public-shop"))
     return;
 }
 await using var app = ResourceService.Build(paths, catalog, builder);
-Console.WriteLine($"Game version: {paths.VersionName}\nVersion directory: {paths.Data}\nSQLite: {paths.Database}\nCanonical assets: {paths.Assets}\nManagement key: {paths.AdminKeyFile}");
+Console.WriteLine($"程序版本：{ProgramVersion.Current}\nGame version: {paths.VersionName}\nVersion directory: {paths.Data}\nSQLite: {paths.Database}\nCanonical assets: {paths.Assets}\nManagement key: {paths.AdminKeyFile}");
 try { await app.RunAsync(); }
 finally { DatabaseStorage.Current = null; }

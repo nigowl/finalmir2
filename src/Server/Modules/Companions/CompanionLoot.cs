@@ -32,9 +32,9 @@ public static class CompanionLoot
             .Where(item => Functions.InRange(item.CurrentLocation, player.CurrentLocation, Globals.DataRange))
             .Select(item => item.CurrentLocation).Distinct().OrderBy(point => Functions.MaxDistance(point, player.CurrentLocation)).Take(128);
         return positions.Select(point => FirstPickup(player, player.CurrentMap.GetCell(point).Objects))
-            .Where(item => item != null && CompanionInventoryRules.CanCollect(player.CurrentBagWeight, player.Stats[Stat.BagWeight],
+            .Where(item => item != null && (item.Item != null && Server.Helpers.MaterialInventoryRules.Contains(item.Item.Info, Server.MirEnvir.Envir.Main) || CompanionInventoryRules.CanCollect(player.CurrentBagWeight, player.Stats[Stat.BagWeight],
                 player.Info.Inventory.Count(entry => entry == null), item.Item?.Weight ?? 0,
-                item.Item != null && needed.Contains(item.Item.ItemIndex), item.Item == null))
+                item.Item != null && needed.Contains(item.Item.ItemIndex), item.Item == null)))
             .Select(item => item!.ObjectID).ToArray();
     }
 }

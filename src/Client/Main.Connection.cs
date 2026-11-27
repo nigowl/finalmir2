@@ -70,6 +70,7 @@ public partial class Main
                     HandshakeReady = false; status.Text = "正在连接服务器…";
                     await Assets.Initialize(serverAddress, attempt.Token);
                     State.PlayerTiming = Assets.PlayerTiming;
+                    State.MaterialItemNames.UnionWith(Assets.ItemCatalog.GroupBy(item => item.Name).Where(group => group.All(item => item.Material)).Select(group => group.Key));
                     connectionHandshake = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     await Connection.Connect(Assets.Host, Assets.GamePort, attempt.Token);
                     await connectionHandshake.Task.WaitAsync(attempt.Token);

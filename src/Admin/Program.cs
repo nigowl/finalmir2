@@ -12,12 +12,16 @@ using Mir2.Admin.Services;
 using Mir2.Hosting;
 using MudBlazor.Services;
 
+if (args.Contains("--version")) { Console.WriteLine(ProgramVersion.Current); return; }
+
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
 var paths = new ProjectPaths(versionDirectory: builder.Configuration["Mir2:VersionDirectory"]); var key = paths.AdminKey();
+var bindAddress = IPAddress.Parse(Environment.GetEnvironmentVariable("MIR2_ADMIN_BIND_ADDRESS") ?? "127.0.0.1");
+var endpoint = new IPEndPoint(bindAddress, int.Parse(Environment.GetEnvironmentVariable("MIR2_ADMIN_PORT") ?? "5081"));
 var cookieScope = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(paths.Runtime)))[..12];
 builder.WebHost.UseStaticWebAssets();
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
-builder.WebHost.UseUrls($"http://127.0.0.1:{Environment.GetEnvironmentVariable("MIR2_ADMIN_PORT") ?? "5081"}");
+builder.WebHost.UseUrls("http://" + endpoint);
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddRazorPages();
 builder.Services.AddMudServices(); builder.Services.AddTransient<MudBlazor.MudLocalizer, ChineseMudLocalizer>();
@@ -45,7 +49,7 @@ app.UseRequestLocalization(new RequestLocalizationOptions().SetDefaultCulture("z
 app.Use(async (context, next) =>
 {
     var host = context.Request.Host.Host;
-    if (host != "localhost" && (!IPAddress.TryParse(host, out var ip) || !IPAddress.IsLoopback(ip))) { context.Response.StatusCode = 403; return; }
+    if (host != "localhost" && (!IPAddress.TryParse(host, out var ip) || (IPAddress.IsLoopback(bindAddress) && !IPAddress.IsLoopback(ip)))) { context.Response.StatusCode = 403; return; }
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["X-Frame-Options"] = "DENY"; await next();
 });
@@ -76,8 +80,8 @@ app.MapGet("/resource-map-preview", async (string name, AdminApi api, HttpContex
     context.Response.Headers.CacheControl = "no-store";
     return await api.Proxy("management/resources/map-thumbnail/" + AdminApi.Escape(name), context, "image/png");
 }).RequireAuthorization();
-app.MapGet("/native-map-tile", async (int id, string version, int x, int y, AdminApi api, HttpContext context) =>
-    await api.Proxy($"management/admin/maps/{id}/tile?version={Uri.EscapeDataString(version)}&x={x}&y={y}", context, "image/png")).RequireAuthorization();
+app.MapGet("/native-map-tile", async (int id, string version, int x, int y, int? level, AdminApi api, HttpContext context) =>
+    await api.Proxy($"management/admin/maps/{id}/tile?version={Uri.EscapeDataString(version)}&x={x}&y={y}&level={level ?? 0}", context, "image/png")).RequireAuthorization();
 app.MapGet("/map-thumbnail-version/{id:int}", async (int id, AdminApi api, HttpContext context) =>
 {
     context.Response.Headers.CacheControl = "no-store";
@@ -87,7 +91,7 @@ app.MapGet("/map-preview/{id:int}", async (int id, string version, AdminApi api,
     await api.Proxy($"management/admin/maps/{id}/image?version={Uri.EscapeDataString(version)}", context, "image/png")).RequireAuthorization();
 app.MapGet("/asset-download/{kind}/{**name}", async (string kind, string name, AdminApi api, HttpContext context) =>
     await api.Proxy($"management/resources/download/{AdminApi.Escape(kind)}/{AdminApi.Escape(name)}", context, "application/octet-stream", Path.GetFileName(name))).RequireAuthorization();
-app.MapGet("/health", () => new { ready = true, service = "Mir2.Admin", gameVersion = paths.VersionName, versionDirectory = paths.Data });
+app.MapGet("/health", () => new { ready = true, service = "Mir2.Admin", programVersion = ProgramVersion.Current, gameVersion = paths.VersionName, versionDirectory = paths.Data });
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
-Console.WriteLine($"Game version: {paths.VersionName}\nVersion directory: {paths.Data}\nManagement: http://127.0.0.1:{Environment.GetEnvironmentVariable("MIR2_ADMIN_PORT") ?? "5081"}\nLogin key file: {paths.AdminKeyFile}");
+Console.WriteLine($"程序版本：{ProgramVersion.Current}\nGame version: {paths.VersionName}\nVersion directory: {paths.Data}\nManagement: http://{endpoint}\nLogin key file: {paths.AdminKeyFile}");
 app.Run();

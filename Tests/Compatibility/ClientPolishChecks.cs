@@ -45,12 +45,12 @@ internal static class ClientPolishChecks
         var reply = new S.MergeItem { GridFrom = merge.GridFrom, GridTo = merge.GridTo, IDFrom = merge.IDFrom, IDTo = merge.IDTo, Success = true };
         state.Apply(reply); organizer.Observe(reply);
         check(organizer.Begin(state.InventoryRevision, 31000, false) && organizer.Next(inventory, state.InventoryRevision, 31000) == null &&
-            inventory[0].UniqueID == 1 && inventory[0].Count == 20 && inventory[6].Count == 10 && inventory.Where(item => item != null).Sum(item => item.Count) == before, "原合堆回执未守恒或忽略绑定差异");
+            inventory[0].UniqueID == 1 && inventory[0].Count == 30 && inventory[6] == null && inventory.Where(item => item != null).Sum(item => item.Count) == before, "原合堆回执未守恒或忽略绑定差异");
         check(!organizer.Begin(state.InventoryRevision, 100000, false), "未变化背包重复扫描");
         var snapshot = string.Join('/', inventory.Select(item => item == null ? "-" : $"{item.UniqueID}:{item.Count}"));
         var order = ClientInventoryOrganizer.DisplayOrder(inventory);
         check(order.Length == 74 && order.Distinct().Count() == 74 && order.All(slot => slot >= 6) &&
-            order.Take(3).All(slot => inventory[slot] != null) && snapshot == string.Join('/', inventory.Select(item => item == null ? "-" : $"{item.UniqueID}:{item.Count}")), "排序改变真实格位/数量或遗漏快捷槽");
+            order.Take(2).All(slot => inventory[slot] != null) && snapshot == string.Join('/', inventory.Select(item => item == null ? "-" : $"{item.UniqueID}:{item.Count}")), "排序改变真实格位/数量或遗漏快捷槽");
         inventory[1] = new UserItem(new ItemInfo { Type = ItemType.Weapon });
         check(ItemPresentation.BagSlots(inventory).Contains(1) && !ItemPresentation.BagSlots(inventory).Contains(0), "旧快捷装备无法取出或快捷药品重复显示");
         var legacy = new Server.MirDatabase.CharacterInfo { Inventory = inventory };

@@ -28,6 +28,11 @@ public partial class NativeSmoke : Node
                 return;
             }
             Client.EffectPlayed += id => effectsPlayed.Add(id);
+            if (OS.GetCmdlineUserArgs().Contains("--verify-item-prices")) { await VerifyItemPrices(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-material-inventory")) { await VerifyMaterialInventory(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-equipment-play")) { await VerifyEquipmentPlay(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-equipment-appraisal")) { await VerifyEquipmentAppraisal(); return; }
+            if (OS.GetCmdlineUserArgs().Contains("--verify-hero-portrait")) { await VerifyHeroPortrait(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-grid-movement")) { await VerifyGridMovement(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-npc-input")) { await VerifyNpcInput(); return; }
             if (OS.GetCmdlineUserArgs().Contains("--verify-skill-removal")) { await VerifySkillRemoval(); return; }

@@ -61,6 +61,7 @@ public sealed record CompanionSettings
 }
 public sealed record CompanionArrivalSettings
 {
+    public bool RandomSchedule { get; set; }
     public bool Enabled { get; set; }
     public int MinMinutes { get; set; } = 30;
     public int MaxMinutes { get; set; } = 120;
@@ -86,7 +87,14 @@ public sealed record CompanionModelKeyEdit(Guid Id, string? Key = null, bool Cle
 public sealed record CompanionSettingsEdit(CompanionSettings Settings, string? LlmKey = null, bool ClearLlmKey = false, CompanionModelKeyEdit[]? ModelKeys = null);
 public sealed record CompanionLlmTest(CompanionLlmModel Model, string? Key = null, bool ClearKey = false);
 public sealed record CompanionLlmTestResult(bool Success, string Message, long ElapsedMilliseconds);
-public sealed record CompanionBatchPlan(int Count,string[] Nicknames,CompanionProfile Template,bool RandomClass=true,bool RandomGender=true,bool RandomPersonality=true);
+public sealed record CompanionModelDiscovery(string Endpoint, string? Key = null, Guid ModelId = default, bool ClearKey = false);
+public sealed record CompanionModelList(string Endpoint, string[] Models);
+public sealed record CompanionSelection(Guid Id, string Version);
+public sealed record CompanionSelectedCommand(string Action, CompanionSelection[] Profiles);
+public sealed record CompanionSelectedSchedule(CompanionSelection[] Profiles, bool Scheduled, CompanionSchedule Schedule, bool RandomSchedule = false);
+public sealed record CompanionSelectedLlm(CompanionSelection[] Profiles, int Mode, Guid ModelId = default);
+public sealed record CompanionSchedulePreset(Guid Id, string Name, CompanionSchedule Schedule, string Version = "");
+public sealed record CompanionBatchPlan(int Count,string[] Nicknames,CompanionProfile Template,bool RandomClass=true,bool RandomGender=true,bool RandomPersonality=true,bool RandomSchedule=false);
 public sealed record CompanionBatchPreview(CompanionProfile[] Profiles,string[] Excluded,int Available);
 public sealed record CompanionBatchCreate(CompanionProfile[] Profiles,string[] Nicknames,string SettingsVersion);
 public sealed record CompanionCommand(string Action, string Version);
@@ -97,7 +105,8 @@ public sealed record CompanionPage(CompanionRow[] Items, int Total);
 public sealed record CompanionCapability(string Name, string State, string Detail);
 public sealed record CompanionOverview(string VersionName, string InstanceId, string Protocol, CompanionSettings Settings,
     PersonalityPreset[] Presets, CompanionCapability[] Capabilities, int Online, CompanionLimits? Limits = null, int EnabledProfiles = 0, string StartAllVersion = "", int[]? AvailableClasses = null,
-    CompanionArrivalStatus? Arrivals = null, CompanionDispatchStatus? Dispatch = null);
+    CompanionArrivalStatus? Arrivals = null, CompanionDispatchStatus? Dispatch = null,
+    CompanionSchedulePreset[]? SchedulePresets = null, string[]? UsedNicknames = null);
 public sealed record CompanionLimits(int MaxConnections, int MaxPerIp, int Connections, int SameIpConnections, int EffectiveMaxOnline);
 public sealed record SchedulePreview(DateTimeOffset Start, DateTimeOffset End, bool Attending, string Occurrence);
 public sealed record CompanionEvent(DateTimeOffset Time, string Kind, string State, string Reason, string Text);
@@ -115,11 +124,11 @@ public sealed record WorkerStart(CompanionProfile Profile, string Account, strin
     string Instance, string Run, string Protocol, string ResourceUrl, string AssetVersion, string CacheDirectory, int Seed, int Deaths = 0);
 public sealed record WorkerCommand(string Kind, WorkerStart? Start = null, Guid Id = default, CompanionProfile? Profile = null, CompanionKnowledge? Knowledge = null,
     string Text = "", string Context = "", bool Allowed = false);
-public sealed record WorkerEvent(string Kind, Guid Id, string State = "", string Reason = "", string Text = "", string Protocol = "", string Session = "", bool Recoverable = false);
+public sealed record WorkerEvent(string Kind, Guid Id, string State = "", string Reason = "", string Text = "", string Protocol = "", string Session = "", bool Recoverable = false, int MonsterId = 0);
 public sealed record GoalSuggestion(string[] Candidates,string Observation);
 public static class CompanionProtocol
 {
-    public const string Revision = "mir2-companion-15";
+    public const string Revision = "mir2-companion-19";
     public const int MaxMessage = 262144;
     public static string Fingerprint => Revision + ":" + typeof(Packet).Module.ModuleVersionId;
 }
@@ -132,7 +141,8 @@ public sealed record KnownSale(ulong UniqueId, ushort Count);
 public sealed record KnownStorage(ulong UniqueId, ushort Count, bool Take);
 public sealed record KnownPartyPlan(string Invite, string[] Peers, string Leader, KnownGoal? Goal, uint[] Targets);
 public sealed record KnownGoal(string Kind, int MapId, int X, int Y, string Reason, int QuestId = 0, uint NpcId = 0,
-    int[]? MonsterIds = null, KnownExit? NextExit = null, string Key = "", KnownSale[]? SellItems = null, KnownStorage[]? StorageItems = null, int PublicItemId = 0);
+    int[]? MonsterIds = null, KnownExit? NextExit = null, string Key = "", KnownSale[]? SellItems = null, KnownStorage[]? StorageItems = null, int PublicItemId = 0, ulong AppraisalItemId = 0,
+    int PublicCount = 0, long GoldReserve = 0);
 public sealed record CompanionKnowledge(string Revision, int MapId, bool NoFight, bool NoDrug, bool NoEscape,
     KnownNpc[] Npcs, KnownQuest[] Quests, KnownSpawn[] Spawns, KnownExit[] Exits, bool AllowPk = false, bool InSafeZone = false,
     KnownGoal? Goal = null, KnownEnemy[]? Enemies = null, uint[]? LootTargets = null, bool NoTownTeleport = true, KnownGuildPlan? Guild = null,

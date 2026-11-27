@@ -41,7 +41,7 @@ public partial class NativeSmoke
             var task = bag.GetNode<OriginalButton>("InventoryQuestItems"); var rect = task.GetRect();
             await MoveMouse(task.GetGlobalRect().GetCenter());
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            if (task.GetRect() != rect) throw new Exception("任务物品入口悬停后移动或改变尺寸。");
+            if (task.GetRect() != rect) throw new Exception("材料物品入口悬停后移动或改变尺寸。");
             await Screenshot("typography-buttons-hover");
             tabs[1].EmitSignal(BaseButton.SignalName.Pressed);
             if (tabs.Count(tab => tab.ButtonPressed) != 1 || !tabs[1].ButtonPressed) throw new Exception("角色页签没有唯一的选中高亮。");

@@ -15,6 +15,12 @@ internal static class CompanionGuildScenario
         using var storage = new SqliteDatabaseStorage(paths.Database); DatabaseStorage.Current = storage;
         var world = Envir.Main; if (!world.LoadDB()) throw new InvalidDataException("测试世界读取失败。");
         world.BuffInfoList.AddRange(BuffInfo.Load()); world.LoadAccounts(); world.LoadGuilds();
+        if (mode == "inspect")
+        {
+            Console.WriteLine(JsonSerializer.Serialize(world.ConquestInfoList.Select(c => new { c.Index,c.Name,c.MapIndex,c.PalaceIndex,c.StartHour,c.WarLength,
+                type=c.Type.ToString(),game=c.Game.ToString(),c.Monday,c.Tuesday,c.Wednesday,c.Thursday,c.Friday,c.Saturday,c.Sunday,
+                Saved=ReadConquest(c.Index) }),new JsonSerializerOptions { IncludeFields=true })); return;
+        }
         var founder = world.CharacterList.Single(c => c.Index == founderId);
         var joiner = world.CharacterList.Single(c => c.Index == joinerId);
         if (mode == "ready")
@@ -83,5 +89,13 @@ internal static class CompanionGuildScenario
         File.WriteAllText(Path.Combine(paths.Runtime, "companion-guild-fixture.json"), JsonSerializer.Serialize(new { token = token.Index,
             uniqueId = founder.Inventory[0].UniqueID, origin = local.Index, palace = palace.Index, npc = npc.Index }));
         Console.WriteLine("隔离建会/入会/攻城fixture：22级、1000金币+原编号材料，原NPC开始临时攻城，王宫公开步行可达。");
+    }
+
+    private static object? ReadConquest(int id)
+    {
+        var path=Path.Combine(Settings.ConquestsPath,id+".mcd");
+        if (!DatabaseStorage.Exists(path)) return null;
+        using var reader=new BinaryReader(DatabaseStorage.OpenRead(path));var c=new ConquestGuildInfo(reader);
+        return new { c.Owner,c.AttackerID };
     }
 }

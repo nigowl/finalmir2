@@ -20,11 +20,11 @@ public partial class NativeSmoke
         await Until(() => State.User != null && !Client.World.Loading);
         VerifyQuestCoordinates();
         var player = State.User!;
-        var portrait = (Button)Client.FindChild("HeroShortcut", true, false);
+        var portrait = (HeroPortraitButton)Client.FindChild("HeroShortcut", true, false);
         var pet = (Button)Client.FindChild("PetShortcut", true, false);
         if (OS.GetCmdlineUserArgs().Contains("--verify-hero-save"))
         {
-            await Until(() => State.ActiveHero?.Name == expectedName && portrait.Icon != null);
+            await Until(() => State.ActiveHero?.Name == expectedName && portrait.Portrait != null);
             await VerifyHeroHudLayout();
             if (State.ActiveHero!.Class != expectedClass || State.ActiveHero.Gender != MirGender.Female || player.Inventory.Any(item => item?.Info.Type == ItemType.SealedHero))
                 throw new Exception("保存重启后英雄职业、性别或封印物品错误。");
@@ -36,8 +36,8 @@ public partial class NativeSmoke
             Client.Send(new C.LogOut()); await Packet<S.LogOutSuccess>();
             Client.Send(new C.StartGame { CharacterIndex = State.Characters.Single().Index });
             await Packet<S.UserInformation>();
-            await Until(() => State.HeroState == HeroSpawnState.Unsummoned && State.ActiveHero?.Name == expectedName && portrait.Visible && portrait.Icon != null);
-            if (((Control)Client.FindChild("HeroManagement", true, false)).Visible || portrait.Icon != Client.Assets.Sprite("Prguse", portraitIndex)?.Texture)
+            await Until(() => State.HeroState == HeroSpawnState.Unsummoned && State.ActiveHero?.Name == expectedName && portrait.Visible && portrait.Portrait != null);
+            if (((Control)Client.FindChild("HeroManagement", true, false)).Visible || portrait.Portrait != Client.Assets.Sprite("Prguse", portraitIndex)?.Texture)
                 throw new Exception("休息状态重新进入后头像丢失，或自动弹出英雄管理。");
             await ToggleHero("召唤");
             await Until(() => State.HeroState == HeroSpawnState.Summoned);
@@ -54,7 +54,7 @@ public partial class NativeSmoke
             await Until(() => State.User!.HeroBehaviour == HeroBehaviour.Attack);
             GD.Print("PASS native hero saved identity, class/gender portrait, consumed seal after restart and resting hero re-login/summon."); await Client.Quit(); return;
         }
-        if (portrait.Visible || portrait.Icon != null || pet.Visible) throw new Exception("无英雄时头像仍显示，或未召唤宠物仍显示。");
+        if (portrait.Visible || portrait.Portrait != null || pet.Visible) throw new Exception("无英雄时头像仍显示，或未召唤宠物仍显示。");
         async Task Result(byte expected, string name, MirGender gender = MirGender.Female, MirClass job = MirClass.Wizard)
         {
             packets.RemoveAll(packet => packet is S.NewHero);
@@ -63,8 +63,8 @@ public partial class NativeSmoke
             await ToSignal(GetTree().CreateTimer(.2), SceneTreeTimer.SignalName.Timeout);
         }
         await Result(7, "未授权英雄");
-        await Until(() => State.Actors.Values.Any(actor => actor.Name == "英雄使者"));
-        var guide = State.Actors.Values.Single(actor => actor.Name == "英雄使者");
+        await Until(() => State.Actors.Values.Any(actor => actor.Name == "云游子"));
+        var guide = State.Actors.Values.Single(actor => actor.Name == "云游子");
         async Task MainPage()
         {
             packets.RemoveAll(packet => packet is S.NPCResponse);
@@ -97,21 +97,20 @@ public partial class NativeSmoke
             throw new Exception("创建成功提示没有说明封印道具及激活后显示英雄栏。");
         await Screenshot("hero-created-sealed");
         Client.Send(new C.UseItem { UniqueID = seal.UniqueID, Grid = MirGridType.Inventory });
-        await Until(() => State.Hero?.Name == expectedName && State.HeroState == HeroSpawnState.Summoned && portrait.Visible && portrait.Icon != null);
+        await Until(() => State.Hero?.Name == expectedName && State.HeroState == HeroSpawnState.Summoned && portrait.Visible && portrait.Portrait != null);
         if (State.User != player || State.Hero!.Gender != MirGender.Female || State.Hero.Class != expectedClass || player.Inventory.Any(item => item?.UniqueID == seal.UniqueID))
             throw new Exception("英雄激活覆盖本人身份、性别职业不符或未消耗封印。");
         if (archer && !player.Inventory.Any(item => item?.Info.Type == ItemType.Potion && item.Info.Shape == 1))
             throw new Exception("弓箭英雄首次初始化没有把普通出生物品放入共用背包。");
-        if (portrait.Icon != Client.Assets.Sprite("Prguse", portraitIndex)?.Texture) throw new Exception("英雄没有按真实职业/性别使用头像。");
-        var hp = (ProgressBar)Client.FindChild("HeroHP", true, false); var mp = (ProgressBar)Client.FindChild("HeroMP", true, false);
-        await Until(() => hp.MaxValue > 1 && mp.MaxValue > 1);
+        if (portrait.Portrait != Client.Assets.Sprite("Prguse", portraitIndex)?.Texture) throw new Exception("英雄没有按真实职业/性别使用头像。");
+        await Until(() => portrait.MaximumHealth > 1 && portrait.MaximumMana > 1);
         var health = State.Hero.HP; var mana = State.Hero.MP;
         State.Apply(new S.HeroHealthChanged { HP = 10, MP = 5 });
-        await Until(() => hp.Value == 10 && mp.Value == 5);
+        await Until(() => portrait.Health == 10 && portrait.Mana == 5);
         State.Apply(new S.HeroHealthChanged { HP = health, MP = mana });
         await Screenshot("hero-hud");
         await ToggleHero("休息");
-        await Until(() => State.HeroState == HeroSpawnState.Unsummoned && hp.Value == 0 && mp.Value == 0);
+        await Until(() => State.HeroState == HeroSpawnState.Unsummoned && portrait.Health == 0 && portrait.Mana == 0);
         await ToSignal(GetTree().CreateTimer(1.6), SceneTreeTimer.SignalName.Timeout);
         await ToggleHero("召唤");
         await Until(() => State.HeroState == HeroSpawnState.Summoned);
@@ -147,10 +146,10 @@ public partial class NativeSmoke
 
     private async Task VerifyHeroHudLayout()
     {
-        var controls = new[] { "HeroShortcut", "HeroHP", "HeroMP", "SummonHero", "HeroPortraitMode" }
+        var controls = new[] { "HeroShortcut", "SummonHero", "HeroPortraitMode" }
             .Select(name => (Control)Client.FindChild(name, true, false)).ToArray();
-        if (!controls.Select(control => control.Position.Y).SequenceEqual(new float[] { 516, 596, 604, 614, 614 }))
-            throw new Exception("英雄头像、血蓝条及双控件没有整体上移10px。");
+        if (!controls.Select(control => control.Position.Y).SequenceEqual(new float[] { 516, 600, 600 }))
+            throw new Exception("英雄环形头像没有保留上移位置，或底部双控件没有紧凑对齐。");
         var user = State.User!; var hasHero = user.HasHero;
         var refresh = Client.GetType().GetMethod("RefreshCompanionPortraits", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         try
@@ -164,7 +163,7 @@ public partial class NativeSmoke
             await Screenshot("hero-shifted");
         }
         finally { user.HasHero = hasHero; refresh.Invoke(Client, null); }
-        GD.Print("PASS native hero HUD: absent hero hidden, owned hero restored, complete region moved up 10px.");
+        GD.Print("PASS native hero HUD: absent hero hidden, owned hero restored, raised portrait anchor and compact controls retained.");
     }
 
     private async Task ToggleHero(string caption)

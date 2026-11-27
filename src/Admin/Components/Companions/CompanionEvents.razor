@@ -13,7 +13,7 @@
     private static string Kind(string value) => value switch
     {
         "status"=>"状态变化", "registered"=>"账户绑定", "entered"=>"进入游戏", "configured"=>"配置更新", "failed"=>"运行异常",
-        "stopped"=>"下线", "social"=>"聊天", "guild"=>"行会活动", "asset"=>"物品操作", "healing"=>"自疗回执", "escape"=>"回城保护", "death"=>"死亡", "llm"=>"模型对话", "llm-goal"=>"模型建议", "diagnostic"=>"运行提示", "goal-blocked"=>"目标调整", _=>"运行事件"
+        "stopped"=>"下线", "social"=>"聊天", "guild"=>"行会活动", "asset"=>"物品操作", "healing"=>"自疗回执", "escape"=>"回城保护", "death"=>"死亡", "llm"=>"模型对话", "llm-goal"=>"模型建议", "llm-log"=>"LLM日志", "diagnostic"=>"运行提示", "goal-blocked"=>"目标调整", _=>"运行事件"
     };
     private static string Description(CompanionEvent e) => e.Kind switch
     {

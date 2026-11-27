@@ -31,6 +31,13 @@ internal static class GameBalanceChecks
         var originalBuffs = Envir.Main.BuffInfoList; Envir.Main.BuffInfoList = BuffInfo.Load();
         try
         {
+            check(GameBalance.RangeHitChance(0, 0, false) == 100 && GameBalance.RangeHitChance(Globals.MaxAttackRange, 0, false) == 50,
+                "弓箭最远射程基础命中未保留50%");
+            for (var distance = 1; distance <= Globals.MaxAttackRange; distance++)
+                check(GameBalance.RangeHitChance(distance, 0, false) <= GameBalance.RangeHitChance(distance - 1, 0, false) &&
+                    GameBalance.RangeHitChance(distance, 0, true) == 100, "距离命中不单调或专注加成错误");
+            check(GameBalance.RangeHitChance(-1, int.MaxValue, true) == 100 && GameBalance.RangeHitChance(int.MaxValue, int.MinValue, true) == 0,
+                "射击命中修正边界溢出");
             check(GameBalance.Scale(27, 1) == 27 && GameBalance.Scale(0, 100) == 0 && GameBalance.Scale(-1, 100) == -1, "默认倍率改变原值/零值/标记值");
             check(GameBalance.Scale(int.MaxValue, 100) == int.MaxValue && GameBalance.Duration(long.MaxValue, 10) == long.MaxValue, "倍率/时长极值溢出");
             var settings = original.Values with { PlayerPhysicalDamageRate = 2, PlayerMagicDamageRate = 3, PlayerPvpDamageRate = .5f,

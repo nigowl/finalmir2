@@ -33,8 +33,8 @@ internal static class CompanionSupplyPriorityScenario
         }
         var red=Potion("NativePriorityRed",Stat.HP,emergencyGold.HasValue?40u:20u);var blue=Potion("NativePriorityBlue",Stat.MP,30);
         if(emergencyGold.HasValue)red.StackSize=20;
-        var hp=emergencyGold.HasValue?0:CompanionSupplyRules.Target(Stat.HP,character.Class,50)-1;
-        var mp=emergencyGold.HasValue?0:(CompanionSupplyRules.Target(Stat.MP,character.Class,50)+1)/2-1;
+        var hp=emergencyGold.HasValue?0:CompanionSupplyRules.Target(Stat.HP,character.Class,50,character.Level)-1;
+        var mp=emergencyGold.HasValue?0:(CompanionSupplyRules.Target(Stat.MP,character.Class,50,character.Level)+1)/2-1;
         foreach(var info in Enumerable.Repeat(red,hp).Concat(Enumerable.Repeat(blue,mp)))
             character.Inventory[Array.IndexOf(character.Inventory,null)]=world.CreateFreshItem(info);
         var filler=new ItemInfo{Index=++world.ItemIndex,Name="NativePriorityProtectedOre",Type=ItemType.Ore,StackSize=1};world.ItemInfoList.Add(filler);
@@ -63,7 +63,7 @@ internal static class CompanionSupplyPriorityScenario
             // 真实超重使角色只能步行，避免跑步恰好穿过守怪攻击间隔而漏测近身路线。
             var heavy=new ItemInfo{Index=++world.ItemIndex,Name="NativeProtectedHeavyOre",Type=ItemType.Ore,Weight=100,StackSize=1000};world.ItemInfoList.Add(heavy);
             var load=world.CreateFreshItem(heavy);load.Count=1000;character.Inventory[0]=load;
-            hp=CompanionSupplyRules.Target(Stat.HP,character.Class,50);mp=CompanionSupplyRules.Target(Stat.MP,character.Class,50);
+            hp=CompanionSupplyRules.Target(Stat.HP,character.Class,50,character.Level);mp=CompanionSupplyRules.Target(Stat.MP,character.Class,50,character.Level);
             blue.StackSize=20;
             foreach(var (info,count) in new[]{(red,hp),(blue,mp)})
             {

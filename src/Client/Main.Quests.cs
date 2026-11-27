@@ -62,11 +62,25 @@ public partial class Main
         abandonConfirmation = new ConfirmationDialog { Title = "确认放弃任务" }; game.AddChild(abandonConfirmation); abandonConfirmation.GetOkButton().Text = "确定"; abandonConfirmation.GetCancelButton().Text = "取消";
         abandonConfirmation.Confirmed += () => AbandonQuest(abandonQuest);
         questBag = Panel(game, 700, 280, 316, 236); questBag.Hide();
-        Picture(questBag, "Title", 196, 0, 0, nativeFrame: true); WindowTitle(questBag, "任务物品", 250);
-        ArtButton(questBag, "Prguse2", 360, 289, 3, "关闭任务物品", () => questBag.Hide());
+        Picture(questBag, "Title", 196, 0, 0, nativeFrame: true); WindowTitle(questBag, "材料物品", 250);
+        ArtButton(questBag, "Prguse2", 360, 289, 3, "关闭材料物品", () => questBag.Hide());
         for (var i = 0; i < 40; i++)
         {
             var button = new ItemTipButton { Position = new Vector2(9 + i % 8 * 37, 37 + i / 8 * 33), Size = new Vector2(36, 32), FocusMode = FocusModeEnum.None, ExpandIcon = true };
+            var slot = i;
+            button.GuiInput += input =>
+            {
+                if (input is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right } &&
+                    State.User?.QuestInventory.ElementAtOrDefault(slot) is { } dropped)
+                { PrepareItemDrop(dropped.UniqueID); GetViewport().SetInputAsHandled(); return; }
+                if (input is InputEventMouseButton { Pressed: true, DoubleClick: true, ButtonIndex: MouseButton.Left } &&
+                    State.User?.QuestInventory.ElementAtOrDefault(slot) is { } item)
+                {
+                    if (storage.Visible) StoreInventory(~slot);
+                    else UseItem(item.UniqueID);
+                    GetViewport().SetInputAsHandled();
+                }
+            };
             ItemCellStyle(button); questBag.AddChild(button); questBagButtons.Add(button);
         }
         foreach (var dialog in new[] { questList, questDetail, questBag }) Draggable(dialog);
@@ -172,7 +186,7 @@ public partial class Main
         {
             var button = questBagButtons[i]; var item = State.User?.QuestInventory?.ElementAtOrDefault(i);
             button.Icon = null; button.Text = item?.Count > 1 ? item.Count.ToString() : "";
-            ItemTooltip(button, item, "任务物品栏");
+            ItemTooltip(button, item, "材料物品栏 · 双击使用/存仓，右键丢弃");
             if (item != null) icons.Add((button, item));
         }
     }

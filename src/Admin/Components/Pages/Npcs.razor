@@ -21,7 +21,7 @@
     <MudTextField Margin="Margin.Dense" Variant="Variant.Outlined" T="string" Label="搜索当前地图 NPC" Immediate="true" @bind-Value="search" Class="mb-3" />
     <MudTable T="NpcDefinition" Items="map.Npcs.Where(n => n.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || n.Id.ToString() == search)" Dense="true" Hover="true" RowsPerPage="10">
         <HeaderContent><MudTh>NPC</MudTh><MudTh>坐标</MudTh><MudTh>脚本</MudTh><MudTh>操作</MudTh></HeaderContent>
-        <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>(@context.X, @context.Y)</MudTd><MudTd Class="path">@context.FileName</MudTd><MudTd><MudButton Disabled="@(busy || editorOpen)" OnClick="@(() => Open(context))" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">管理</MudButton></MudTd></RowTemplate>
+        <RowTemplate><MudTd>#@context.Id @context.Name</MudTd><MudTd>(@context.X, @context.Y)</MudTd><MudTd Class="path">@context.FileName</MudTd><MudTd Class="admin-row-actions"><MudButton Disabled="@(busy || editorOpen)" OnClick="@(() => Open(context))" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">管理</MudButton></MudTd></RowTemplate>
         <NoRecordsContent><MudText>当前地图没有符合条件的 NPC，可点击地图新增。</MudText></NoRecordsContent>
         <PagerContent><MudTablePager RowsPerPageString="每页条数" InfoFormat="{first_item}–{last_item}，共 {all_items} 条" AllItemsText="全部" /></PagerContent>
     </MudTable>

@@ -51,7 +51,9 @@ try:
     assert call(base+'?pageSize=10&search=needle&status=disabled')['total']==1
     assert call(base+'?pageSize=10&status=disabled&page=2')['total']==23
     assert len(call(base+'?pageSize=10&status=disabled&page=2')['items'])==3
-    call(base+'?status=unknown',expected=400);call(base+'?pageSize=0',expected=400);call(base+'?pageSize=51',expected=400)
+    call(base+'?status=unknown',expected=400);call(base+'?pageSize=0',expected=400);call(base+'?pageSize=101',expected=400)
+    for size in (10,20,30,50,100):
+        page=call(base+f'?pageSize={size}');assert len(page['items'])==min(25,size) and page['total']==25
     if os.environ.get('MIR2_COMPANION_UI')=='1':
         start(repo/f'src/Admin/bin/{configuration}/net8.0/Mir2.Admin.dll','admin')
         deadline=time.monotonic()+30
@@ -61,6 +63,9 @@ try:
             except OSError:
                 assert time.monotonic()<deadline;time.sleep(.2)
         subprocess.run(['node',str(repo/'tests/Companions/listing-ui.cjs'),str(root),f'http://127.0.0.1:{admin_port}'],env=env,check=True,timeout=90)
+    if os.environ.get('MIR2_COMPANION_MANAGEMENT')=='1':
+        import management
+        management.run(call,root,address,version,env|{'MIR2_MANAGEMENT_ADMIN':f'http://127.0.0.1:{admin_port}'})
     assert call('/management/status')['counts']['accounts']==account_count,'列表检查意外注册了游戏账户'
     assert call(base+'/overview')['settings']['enabled'] is False
     print('PASS 25档案：10/10/5完整分页、七类状态、搜索交集、跨页筛选总数、非法参数拒绝；未开启陪玩或注册账户。',flush=True)

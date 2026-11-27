@@ -358,6 +358,7 @@ namespace Server.MirObjects
                             if (ob.Owner != null && ob.Owner != this && ob.Owner != Master && !IsMasterGroupMember(ob.Owner)) continue;
 
                             ItemObject item = (ItemObject)ob;
+                            if (item.ManuallyDroppedBy(Master as PlayerObject)) continue;
                             if (item.Item != null)
                             {
                                 if (!((PlayerObject)Master).CanGainItem(item.Item)) continue;
@@ -419,6 +420,7 @@ namespace Server.MirObjects
                             if (ob.Owner != null && ob.Owner != this && ob.Owner != Master && !IsMasterGroupMember(ob.Owner)) continue;
 
                             ItemObject item = (ItemObject)ob;
+                            if (item.ManuallyDroppedBy(Master as PlayerObject)) continue;
                             if (item.Item != null)
                             {
                                 if (!((PlayerObject)Master).CanGainItem(item.Item)) continue;
@@ -467,6 +469,7 @@ namespace Server.MirObjects
             {
                 if (targ.CurrentMap != CurrentMap) remove = true;
                 if (targ.Race != ObjectType.Item) remove = true;
+                if (targ is ItemObject item && item.ManuallyDroppedBy(Master as PlayerObject)) remove = true;
                 if (targ.Owner != null && targ.Owner != this && targ.Owner != Master && !IsMasterGroupMember(targ.Owner)) remove = true;
             }
             if (remove || TargetListTargetClean)
@@ -615,6 +618,7 @@ namespace Server.MirObjects
 
                 ItemObject item = (ItemObject)ob;
                 if (item == null) continue;
+                if (item.ManuallyDroppedBy(Master as PlayerObject)) continue;
                 if (item.Item != null)
                 {
                     if (!((PlayerObject)Master).CanGainItem(item.Item)) continue;

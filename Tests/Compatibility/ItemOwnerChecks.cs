@@ -17,15 +17,15 @@ internal static class ItemOwnerChecks
         var item = new UserItem(new ItemInfo { Index = 1, Name = "绑定原物", Type = ItemType.Ring })
             { UniqueID = 100, SoulBoundId = 44, CurrentDura = 1200, MaxDura = 5000 };
         state.User!.Inventory = [item]; state.User.Gold = 1234;
-        check(ItemPresentation.Requirements(item, state).Single(rule => rule.Text.StartsWith("灵魂绑定角色")).Text == "灵魂绑定角色：未知角色",
+        check(ItemPresentation.Requirements(item, state).Single(rule => rule.Text.StartsWith("绑定")).Text == "绑定：未知角色",
             "未查询绑定主人时猜测了姓名");
         state.Apply(new S.UserName { Id = 44, Name = "未请求名称" });
         check(state.ItemOwnerName(44) == "未知角色", "未请求的名称回执写入缓存");
         check(state.RequestItemOwnerName(44), "首次绑定名称查询未登记");
         check(Enumerable.Range(0, 100).All(_ => !state.RequestItemOwnerName(44)), "多物品/反复悬停重复发送未决查名");
         revision = state.InventoryRevision; state.Apply(new S.UserName { Id = 44, Name = "离线主人" });
-        var rule = ItemPresentation.Requirements(item, state).Single(rule => rule.Text.StartsWith("灵魂绑定角色"));
-        check(state.ItemOwnerName(44) == "离线主人" && rule.Text == "灵魂绑定角色：离线主人" && !rule.Met && state.InventoryRevision == revision + 1,
+        var rule = ItemPresentation.Requirements(item, state).Single(rule => rule.Text.StartsWith("绑定"));
+        check(state.ItemOwnerName(44) == "离线主人" && rule.Text == "绑定：离线主人" && !rule.Met && state.InventoryRevision == revision + 1,
             "原姓名回执未刷新绑定详情或放开他人使用权限");
         check(!state.RequestItemOwnerName(44), "已知主人仍重复查询");
         revision = state.InventoryRevision; state.Apply(new S.UserName { Id = 44, Name = "离线主人" });
@@ -51,7 +51,7 @@ internal static class ItemOwnerChecks
         state.Reset(); state.Apply(new S.UserName { Id = 2, Name = "断线迟到" }); state.Apply(User(70, "重新登录"));
         check(state.ItemOwnerName(2) == "未知角色" && state.RequestItemOwnerName(2), "断线重连未清理待查询状态");
         item.SoulBoundId = 70;
-        check(ItemPresentation.Requirements(item, state).Single(requirement => requirement.Text.StartsWith("灵魂绑定角色")) is { Met: true, Text: "灵魂绑定角色：重新登录" },
+        check(ItemPresentation.Requirements(item, state).Single(requirement => requirement.Text.StartsWith("绑定")) is { Met: true, Text: "绑定：重新登录" },
             "名称显示改变原本人的绑定使用资格");
     }
 }

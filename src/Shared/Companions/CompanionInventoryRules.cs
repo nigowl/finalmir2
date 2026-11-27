@@ -3,10 +3,22 @@ namespace Mir2.Companions;
 
 public static class CompanionInventoryRules
 {
+    public static bool WorthAppraising(UserItem item, IReadOnlyList<UserItem?> equipment, MirClass role, MirGender gender, int level, bool caster)
+    {
+        if (!EquipmentAppraisal.Pending(item) || item.Count != 1 || item.CurrentDura == 0 || item.RentalInformation != null ||
+            item.SealedInfo != null || !CompanionSupplyRules.Usable(item.Info, role, gender, level)) return false;
+        if (equipment.Any(worn => worn?.UniqueID == item.UniqueID)) return true;
+        // 只按公开的最高25%加成判断潜力，不能读取尚未鉴定的实际品质来挑选装备。
+        var potential = item.Clone(); potential.EquipmentQuality = EquipmentGrade.Supreme; potential.Identified = true;
+        potential.AddedStats.Add(EquipmentAppraisal.Bonuses(potential));
+        return UpgradeSlot(potential, equipment, role, caster) >= 0;
+    }
+
     public static int UpgradeSlot(UserItem item, IReadOnlyList<UserItem?> equipment, MirClass role, bool caster)
     {
         if (MagicBloodStone.IsStone(item.Info))
-            return equipment.Count > 3 && MagicBloodStone.Remaining(item) > MagicBloodStone.Remaining(equipment[3]) ? 3 : -1;
+            return equipment.Count > 3 && MagicBloodStone.Remaining(equipment[3]) <= 600 &&
+                MagicBloodStone.Remaining(item) > MagicBloodStone.Remaining(equipment[3]) ? 3 : -1;
         int[] slots = item.Info.Type switch
         {
             ItemType.Weapon => [0], ItemType.Armour => [1], ItemType.Helmet => [2], ItemType.Torch => [3],
@@ -28,6 +40,9 @@ public static class CompanionInventoryRules
     {
         if (!CompanionSupplyRules.Usable(item.Info, role, gender, level) || item.Count == 0) return 0;
         var carried = inventory.Concat(equipment).Where(i => i != null).Select(i => i!);
+        if (MagicBloodStone.IsStone(item.Info))
+            return carried.Any(i=>MagicBloodStone.Remaining(i)>600) ? 0 :
+                MagicBloodStone.Remaining(item)>600 && UpgradeSlot(item,equipment,role,Caster(learned))==3 ? 1 : 0;
         if (item.Info.Type == ItemType.Book)
             return item.Info.Shape > 0 && !learned.Contains((Spell)item.Info.Shape) && !carried.Any(i => i.ItemIndex == item.ItemIndex) ? 1 : 0;
         if (item.Info.Type == ItemType.Amulet)
@@ -117,9 +132,10 @@ public static class CompanionInventoryRules
 
     private static bool PlainItem(UserItem? item, ISet<int> protectedItems, int level) =>
         item?.Info is { } info && info.RequiredType == RequiredType.Level && info.RequiredAmount <= level &&
+        !EquipmentAppraisal.Pending(item) && item.EquipmentQuality <= EquipmentGrade.Normal &&
         info.Grade <= ItemGrade.Common && info.Set == ItemSet.None && info.Unique == SpecialItemMode.None &&
         info.Bind == BindMode.None && !info.CanMine && !info.IsFishingRod && !info.NeedIdentify && info.Slots == 0 &&
-        item.Count > 0 && item.Price() > 0 && !protectedItems.Contains(item.ItemIndex) &&
+        item.Count > 0 && item.SellPrice() > 0 && !protectedItems.Contains(item.ItemIndex) &&
         item.SoulBoundId < 0 && item.WeddingRing < 0 && !item.GMMade && !item.Cursed &&
         item.RentalInformation == null && item.ExpireInfo == null && item.SealedInfo == null &&
         item.AddedStats.Count == 0 && item.GemCount == 0 && item.RefinedValue == RefinedValue.None && item.RefineAdded == 0 && item.RefineSuccessChance == 0 &&

@@ -4,26 +4,26 @@ using C = ClientPackets;
 
 public partial class Main
 {
-    private Button heroPortrait = null!;
+    private HeroPortraitButton heroPortrait = null!;
     private readonly Button[] petPortraits = new Button[3];
     private readonly IntelligentCreatureType[] portraitPets = new IntelligentCreatureType[3];
     private readonly uint[] portraitSummons = new uint[3];
     private OptionButton hudHeroMode = null!, hudPetMode = null!;
-    private ProgressBar heroHp = null!, heroMp = null!;
     private Button summonHero = null!;
 
     private void BuildCompanionPortraits()
     {
-        heroPortrait = Portrait("HeroShortcut", 906, 516, () => ToggleSocial(3));
-        heroPortrait.Size = new Vector2(108, 78); heroPortrait.IconAlignment = HorizontalAlignment.Center;
-        heroHp = HeroBar("HeroHP", 596, "a73c34"); heroMp = HeroBar("HeroMP", 604, "356caa");
-        hudHeroMode = HudMode("HeroPortraitMode", 962, 614);
+        heroPortrait = new HeroPortraitButton { Name = "HeroShortcut", Position = new Vector2(906, 516), Size = new Vector2(108, 78) };
+        heroPortrait.Pressed += () => { ToggleSocial(3); _ = PlaySound(10103); }; game.AddChild(heroPortrait);
+        hudHeroMode = HudMode("HeroPortraitMode", 962, 600);
+        hudHeroMode.ThemeTypeVariation = "HeroHudMode";
         foreach (var mode in new[] { HeroBehaviour.Attack, HeroBehaviour.CounterAttack, HeroBehaviour.Follow })
             hudHeroMode.AddItem(mode.ToLocalizedString(), (int)mode);
         hudHeroMode.ItemSelected += index => ChooseHeroBehaviour((HeroBehaviour)hudHeroMode.GetItemId((int)index));
-        summonHero = Button(game, "召唤", 906, 614, 52, () => SetHeroSummoned(State.HeroState != HeroSpawnState.Summoned)); summonHero.Name = "SummonHero";
+        summonHero = Button(game, "召唤", 906, 600, 52, () => SetHeroSummoned(State.HeroState != HeroSpawnState.Summoned)); summonHero.Name = "SummonHero";
         summonHero.AddThemeFontSizeOverride("font_size", ClientUi.Small); summonHero.Size = new Vector2(52, 21);
-        heroPortrait.Visible = heroHp.Visible = heroMp.Visible = summonHero.Visible = hudHeroMode.Visible = false;
+        summonHero.ThemeTypeVariation = "HeroHudButton";
+        heroPortrait.Visible = summonHero.Visible = hudHeroMode.Visible = false;
 
         for (var i = 0; i < petPortraits.Length; i++)
         {
@@ -41,14 +41,6 @@ public partial class Main
             hudPetMode.AddItem(mode switch { PetMode.Both => "攻击", PetMode.MoveOnly => "跟随", PetMode.AttackOnly => "定点", PetMode.None => "待命", _ => "集火" }, (int)mode);
         hudPetMode.TooltipText = "召唤物与英雄共用移动 / 攻击模式；集火时优先攻击主人的目标。拾取宠物不参与战斗。";
         hudPetMode.ItemSelected += index => ChoosePetMode((PetMode)hudPetMode.GetItemId((int)index));
-    }
-
-    private ProgressBar HeroBar(string name, int y, string colour)
-    {
-        var bar = new ProgressBar { Name = name, Position = new Vector2(906, y), ShowPercentage = false, MouseFilter = MouseFilterEnum.Pass };
-        bar.AddThemeStyleboxOverride("background", new StyleBoxFlat { BgColor = new Color("17130f"), BorderColor = new Color("79613b"), BorderWidthLeft = 1, BorderWidthTop = 1, BorderWidthRight = 1, BorderWidthBottom = 1 });
-        bar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = new Color(colour) }); game.AddChild(bar);
-        bar.Size = new Vector2(108, 6); return bar;
     }
 
     private void SetHeroSummoned(bool summoned)
@@ -78,15 +70,18 @@ public partial class Main
     private void RefreshCompanionPortraits()
     {
         if (State.User is not { } user) return;
-        heroPortrait.Visible = heroHp.Visible = heroMp.Visible = summonHero.Visible = hudHeroMode.Visible = user.HasHero;
+        heroPortrait.Visible = summonHero.Visible = hudHeroMode.Visible = user.HasHero;
         var hero = State.Hero;
         var job = hero?.Class ?? State.ActiveHero?.Class; var gender = hero?.Gender ?? State.ActiveHero?.Gender;
-        heroPortrait.Icon = !user.HasHero || job == null ? null : Assets.Sprite("Prguse", 1400 + (int)job + 10 * (int)gender!)?.Texture;
-        heroPortrait.TooltipText = hero != null ? $"{hero.Name} · {hero.Level}级{hero.Class.ToLocalizedString()}\n生命 {hero.HP} · 点击查看英雄" :
+        heroPortrait.Portrait = !user.HasHero || job == null ? null : Assets.Sprite("Prguse", 1400 + (int)job + 10 * (int)gender!)?.Texture;
+        heroPortrait.FrameSource = Assets.Sprite("Prguse", 1)?.Texture;
+        heroPortrait.Level = hero?.Level ?? State.ActiveHero?.Level ?? 0; heroPortrait.SpawnState = State.HeroState;
+        heroPortrait.TooltipText = hero != null ? $"{hero.Name} · {hero.Level}级{hero.Class.ToLocalizedString()} · 点击查看英雄" :
             State.ActiveHero is { } saved ? $"{saved.Name} · {saved.Level}级{saved.Class.ToLocalizedString()} · 休息中" : "暂无英雄资料 · 前往盟重英雄使者管理英雄";
         var stats = State.CalculateHeroStats(); var active = State.HeroState == HeroSpawnState.Summoned;
-        heroHp.MaxValue = Math.Max(1, stats[Stat.HP]); heroHp.Value = active ? hero?.HP ?? 0 : 0; heroHp.TooltipText = $"生命 {heroHp.Value:0}/{heroHp.MaxValue:0}";
-        heroMp.MaxValue = Math.Max(1, stats[Stat.MP]); heroMp.Value = active ? hero?.MP ?? 0 : 0; heroMp.TooltipText = $"魔力 {heroMp.Value:0}/{heroMp.MaxValue:0}";
+        heroPortrait.MaximumHealth = Math.Max(1, stats[Stat.HP]); heroPortrait.Health = active ? hero?.HP ?? 0 : 0;
+        heroPortrait.MaximumMana = Math.Max(1, stats[Stat.MP]); heroPortrait.Mana = active ? hero?.MP ?? 0 : 0;
+        if (active) heroPortrait.TooltipText += $"\n生命 {heroPortrait.Health}/{heroPortrait.MaximumHealth} · 魔力 {heroPortrait.Mana}/{heroPortrait.MaximumMana}";
         var toggling = Environment.TickCount64 < heroToggleAt;
         var recovering = State.HeroState == HeroSpawnState.Dead;
         var recoveryWait = recovering && (!State.HeroRecoveryKnown || State.HeroRecoverySeconds > 0);

@@ -17,7 +17,7 @@ public partial class NativeSmoke
         await Until(() => State.User != null && !Client.World.Loading);
         var shortcuts = new[] { "Group", "Guild", "Friend", "Mail", "Pet", "Hero" }
             .Select(name => (Button)Client.FindChild(name + "Shortcut", true, false)).ToArray();
-        await Until(() => shortcuts.Where(icon => icon != shortcuts[4]).All(icon => icon is OriginalButton original ? Client.Assets.Sprite(original.Library, original.Index) != null : icon.Icon != null));
+        await Until(() => shortcuts.Where(icon => icon != shortcuts[4]).All(icon => icon is OriginalButton original ? Client.Assets.Sprite(original.Library, original.Index) != null : icon is HeroPortraitButton hero ? hero.PortraitReady : icon.Icon != null));
         if (shortcuts[4].Visible) throw new Exception("没有召唤宠物时仍显示宠物头像。");
         var position = State.User!.Location;
         var panel = (Control)Client.FindChild("SocialWindow", true, false);
@@ -157,21 +157,19 @@ public partial class NativeSmoke
         await Until(() => shortcuts[4].Visible && shortcuts[4].Icon != null);
         var toggle = (Button)Client.FindChild("SummonHero", true, false);
         var heroMode = (OptionButton)Client.FindChild("HeroPortraitMode", true, false);
-        var hp = (ProgressBar)Client.FindChild("HeroHP", true, false); var mp = (ProgressBar)Client.FindChild("HeroMP", true, false);
         if (shortcuts.Take(4).Any(button => button.Size != new Vector2(20, 20)) || shortcuts[4].Size != Vector2.One * ClientUi.CompanionPortraitSize ||
-            shortcuts[5].Size != new Vector2(108, 78) || shortcuts[5].Position.Y != 516 || hp.Position.X != shortcuts[5].Position.X || hp.Size.X != shortcuts[5].Size.X ||
-            hp.Position.Y != shortcuts[5].GetRect().End.Y + 2 || hp.Size != new Vector2(108, 6) || mp.Position.Y != hp.GetRect().End.Y + 2 || mp.Size != hp.Size ||
+            shortcuts[5] is not HeroPortraitButton || shortcuts[5].Size != new Vector2(108, 78) || shortcuts[5].Position.Y != 516 ||
             toggle.Position.X != shortcuts[5].Position.X || toggle.GetRect().End.X + 4 != heroMode.Position.X ||
-            toggle.Position.Y != mp.GetRect().End.Y + 4 || toggle.Position.Y != heroMode.Position.Y || toggle.Size != heroMode.Size ||
+            toggle.Position.Y != shortcuts[5].GetRect().End.Y + 6 || toggle.Position.Y != heroMode.Position.Y || toggle.Size != heroMode.Size ||
             heroMode.GetRect().End.X != shortcuts[5].GetRect().End.X || heroMode.GetRect().End.Y > 635 ||
             ((Control)Client.FindChild("PetPortraitMode", true, false)).GetRect().End.Y + 4 != shortcuts[5].Position.Y)
-            throw new Exception($"社交20px方形按钮或英雄大框/血蓝条/底部双控件布局错误：{string.Join(';', shortcuts.Select(button => button.GetRect()))}; HP={hp.GetRect()}, MP={mp.GetRect()}, toggle={toggle.GetRect()}, mode={heroMode.GetRect()}");
+            throw new Exception($"社交20px方形按钮或英雄环形头像/底部双控件布局错误：{string.Join(';', shortcuts.Select(button => button.GetRect()))}; toggle={toggle.GetRect()}, mode={heroMode.GetRect()}");
         foreach (var (name, value) in new[] { ("HeroPortraitMode", (int)HeroBehaviour.Follow), ("PetPortraitMode", (int)PetMode.MoveOnly) })
         {
             var selector = (OptionButton)Client.FindChild(name, true, false);
             var portrait = name == "HeroPortraitMode" ? shortcuts[5] : shortcuts[4];
             if (name == "PetPortraitMode" && (selector.Size.X != portrait.Size.X || selector.Position.X != portrait.Position.X || selector.Position.Y != portrait.GetRect().End.Y + 2))
-                throw new Exception("头像下方模式控件没有等宽对齐，或英雄血蓝条间距异常。");
+                throw new Exception("宠物头像下方模式控件没有等宽对齐。");
             await ClickSelectionControl(selector); await Until(() => selector.GetPopup().Visible);
             selector.GetPopup().EmitSignal(PopupMenu.SignalName.IndexPressed, selector.GetItemIndex(value)); selector.GetPopup().Hide();
             await Until(() => selector.GetSelectedId() == value && (name == "HeroPortraitMode" ? (int)State.User!.HeroBehaviour : (int)State.CurrentPetMode) == value);

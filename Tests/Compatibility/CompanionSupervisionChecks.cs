@@ -70,6 +70,11 @@ internal static class CompanionSupervisionChecks
                 var entries=(System.Collections.IDictionary)typeof(CompanionService).GetField("live",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(service)!;entries[id]=live;
                 typeof(CompanionService).GetMethod("Handle",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(service,[new WorkerEvent("entered",id,Session:"late-enter")]);
                 check(reopened.Get(id).CharacterId==72&&reopened.Get(id).RecoveryAt!=null&&reopened.Get(id).Profile.Enabled,"迟到进入回执被当作全局协议错误，或未保存已经存在的角色绑定");
+                check(service.Overview().Online==0,"只有调度会话、没有原服角色在线时仍计为在线");
+                character.Player=(Server.MirObjects.PlayerObject)RuntimeHelpers.GetUninitializedObject(typeof(Server.MirObjects.PlayerObject));
+                check(service.Overview().Online==1,"原服实际在线的绑定陪玩没有计入总览");
+                entries.Clear();check(service.Overview().Online==1,"实际在线人数依赖工作进程会话而漏计原服角色");
+                character.Player=null;entries[id]=live;
                 reopened.Mutate(reopened.Get(id),n=>{n.Error="";n.RecoveryAt=null;});
                 var ended=Activator.CreateInstance(type,true)!;type.GetField("Session")!.SetValue(ended,"unexpected-stop");entries[id]=ended;
                 typeof(CompanionService).GetMethod("Handle",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(service,[new WorkerEvent("stopped",id,Session:"unexpected-stop")]);

@@ -1,7 +1,7 @@
 """隔离原TCP：满药仍主动跨图购书、学习、补符、换右戒指并真实施法。"""
 import argparse,hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.error,urllib.request
 
-parser=argparse.ArgumentParser(description=__doc__);modes=parser.add_mutually_exclusive_group();modes.add_argument('--blocked-supply',action='store_true');modes.add_argument('--switching-shops',action='store_true');modes.add_argument('--public-services',action='store_true');args=parser.parse_args()
+parser=argparse.ArgumentParser(description=__doc__);modes=parser.add_mutually_exclusive_group();modes.add_argument('--blocked-supply',action='store_true');modes.add_argument('--switching-shops',action='store_true');modes.add_argument('--public-services',action='store_true');modes.add_argument('--appraisal',action='store_true');modes.add_argument('--appraisal-scroll',action='store_true');modes.add_argument('--magic-stones',action='store_true');args=parser.parse_args()
 
 repo=pathlib.Path(__file__).resolve().parents[2]
 root=pathlib.Path(tempfile.mkdtemp(prefix='mir2-companions-development-')).resolve();data=root/'version-a'
@@ -55,10 +55,47 @@ try:
         return row if row['characterId'] and call('/management/admin/characters/'+str(row['characterId']))['online'] else False
     row=wait(entered);cid=row['characterId'];aid=row['accountId'];command('stop')
     wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
-    subprocess.run(['dotnet',str(compat),'--companion-development',str(cid)]+(['--public-companions'] if args.public_services else ['--blocked-supply'] if args.blocked_supply else ['--switching-shops'] if args.switching_shops else []),cwd=root,env=env,check=True)
+    subprocess.run(['dotnet',str(compat),'--companion-appraisal' if args.appraisal or args.appraisal_scroll or args.magic_stones else '--companion-development',str(cid)]+(['--stone'] if args.magic_stones else ['--scroll'] if args.appraisal_scroll else ['--public-companions'] if args.public_services else ['--blocked-supply'] if args.blocked_supply else ['--switching-shops'] if args.switching_shops else []),cwd=root,env=env,check=True)
     fixture=json.loads((data/'runtime/companion-development-fixture.json').read_text());start()
     assert not call('/management/settings')['values']['autoLearnSkills']
     initial=call('/management/admin/characters/'+str(cid));assert initial['spells']==[] and initial['experience']==0
+    if args.magic_stones:
+        rate=call('/management/settings')['values']['publicShopPriceRate'];command('start');samples=[]
+        def restored():
+            detail=call(base+'/'+ident);character=call('/management/admin/characters/'+str(cid));rt=detail.get('runtime') or {}
+            assert not detail['row']['lastError'],detail
+            samples.append({'detail':detail,'character':character});(root/'magic-stone.json').write_text(json.dumps(samples,ensure_ascii=False))
+            return character if rt and rt['mp']==rt['maxMp'] and any(item['itemId']==fixture['stone'] and item['grid']=='Equipment' and item['slot']==3 for item in character['inventory']) else False
+        character=wait(restored,60);command('stop');wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
+        subprocess.run(['dotnet',str(compat),'--companion-appraisal',str(cid),'--stone','--audit'],cwd=root,env=env,check=True)
+        audit=json.loads((data/'runtime/companion-stone-audit.json').read_text())
+        assert audit['Gold']==1000000-int(10000*rate) and 0<audit['Remaining']<audit['Capacity']==100000,audit
+        start();stored=call('/management/admin/characters/'+str(cid));assert stored['inventory']==character['inventory']
+        command('start');time.sleep(3);assert call('/management/admin/accounts/'+str(aid))['gold']==audit['Gold'],'魔血石被重复采购'
+        command('stop');wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
+        print('PASS 原TCP魔血石：富裕角色真实采购/火把槽穿戴、原引擎消耗储量回蓝，价格、编号和储量重启保持，不重复囤积。',flush=True)
+        raise SystemExit(0)
+    if args.appraisal or args.appraisal_scroll:
+        command('start');samples=[]
+        def appraised():
+            detail=call(base+'/'+ident);character=call('/management/admin/characters/'+str(cid))
+            assert not detail['row']['lastError'],detail
+            samples.append({'detail':detail,'character':character});(root/'appraisal.json').write_text(json.dumps(samples,ensure_ascii=False))
+            done=any(e['text']=='appraise:成功' for e in detail['events'])
+            return character if done and any(int(item['uniqueId'])==fixture['weapon'] and item['grid']=='Equipment' for item in character['inventory']) else False
+        character=wait(appraised,60)
+        assert call('/management/admin/accounts/'+str(aid))['gold']==10000-fixture['cost']
+        command('stop');wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
+        subprocess.run(['dotnet',str(compat),'--companion-appraisal',str(cid),'--audit'],cwd=root,env=env,check=True)
+        audit=json.loads((data/'runtime/companion-appraisal-audit.json').read_text())
+        assert audit=={'Gold':10000-fixture['cost'],'UniqueID':fixture['weapon'],'Identified':True,'MinDC':3,'MaxDC':3},audit
+        start();stored=call('/management/admin/characters/'+str(cid));assert stored['inventory']==character['inventory']
+        command('start');time.sleep(3);assert call('/management/admin/accounts/'+str(aid))['gold']==audit['Gold']
+        assert not any(e['text']=='appraise:成功' for e in call(base+'/'+ident)['events']),'重启后重复鉴定'
+        command('stop');wait(lambda:not call('/management/admin/characters/'+str(cid))['online']);stop()
+        with sqlite3.connect(data/'runtime/mir2.sqlite3') as db:assert db.execute('pragma integrity_check').fetchone()[0]=='ok'
+        print('PASS 原TCP自动鉴定：'+('已有卷轴一次消耗' if args.appraisal_scroll else '实际NPC入口、报价和二次确认')+'，原编号卸装/鉴定/重穿，实际品质属性、费用及重启不重复。',flush=True)
+        raise SystemExit(0)
     if args.public_services:
         assert sum(i['count'] for i in initial['inventory'] if i['grid']=='Inventory' and i['name']=='隔离任务材料')==7
         protected=[(i['uniqueId'],i['count']) for i in initial['inventory'] if i['name']=='隔离任务材料']
@@ -70,7 +107,7 @@ try:
             assert not any(i['name']=='隔离未达技能等级书' for i in c['inventory']),'购买了实际技能等级不足的便宜书'
             assert c['mapId']==initial['mapId'] and c['x']==initial['x'] and c['y']==initial['y'],'商城/回收仍导致角色走路'
             assert [(i['uniqueId'],i['count']) for i in c['inventory'] if i['name']=='隔离任务材料']==protected,'回收了未来任务材料'
-            return c if 'SoulFireBall' in c['spells'] and any(i['itemId']==fixture['amulet'] and i['count']==500 for i in c['inventory']) and any(i['itemId']==fixture['red'] and i['count']>=12 for i in c['inventory']) else False
+            return c if any(skill['spell']==64 for skill in (d.get('runtime') or {}).get('combat',{}).get('skills',[])) and any(i['itemId']==fixture['amulet'] and i['count']==500 for i in c['inventory']) and any(i['itemId']==fixture['red'] and i['count']>=12 for i in c['inventory']) else False
         c=wait(supplied,60)
         command('pause');wait(lambda:call(base+'/'+ident)['row']['state']=='已暂停')
         c=call('/management/admin/characters/'+str(cid));events=call(base+'/'+ident)['events']

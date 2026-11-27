@@ -10,7 +10,7 @@ internal static class CompanionProtectionChecks
 {
     public static async Task Run(Action<bool,string> check)
     {
-        foreach(var mode in new[]{"waiting","crowd","rejected","unknown","random","public-supply-crowd","public-supply-low","public-supply-healthy"})await Scenario(check,mode);
+        foreach(var mode in new[]{"waiting","crowd","rejected","unknown","random","death-potion","death-scroll","public-supply-crowd","public-supply-low","public-supply-healthy"})await Scenario(check,mode);
     }
 
     private static async Task Scenario(Action<bool,string> check,string mode)
@@ -23,6 +23,7 @@ internal static class CompanionProtectionChecks
             ((IPEndPoint)listener.LocalEndpoint).Port,"test","protection-check",CompanionProtocol.Fingerprint,"","","",1),
             e=>{events.Enqueue(e);return Task.CompletedTask;}){Paused=true};
         var random=mode=="random";var supply=mode.StartsWith("public-supply",StringComparison.Ordinal);
+        var death=mode.StartsWith("death-",StringComparison.Ordinal);
         session.Control(new("knowledge",Knowledge:new("protect",1,false,supply,false,[],[],[],[],NoTownTeleport:random||supply,NoRandom:!random)));
         session.Begin();using var peer=await listener.AcceptTcpClientAsync(timeout.Token);var stream=peer.GetStream();
         try
@@ -33,8 +34,10 @@ internal static class CompanionProtectionChecks
             check(await Read()==(short)ClientPacketIds.StartGame,"保护检查没有进入角色");
             await Send(new S.BaseStatsInfo{Stats=new BaseStats(MirClass.Warrior){Stats=[new(Stat.HP){Base=100}]}});
             var info=new ItemInfo{Index=9,Name=random?"测试随机卷":"测试回城卷",Type=ItemType.Scroll,Shape=(short)(random?2:1)};
+            if(mode=="death-potion"){info.Type=ItemType.Potion;info.Shape=0;info.Stats[Stat.HP]=30;}
             await Send(new S.NewItemInfo{Info=info});await Send(new S.MapInformation{MapIndex=1,FileName="Unused"});
             await Send(new S.UserInformation{ObjectID=1,Name=profile.Name,HP=100,MP=100,Location=supply?new(5,5):default,Inventory=[new UserItem(info){UniqueID=99,Count=2}],Equipment=new UserItem[14],QuestInventory=[]});
+            check(await Read()==(short)ClientPacketIds.ItemPricesRequest,"陪玩未请求当前版本价格");
             check(await Read()==(short)ClientPacketIds.SwitchGroup,"保护检查组队设置错误");
             while(!events.Any(e=>e.State=="已暂停"))await Task.Delay(10,timeout.Token);
             // 模拟已有任务的15秒无进度等待；保命不能共用该延时。
@@ -70,8 +73,17 @@ internal static class CompanionProtectionChecks
             check(await Read()==(short)ClientPacketIds.UseItem,"等待任务或多怪承伤时没有发送对应保命卷轴");
             check(Environment.TickCount64-began<700,"保护仍被发展动作延时阻挡");
             check((long)next.GetValue(session)!>Environment.TickCount64,"药卷保护篡改了发展动作冷却");
-            if(mode!="unknown")await Send(new S.UseItem{Grid=MirGridType.Inventory,UniqueID=99,Success=mode!="rejected"});
-            if(mode is "unknown" or "rejected")
+            if(death){await Send(new S.HealthChanged{HP=0,MP=100});await Send(new S.Death());}
+            if(mode!="unknown")await Send(new S.UseItem{Grid=MirGridType.Inventory,UniqueID=99,Success=mode!="rejected"&&!death});
+            if(mode=="death-potion")
+            {
+                await Send(new S.GroupInvite{Name="死亡药品拒绝屏障"});check(await Read()==(short)ClientPacketIds.GroupInvite,"死亡药品拒绝后未继续接收原回执");
+                check(!session.Finished&&!events.Any(e=>e.Kind=="failed"),"死亡时普通药品明确拒绝被误判为永久停用");
+                check((int)typeof(CompanionSession).GetField("deaths",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(session)! == 1,"死亡药品拒绝清除了死亡次数");
+                check(events.Any(e=>e.Kind=="protection-rejected"&&e.Reason.Contains("已确认死亡")),"死亡药品拒绝未记录明确原因");
+                check(await ReadAvailable()==null,"死亡药品被重发或跳过原复活等待");
+            }
+            else if(mode is "unknown" or "rejected" or "death-scroll")
             {
                 while(!session.Finished)await Task.Delay(10,timeout.Token);
                 check(events.Any(e=>e.Kind=="failed"&&e.Reason.Contains(mode=="unknown"?"回执超时":"拒绝自动保护")),"拒绝/超时没有停用并保留原错误");
@@ -103,6 +115,7 @@ internal static class CompanionProtectionChecks
             }
         }
         finally{await session.Stop();}
+        async Task<short?> ReadAvailable(){await Task.Delay(150,timeout.Token);return stream.DataAvailable?await Read():null;}
         Task Send(Packet packet)=>stream.WriteAsync(packet.GetPacketBytes().ToArray(),timeout.Token).AsTask();
         async Task<short?> Read()
         {

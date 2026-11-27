@@ -13,6 +13,7 @@ public sealed class Actor
     public int LastMoveDelay => (Kind == ObjectType.Player ? PlayerTiming.MoveMilliseconds : MoveDuration) * (movementSlowed ? 2 : 1);
     public uint Id;
     public string Name = "";
+    public string NpcRole = "";
     public ObjectType Kind;
     public uint Gold;
     public Point Location, Previous;
@@ -36,6 +37,7 @@ public sealed class Actor
     private double movementPhase;
     public bool Dead, Hidden, Harvested, RidingMount;
     public int Image, Armour, Weapon = -1, Hair;
+    public EquipmentGlow EquipmentGlow;
     public byte AI;
     public uint MasterObjectId;
     public PoisonType Poison;
@@ -109,7 +111,10 @@ public sealed partial class GameState
     public S.UserInformation? User;
     public S.MapInformation? Map;
     public readonly Dictionary<uint, Actor> Actors = new();
+    public readonly HashSet<uint> ManuallyDropped = new();
+    public bool ManualDropHistoryFull { get; private set; }
     public readonly Dictionary<int, ItemInfo> Items = new();
+    public readonly HashSet<string> MaterialItemNames = new(StringComparer.Ordinal);
     public readonly HashSet<Spell> ActiveSkills = new();
     public UserItem[] Storage = [];
     public bool StorageActive, StorageUnlocked;
@@ -129,6 +134,7 @@ public sealed partial class GameState
     public decimal InventoryWeight => User?.Inventory.Where(item => item?.Info != null).Sum(item => item.Weight) ?? 0;
     public uint NpcId;
     public BaseStats? BaseStats;
+    private readonly Dictionary<int, ItemPrice> itemPrices = new();
     public int InventoryRevision;
     public event Action<string>? Message;
     public event Action<string, ChatType>? ChatMessage;
@@ -141,7 +147,7 @@ public sealed partial class GameState
     public void Reset()
     {
         PlayerTiming = PlayerActionTiming.Default;
-        ClearCharacter(); Items.Clear(); QuestDefinitions.Clear(); Characters.Clear();
+        ClearCharacter(); itemPrices.Clear(); Items.Clear(); MaterialItemNames.Clear(); QuestDefinitions.Clear(); Characters.Clear();
     }
     private void ClearCharacter()
     {
@@ -149,6 +155,7 @@ public sealed partial class GameState
         InTrapRock = false; OpenDoors.Clear();
         PublicShop = null; PublicShopRevision++; QuestNavigation.Clear();
         User = null; Map = null; Actors.Clear(); ActiveSkills.Clear(); DisabledSkills.Clear(); UserBuffs.Clear(); BaseStats = null; NpcId = 0;
+        ManuallyDropped.Clear(); ManualDropHistoryFull = false;
         Storage = []; StorageActive = StorageUnlocked = false;
         Quests.Clear(); CompletedQuests.Clear();
         ClearGroup(); AllowGroup = false; GroupInvitation = ""; Ping = 0;
@@ -188,7 +195,13 @@ public sealed partial class GameState
             case S.NewCharacterSuccess p: Characters.Add(p.CharInfo); break;
             case S.DeleteCharacterSuccess p:
                 Characters.RemoveAll(character => character.Index == p.CharacterIndex); break;
+            case S.ItemPriceChanged p:
+                if (p.Configured) itemPrices[p.Prices.ItemIndex] = p.Prices;
+                else itemPrices.Remove(p.Prices.ItemIndex);
+                if (Items.TryGetValue(p.Prices.ItemIndex, out var pricedInfo)) pricedInfo.TradingPrices = p.Configured ? p.Prices : null;
+                InventoryRevision++; break;
             case S.NewItemInfo p:
+                p.Info.TradingPrices = itemPrices.GetValueOrDefault(p.Info.Index);
                 Items[p.Info.Index] = p.Info;
                 if (User != null) { Bind(User.Inventory); Bind(User.Equipment); Bind(User.QuestInventory); }
                 if (Hero != null) { Bind(Hero.Inventory); Bind(Hero.Equipment); SocialRevision++; }
@@ -245,6 +258,7 @@ public sealed partial class GameState
                     Location = p.Location, Previous = p.Location, Direction = p.Direction, Gender = p.Gender, Class = p.Class,
                     Armour = p.Armour, Weapon = p.Weapon, Hair = p.Hair, Dead = p.Dead, Hidden = p.Hidden, Colour = p.NameColour, Poison = p.Poison, RidingMount = p.RidingMount,
                     CurrentHealth = previousPlayer?.Kind == ObjectType.Player ? previousPlayer.CurrentHealth : null,
+                    EquipmentGlow = previousPlayer?.Kind == ObjectType.Player ? previousPlayer.EquipmentGlow : EquipmentGlow.None,
                     MaximumHealth = previousPlayer?.Kind == ObjectType.Player ? previousPlayer.MaximumHealth : null }; break;
             case S.MountUpdate p:
                 if (Actors.TryGetValue(p.ObjectID, out var mounted)) mounted.RidingMount = p.RidingMount;
@@ -264,7 +278,8 @@ public sealed partial class GameState
             case S.Poisoned p: if (Me != null) Me.Poison = p.Poison; break;
             case S.ObjectPoisoned p: if (Actors.TryGetValue(p.ObjectID, out var poisoned)) poisoned.Poison = p.Poison; break;
             case S.ObjectNPC p:
-                Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = p.Name, Kind = ObjectType.Merchant,
+                var npcLabel = NpcLabels.Read(p.Name);
+                Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = npcLabel.Name, NpcRole = npcLabel.Role, Kind = ObjectType.Merchant,
                     Location = p.Location, Previous = p.Location, Direction = p.Direction, Image = p.Image, Colour = p.NameColour }; break;
             case S.ObjectItem p:
                 Actors[p.ObjectID] = new Actor { Id = p.ObjectID, Name = p.Name, Kind = ObjectType.Item, Location = p.Location, Image = p.Image, Colour = p.NameColour }; break;
@@ -292,6 +307,16 @@ public sealed partial class GameState
             case S.ObjectShow p: SetActorShown(p.ObjectID, true); break;
             case S.PlayerUpdate p:
                 if (Actors.TryGetValue(p.ObjectID, out var look)) { look.Armour = p.Armour; look.Weapon = p.Weapon; } break;
+            case S.ObjectEquipmentGlow p:
+                if ((p.Glow & ~(EquipmentGlow.Weapon | EquipmentGlow.Equipment)) == 0 && Actors.TryGetValue(p.ObjectID, out var glowing) && glowing.Kind == ObjectType.Player)
+                    glowing.EquipmentGlow = p.Glow;
+                break;
+            case S.ManualItemDropped p when p.ObjectID != 0:
+                if (ManuallyDropped.Contains(p.ObjectID)) break;
+                if (ManuallyDropped.Count < 4096) ManuallyDropped.Add(p.ObjectID);
+                else if (!ManualDropHistoryFull)
+                { ManualDropHistoryFull = true; NotifyMessage("手动丢弃记录已达上限，自动拣取暂停；请重新登录。", ChatType.Hint); }
+                break;
             case S.HealthChanged p: if (User != null) { User.HP = p.HP; User.MP = p.MP; } break;
             case S.BaseStatsInfo p: BaseStats = p.Stats; break;
             case S.GainExperience p:
@@ -308,7 +333,7 @@ public sealed partial class GameState
                 AddItem(p.Item);
                 NotifyItemMessage($"获得 {p.Item.Info?.FriendlyName ?? "物品"} ×{gainedCount}", ChatType.System2); InventoryRevision++; break;
             case S.DeleteItem p:
-                if (p.Count > 0 && User?.Inventory.Concat(User.Equipment).Any(item => item?.UniqueID == p.UniqueID) == true)
+                if (p.Count > 0 && User?.Inventory.Concat(User.QuestInventory).Concat(User.Equipment).Any(item => item?.UniqueID == p.UniqueID) == true)
                     NotifyItemMessage($"扣除物品：{ItemName(p.UniqueID)} ×{p.Count}。", ChatType.System2);
                 Remove(p.UniqueID, p.Count); break;
             case S.UseItem p:
@@ -359,11 +384,11 @@ public sealed partial class GameState
                 { var index = Array.FindIndex(array, item => item?.UniqueID == p.Item.UniqueID); if (index >= 0) { array[index] = p.Item; SocialRevision++; } }
                 InventoryRevision++; break;
             case S.DuraChanged p:
-                var worn = User?.Inventory.Concat(User.Equipment).Concat(Hero?.Equipment ?? []).FirstOrDefault(i => i?.UniqueID == p.UniqueID);
+                var worn = User?.Inventory.Concat(User.QuestInventory).Concat(User.Equipment).Concat(Hero?.Equipment ?? []).FirstOrDefault(i => i?.UniqueID == p.UniqueID);
                 if (worn != null) worn.CurrentDura = p.CurrentDura;
                 InventoryRevision++; break;
             case S.ItemRepaired p:
-                var repaired = User?.Inventory.Concat(User.Equipment).Concat(Hero?.Equipment ?? []).FirstOrDefault(i => i?.UniqueID == p.UniqueID);
+                var repaired = User?.Inventory.Concat(User.QuestInventory).Concat(User.Equipment).Concat(Hero?.Equipment ?? []).FirstOrDefault(i => i?.UniqueID == p.UniqueID);
                 if (repaired != null) { repaired.CurrentDura = p.CurrentDura; repaired.MaxDura = p.MaxDura; NotifyItemMessage($"修理成功：{repaired.Info?.FriendlyName}，耐久 {p.CurrentDura / 1000f:0.###}/{p.MaxDura / 1000f:0.###}。", ChatType.System2); }
                 InventoryRevision++; break;
             case S.MoveItem p:
@@ -413,12 +438,13 @@ public sealed partial class GameState
                 if (p.Result == 4) StorageUnlocked = StorageActive && !p.Removing;
                 InventoryRevision++; break;
             case S.StoreItem p:
-                if (p.Success) Transfer(User?.Inventory, Storage, p.From, p.To);
-                else NotifyMessage("存入失败，请检查仓库解锁、物品限制、格位及 NPC 距离。", ChatType.Hint);
+                if (p.Success) Transfer(p.From < 0 ? User?.QuestInventory : User?.Inventory, Storage, p.From < 0 ? ~p.From : p.From, p.To);
+                else NotifyMessage("存入失败，请检查仓库解锁、物品限制及格位。", ChatType.Hint);
                 InventoryRevision++; break;
             case S.TakeBackItem p:
-                if (p.Success) Transfer(Storage, User?.Inventory, p.From, p.To);
-                else NotifyMessage("取出失败，请检查背包空位及 NPC 距离。", ChatType.Hint);
+                if (p.Success && p.To == -1 && ValidSlot(Storage, p.From)) Storage[p.From] = null!;
+                else if (p.Success) Transfer(Storage, User?.Inventory, p.From, p.To);
+                else NotifyMessage("取出失败，请检查仓库解锁、背包空位及负重。", ChatType.Hint);
                 InventoryRevision++; break;
             case S.NewQuestInfo p:
                 QuestDefinitions[p.Info.Index] = p.Info;
@@ -435,7 +461,7 @@ public sealed partial class GameState
                 var questCount = p.Item.Count;
                 if (User != null && p.Item.Info != null && !Stack(p.Item, User.QuestInventory))
                 { var slot = Array.IndexOf(User.QuestInventory, null); if (slot >= 0) User.QuestInventory[slot] = p.Item; }
-                NotifyItemMessage($"任务物品：{p.Item.Info?.FriendlyName ?? "物品"} ×{questCount}，已放入任务物品栏。", ChatType.System2);
+                NotifyItemMessage($"材料物品：{p.Item.Info?.FriendlyName ?? "物品"} ×{questCount}，已放入材料物品栏。", ChatType.System2);
                 InventoryRevision++; break;
             case S.DeleteQuestItem p:
                 RemoveFrom(User?.QuestInventory, p.UniqueID, p.Count); InventoryRevision++; break;
@@ -501,11 +527,11 @@ public sealed partial class GameState
         Bind(item.Slots);
     }
     private void Bind(UserItem[]? array) { if (array != null) foreach (var item in array) Bind(item); }
-    private string ItemName(ulong id) => User?.Inventory.Concat(User.Equipment).Concat(Hero?.Equipment ?? []).FirstOrDefault(item => item?.UniqueID == id)?.Info?.FriendlyName ?? "物品";
+    private string ItemName(ulong id) => User?.Inventory.Concat(User.QuestInventory).Concat(User.Equipment).Concat(Hero?.Equipment ?? []).FirstOrDefault(item => item?.UniqueID == id)?.Info?.FriendlyName ?? "物品";
     private void Remove(ulong id, int count)
     {
         if (User == null) return;
-        foreach (var array in new[] { User.Inventory, User.Equipment, Hero?.Equipment, TradeItems }) RemoveFrom(array, id, count);
+        foreach (var array in new[] { User.Inventory, User.QuestInventory, User.Equipment, Hero?.Equipment, TradeItems }) RemoveFrom(array, id, count);
         RefreshLooks(); InventoryRevision++;
     }
     private static bool ValidSlot(UserItem[]? grid, int slot) => grid != null && (uint)slot < grid.Length;

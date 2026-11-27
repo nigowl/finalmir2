@@ -25,10 +25,12 @@ public static class ItemPresentation
     public static string Details(UserItem item) =>
         (MagicBloodStone.IsStone(item.Info) ? $"魔血储量 {MagicBloodStone.Remaining(item):N0}/{item.Info.Stats[Stat.MagicBlood]:N0} · " :
             item.Info.Type == ItemType.Amulet ? $"剩余次数 {item.Count:N0} · " :
-            item.CurrentDura != 0 || item.MaxDura != 0 ? $"耐久 {item.CurrentDura / 1000f:0.###}/{item.MaxDura / 1000f:0.###} · " : "") +
+            item.CurrentDura != 0 || item.MaxDura != 0 ? item.Info.IsEquipment ? $"耐久 {item.CurrentDura / 1000}/{item.MaxDura / 1000} · " :
+                $"耐久 {item.CurrentDura / 1000f:0.###}/{item.MaxDura / 1000f:0.###} · " : "") +
         (item.Count > 1 && item.Info.Type is not (ItemType.Amulet or ItemType.Bait) ? $"单重 {item.Info.UnitWeight:0.##} · 总重 {item.Weight:0.##}" : $"重量 {item.Weight:0.##}");
 
-    public static string Category(UserItem item) => item.Info?.Type == ItemType.Quest ? "任务物品 · 专用任务栏" : $"类型 {item.Info?.Type.ToLocalizedString()}";
+    public static string Category(UserItem item) => item.Info?.Type == ItemType.Quest ? "任务物品 · 材料物品栏" :
+        $"{item.Info?.Type.ToLocalizedString()}" + (item.Info?.IsEquipment == true ? $" · {EquipmentAppraisal.Name(item)}" : "");
 
     private static readonly (Stat min, Stat max, string name)[] Ranges =
     [(Stat.MinAC, Stat.MaxAC, "防御"), (Stat.MinMAC, Stat.MaxMAC, "魔御"), (Stat.MinDC, Stat.MaxDC, "攻击"),
@@ -44,26 +46,46 @@ public static class ItemPresentation
         ItemType.Boots => [11], ItemType.Stone => [12], ItemType.Mount => [13], _ => []
     };
 
-    public static IEnumerable<string> Stats(UserItem item)
+    public static IEnumerable<string> Stats(UserItem item) => StatLines(item).Select(line => string.Concat(line.Select(part => part.Text)));
+
+    public static IEnumerable<(string Text, bool Quality)[]> StatLines(UserItem item)
     {
         if (item.Info == null) yield break;
-        foreach (var (min, max, name) in Ranges)
-            if (item.GetTotal(min) != 0 || item.GetTotal(max) != 0) yield return $"{name} {item.GetTotal(min)}–{item.GetTotal(max)}";
-        foreach (var stat in Enum.GetValues<Stat>().Where(stat => stat > Stat.MaxSC && stat != Stat.MagicBlood && item.GetTotal(stat) != 0))
-            yield return $"{stat.ToLocalizedString()} {item.GetTotal(stat)}";
+        var bonuses = item.Identified ? EquipmentAppraisal.Bonuses(item) : new Stats();
+        var lines = Ranges.Select(range => (range.min, max: (Stat?)range.max, range.name))
+            .Concat(Enum.GetValues<Stat>().Where(stat => stat > Stat.MaxSC && stat != Stat.MagicBlood)
+                .Select(stat => (stat, (Stat?)null, stat.ToLocalizedString())));
+        foreach (var (min, max, name) in lines)
+        {
+            if (item.GetTotal(min) == 0 && (!max.HasValue || item.GetTotal(max.Value) == 0)) continue;
+            var parts = new List<(string Text, bool Quality)> { (name + "：", false) };
+            void Value(Stat stat)
+            {
+                var bonus = bonuses[stat];
+                parts.Add(($"{item.GetTotal(stat) - bonus}", false));
+                if (bonus > 0) parts.Add(($"(+{bonus})", true));
+            }
+            Value(min);
+            if (max.HasValue) { parts.Add((" - ", false)); Value(max.Value); }
+            yield return parts.ToArray();
+        }
     }
 
     public static IEnumerable<(string text, int change)> Comparison(UserItem item, UserItem worn)
+        => ComparisonLines(item, worn).Select(line => (string.Concat(line.Select(part => part.Text)),
+            line.Any(part => part.Change > 0) && line.Any(part => part.Change < 0) ? 0 : line.Sum(part => part.Change)));
+
+    public static IEnumerable<(string Text, int Change)[]> ComparisonLines(UserItem item, UserItem worn)
     {
         foreach (var (min, max, name) in Ranges)
         {
             var low = item.GetTotal(min) - worn.GetTotal(min); var high = item.GetTotal(max) - worn.GetTotal(max);
-            if (low != 0 || high != 0) yield return ($"{name} {low:+0;-0;0} / {high:+0;-0;0}", low != 0 && high != 0 && Math.Sign(low) != Math.Sign(high) ? 0 : low + high);
+            if (low != 0 || high != 0) yield return [(name + " ", 0), ($"{low:+0;-0;0}", low), (" / ", 0), ($"{high:+0;-0;0}", high)];
         }
         foreach (var stat in Enum.GetValues<Stat>().Where(stat => stat > Stat.MaxSC && stat != Stat.MagicBlood))
         {
             var difference = item.GetTotal(stat) - worn.GetTotal(stat);
-            if (difference != 0) yield return ($"{stat.ToLocalizedString()} {difference:+0;-0;0}", difference);
+            if (difference != 0) yield return [(stat.ToLocalizedString() + " ", 0), ($"{difference:+0;-0;0}", difference)];
         }
     }
 
@@ -83,19 +105,19 @@ public static class ItemPresentation
             RequiredType.MinSC => Stat.MinSC, RequiredType.MaxSC => Stat.MaxSC, _ => (Stat?)null
         };
         if (info.RequiredAmount > 0 || info.RequiredType == RequiredType.MaxLevel)
-            yield return new($"要求{info.RequiredType.ToLocalizedString()} {info.RequiredAmount}", info.RequiredType == RequiredType.MaxLevel ? user.Level <= info.RequiredAmount :
+            yield return new($"{info.RequiredType.ToLocalizedString()} {info.RequiredAmount}", info.RequiredType == RequiredType.MaxLevel ? user.Level <= info.RequiredAmount :
                 (requiredStat.HasValue ? stats[requiredStat.Value] : user.Level) >= info.RequiredAmount);
         if (info.RequiredClass != RequiredClass.None && (int)info.RequiredClass != 31)
             yield return new($"职业 {info.RequiredClass.ToLocalizedString()}", info.RequiredClass.HasFlag((RequiredClass)(1 << (int)user.Class)));
         if (info.RequiredGender != RequiredGender.None)
             yield return new($"性别 {info.RequiredGender.ToLocalizedString()}", info.RequiredGender.HasFlag(user.Gender == MirGender.Male ? RequiredGender.Male : RequiredGender.Female));
-        if (item.SoulBoundId >= 0) yield return new($"灵魂绑定角色：{state.ItemOwnerName(item.SoulBoundId)}", item.SoulBoundId == state.User?.RealId);
+        if (item.SoulBoundId >= 0) yield return new($"绑定：{state.ItemOwnerName(item.SoulBoundId)}", item.SoulBoundId == state.User?.RealId);
         var slots = Slots(info.Type);
         if (slots.Length == 0) yield break;
         var slot = slots.FirstOrDefault(slot => user.Equipment.ElementAtOrDefault(slot) == null, slots[^1]);
         var hand = info.Type is ItemType.Weapon or ItemType.Torch;
         var weight = item.Weight - (user.Equipment.ElementAtOrDefault(slot)?.Weight ?? 0) + EquipmentWeight(user, hand);
-        yield return new($"{(hand ? "手持" : "穿戴")}负重 {weight:0.##}/{stats[hand ? Stat.HandWeight : Stat.WearWeight]}", weight <= stats[hand ? Stat.HandWeight : Stat.WearWeight]);
+        yield return new($"负重 {weight:0.##}/{stats[hand ? Stat.HandWeight : Stat.WearWeight]}", weight <= stats[hand ? Stat.HandWeight : Stat.WearWeight]);
         if (hero && info.Bind.HasFlag(BindMode.NoHero)) yield return new("英雄不可使用", false);
         if (item.RentalInformation?.BindingFlags != null && item.RentalInformation.BindingFlags != BindMode.None) yield return new("租赁物品当前不可使用", false);
     }

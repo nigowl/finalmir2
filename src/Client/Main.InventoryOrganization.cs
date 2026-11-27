@@ -8,7 +8,7 @@ public partial class Main
     private void ProcessInventoryOrganization(long now)
     {
         var busy = State.User == null || State.Me?.Dead != false || World.Loading || State.Trading || State.StorageActive || GuildStorageOpen ||
-            npc.Visible || publicShop.Visible || publicPurchases.Pending || npcTransactionPending || SkillPreparationBusy || automation.PendingItem != 0 ||
+            appraisalPending != null || selectingAppraisalScroll != 0 || npc.Visible || publicShop.Visible || publicPurchases.Pending || npcTransactionPending || SkillPreparationBusy || automation.PendingItem != 0 ||
             recyclePending != null || heroItemPending != null || social.Visible || HeroInventoryContext || pendingDrop != 0 || draggedItem != 0 || dropDialog.Visible || storageBusy || tradeBusy || pendingRepair != 0;
         if (inventoryOrganizer.Begin(State.InventoryRevision, now, busy))
         {

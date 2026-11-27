@@ -5,6 +5,9 @@ namespace Server.ConsoleHost;
 
 public sealed partial class CompanionService
 {
+    private readonly Dictionary<Guid,DateTimeOffset> llmGoalCooldown=[];
+    private readonly HashSet<Guid> llmGoalPending=[];
+    private readonly Dictionary<Guid,(string Version,DateTimeOffset Until)> llmBackoff=[];
     private void Handle(WorkerEvent e)
     {
         if(e.Kind=="hello")
@@ -15,12 +18,24 @@ public sealed partial class CompanionService
         if(e.Kind=="worker-failed")throw new IOException(e.Reason);
         if(!live.TryGetValue(e.Id,out var current)||e.Session!=current.Session)return;
         var r=store.Get(e.Id);current.Heartbeat=DateTimeOffset.UtcNow;
-        if(e.Kind is "llm"or"llm-goal")RequestLlm(e,r);
-        if(e.Kind is "status"or"heartbeat" && current.StoppingAt==null) {current.State=e.State;current.Reason=e.Reason;}
-        if(e.Kind=="goal-blocked"&&current.Goal?.Key==e.Text&&e.Text.Length>0)
+        if(e.Kind is "llm"or"llm-goal"or"llm-duel"){RequestLlm(e,r,current);return;}
+        if(e.Kind=="llm-outcome")
         {
-            if(current.BlockedGoals.Count>=128)current.BlockedGoals.Remove(current.BlockedGoals.MinBy(pair=>pair.Value).Key);
-            current.BlockedGoals[e.Text]=DateTimeOffset.UtcNow.AddSeconds(90);current.NextKnowledge=DateTimeOffset.MinValue;
+            if(e.State is "已采用" or "未采用" or "待执行")AddEvent(current,new(DateTimeOffset.UtcNow,"llm-log",e.State,e.Reason,e.Text));
+            return;
+        }
+        if(e.Kind is "status"or"heartbeat" && current.StoppingAt==null) {current.State=e.State;current.Reason=e.Reason;}
+        if(e.Kind is "goal-blocked" or "combat-blocked"&&current.Goal?.Key==e.Text&&e.Text.Length>0)
+        {
+            var keys=new List<string>{e.Text};
+            if(e.Kind=="combat-blocked"&&current.Goal.Kind=="hunt"&&e.MonsterId>0&&current.Goal.MonsterIds?.Contains(e.MonsterId)==true)
+                keys.Add($"combat/{e.MonsterId}");
+            foreach(var key in keys)
+            {
+                if(current.BlockedGoals.Count>=128)current.BlockedGoals.Remove(current.BlockedGoals.MinBy(pair=>pair.Value).Key);
+                current.BlockedGoals[key]=DateTimeOffset.UtcNow.AddSeconds(90);
+            }
+            current.NextKnowledge=DateTimeOffset.MinValue;
         }
         if(e.Kind=="registered")
         {
@@ -48,28 +63,94 @@ public sealed partial class CompanionService
         if(e.Kind=="failed") { if(e.Recoverable||e.Reason==CompanionSupervision.DeathBudget&&r.SessionDeaths>=r.Profile.DeathLimit)Recover(e.Id,e.Reason,DateTimeOffset.UtcNow);else Fail(e.Id,e.Reason); }
         if(e.Kind=="stopped"&&live.ContainsKey(e.Id))
         {if(current.StoppingAt==null)Recover(e.Id,CompanionSupervision.SessionExit,DateTimeOffset.UtcNow);if(live.ContainsKey(e.Id))current.WorkerStopped=true;}
-        if(e.Kind!="heartbeat")
-        {
-            current.Events.Enqueue(new(DateTimeOffset.UtcNow,e.Kind,e.State,e.Reason,e.Text));
-            while(current.Events.Count>50)current.Events.Dequeue();
-        }
+        if(e.Kind!="heartbeat")AddEvent(current,new(DateTimeOffset.UtcNow,e.Kind,e.State,e.Reason,e.Text));
     }
-    private void RequestLlm(WorkerEvent e,CompanionRecord r)
+    private static void AddEvent(LiveCompanion current,CompanionEvent value)
     {
-        var goal=e.Kind=="llm-goal";
-        if(r.Profile.LlmMode==0||goal&&r.Profile.LlmMode!=2||!goal&&!r.Profile.Chat||llmPending.Count>=2||llmPending.Contains(e.Id)||llmCooldown.GetValueOrDefault(e.Id)>DateTimeOffset.UtcNow||CompanionModels.Select(store.Configuration,r.Profile.LlmModelId)==null||!store.ReserveLlm())return;
-        llmPending.Add(e.Id);llmCooldown[e.Id]=DateTimeOffset.UtcNow.AddSeconds(30);
-        var configuration=store.Configuration;var profile=store.Public(r);var generation=runId;
+        current.Events.Enqueue(value);
+        while(current.Events.Count>50)current.Events.Dequeue();
+    }
+    private bool RequestLlm(WorkerEvent e,CompanionRecord r,LiveCompanion current)
+    {
+        var guild = e.Kind == "llm-guild"; var task = e.Kind == "llm-task"; var duel = e.Kind == "llm-duel";
+        var goal=e.Kind is "llm-goal" or "llm-guild" or "llm-task" or "llm-duel";
+        var purpose=guild?"行会与攻城决策":task?"任务先后决策":duel?"切磋决策":goal?"目标建议":"聊天回复";
+        void Log(string state,string message)
+        {
+            AddEvent(current,new(DateTimeOffset.UtcNow,"llm-log",state,purpose,message));
+            if(state=="未调用"&&!guild&&!task)llmResults.Enqueue(new(duel?"duel":goal?"goal":"llm",Id:e.Id,Context:e.Session+"/"+e.Reason));
+        }
+        if(r.Profile.LlmMode==0||goal&&r.Profile.LlmMode!=2||!goal&&!r.Profile.Chat){Log("未调用","当前角色未开启此项模型增强，继续规则行为。");return false;}
+        if(current.StoppingAt!=null){Log("未调用","角色正在下线，继续正常退场。");return false;}
+        if(!goal&&(e.State.Length==0||store.Records.Values.Any(record=>record.CharacterId>0&&record.Profile.Name==e.State)))
+        {Log("未调用","消息来自陪玩或来源尚未确认，使用规则回复，避免模型互聊。");return false;}
+        var candidates=guild?current.GuildChoices.Select(CompanionGuildDevelopment.ChoiceKey).ToArray():task?current.TaskChoices.Select(p=>"task:"+p.QuestId).ToArray():goal?CompanionLlm.GoalCandidates(e.Text,duel):[];
+        if(duel && !DuelAllowed(r,e.State)) { Log("未调用","切磋双方状态或PK权限已改变，继续规则行为。");return false; }
+        if(goal&&(candidates.Length<2||!guild&&!task&&!duel&&current.Goal is { } objective&&(objective.Kind!="hunt"||objective.QuestId>0||objective.Key.StartsWith("fund/",StringComparison.Ordinal))))
+        {Log("未调用","当前没有需要模型权衡的多个闲时选项，继续规则行为。");return false;}
+        if(llmPending.Contains(e.Id)){Log("未调用","此角色的上次模型请求尚未结束，继续规则行为。");return false;}
+        if(llmPending.Count>=2){Log("未调用","模型并发已满（最多2个请求），继续规则行为。");return false;}
+        if(goal&&llmGoalPending.Count>=1){Log("未调用","已有目标建议在调用，保留模型名额供实际玩家对话。");return false;}
+        var cooldown=goal?llmGoalCooldown:llmCooldown;
+        if(cooldown.GetValueOrDefault(e.Id)>DateTimeOffset.UtcNow){Log("未调用",goal?"尚在5分钟目标建议间隔内，继续规则行为。":"尚在30秒调用间隔内，继续规则行为。");return false;}
+        var selected=CompanionModels.Select(store.Configuration,r.Profile.LlmModelId);
+        if(selected==null){Log("未调用","未配置可用模型或所选模型已停用，继续规则行为。");return false;}
+        var modelVersion=AdminChanges.Version(selected);
+        if(llmBackoff.TryGetValue(selected.Model.Id,out var backoff)&&backoff.Version==modelVersion&&backoff.Until>DateTimeOffset.UtcNow)
+        {Log("未调用","此模型近期调用失败，暂停自动重试以节省额度；修改该模型配置后可立即重新检查。");return false;}
+        if(!store.ReserveLlm()){Log("未调用",$"本版本今日模型请求额度已用完（{store.Settings.DailyLlmCalls}次），继续规则行为。");return false;}
+        llmPending.Add(e.Id);if(goal)llmGoalPending.Add(e.Id);cooldown[e.Id]=DateTimeOffset.UtcNow.AddSeconds(goal?300:30);
+        var profile=store.Public(r);var generation=runId;
+        var description=$"{purpose} · {selected.Model.Name} / {selected.Model.Model}";
+        AddEvent(current,new(DateTimeOffset.UtcNow,"llm-log","调用中",description,"已保留1次请求额度，等待模型返回。"));
         _=RunLlm();
+        return true;
         async Task RunLlm()
         {
-            var text="";
-            try{text=await llm.ReplyTo(configuration,profile,e.Text,CancellationToken.None,goal);}
-            catch(Exception error)when(error is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidDataException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException or ArgumentException)
-            {text="";}
-            llmResults.Enqueue(new(goal?"goal":"llm",Id:e.Id,Text:text,Context:e.Session+"/"+e.Reason));
+            var watch=System.Diagnostics.Stopwatch.StartNew();var text="";var state="已返回";var detail="";var retryMinutes=5;
+            try
+            {
+                text=await llm.ReplyTo(selected,profile,e.Text,CancellationToken.None,goal);
+                if(text.Length==0){state="无效返回";detail="返回内容未通过短文本校验，继续规则行为。";}
+                else if(goal&&!candidates.Contains(text)){text="";state="无效返回";detail="返回不在本次合法候选中，继续规则行为。";}
+                else detail="返回："+text;
+            }
+            catch(Exception error)when(error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or InvalidDataException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException or ArgumentException)
+            {
+                state="调用失败";
+                if(error is HttpRequestException {StatusCode:System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden})retryMinutes=15;
+                // 不记录原始异常/响应，避免接口地址、密钥或供应商回显进入角色日志。
+                detail=error switch
+                {
+                    HttpRequestException {StatusCode:{ } status}=>$"接口返回 HTTP {(int)status}，请检查接口、密钥和模型权限。",
+                    HttpRequestException=>"无法连接模型接口，请检查网络、地址和证书。",
+                    OperationCanceledException=>"5秒内未收到完整响应，调用超时。",
+                    _=>"模型响应格式或内容不符合陪玩协议。"
+                };
+            }
             if(runtime.Ready&&!runtime.Stopping)
-            {try{await runtime.Invoke(()=>{if(generation==runId)llmPending.Remove(e.Id);return true;});}catch(Exception error)when(error is OperationCanceledException or InvalidOperationException){}}
+            {
+                try
+                {
+                    await runtime.Invoke(()=>
+                    {
+                        if(generation!=runId)return false;
+                        llmPending.Remove(e.Id);llmGoalPending.Remove(e.Id);
+                        if(CompanionModels.Select(store.Configuration,selected.Model.Id) is { } currentModel&&AdminChanges.Version(currentModel)==modelVersion)
+                        {
+                            if(text.Length==0)llmBackoff[selected.Model.Id]=(modelVersion,DateTimeOffset.UtcNow.AddMinutes(retryMinutes));
+                            else llmBackoff.Remove(selected.Model.Id);
+                        }
+                        if(!live.TryGetValue(e.Id,out var active)||active.Session!=e.Session)return false;
+                        AddEvent(active,new(DateTimeOffset.UtcNow,"llm-log",state,description,$"耗时 {watch.ElapsedMilliseconds} 毫秒 · {detail}"));
+                        if(guild)GuildSuggestion(store.Get(e.Id),active,e.Reason,text);
+                        else if(task)TaskSuggestion(store.Get(e.Id),active,e.Reason,text);
+                        else llmResults.Enqueue(new(duel?"duel":goal?"goal":"llm",Id:e.Id,Text:text,Context:e.Session+"/"+e.Reason));
+                        return true;
+                    });
+                }
+                catch(Exception error)when(error is OperationCanceledException or InvalidOperationException){}
+            }
         }
     }
     private void Fail(Guid id,string error)

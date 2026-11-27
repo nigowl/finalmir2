@@ -15,16 +15,19 @@ internal static class SystemSettingsChecks
         try
         {
             check(File.ReadAllText(file)==initial,"系统设置只读产生写入");
-            var edit=original.Values with{MaxUser=321,MaxIP=13,ExpRate=1000f,DropRate=1.5f,PublicShopPriceRate=1.8f};
+            var edit=original.Values with{MaxUser=321,MaxIP=13,MaxAccountsPerIPHour=0,MaxCharactersPerIPHour=0,ExpRate=1000f,DropRate=1.5f,PublicShopPriceRate=1.8f};
             var saved=service.Save(new(edit,original.Version));
             check(!saved.RequiresRestart&&Server.Settings.MaxUser==321&&Server.Settings.MaxIP==13&&Server.Settings.ExpRate==1000f,"人数及倍率未热更新");
+            check(Server.Settings.MaxAccountsPerIPHour==0&&Server.Settings.MaxCharactersPerIPHour==0&&
+                new InIReader(file).ReadUInt16("Network","MaxAccountsPerIPHour",999,false)==0&&
+                new InIReader(file).ReadUInt16("Network","MaxCharactersPerIPHour",999,false)==0,"注册/建角不限未热更新或无法按原配置重读");
             check(Server.Settings.PublicShopPriceRate == 1.8f && saved.Values.PublicShopPriceRate == 1.8f,"公共商店倍率未热更新");
             var content=File.ReadAllText(file);
             check(content.Contains("Custom=不修改")&&content.Contains("; 保留注释")&&content.Contains("Port=7000"),"系统设置覆盖未知键、注释或端口");
             check(new InIReader(file).ReadUInt16("Network","MaxIP",0,false)==13&&new InIReader(file).ReadSingle("Game","ExpRate",0,false)==1000f,"原引擎无法重读设置");
             check(Directory.GetFiles(Path.Combine(paths.Runtime,"backups"),"Setup.ini",SearchOption.AllDirectories).Any(p=>File.ReadAllText(p)==initial),"系统设置未保留完整原配置备份");
             Reject(()=>service.Save(new(edit,original.Version)),"过期配置被覆盖");
-            foreach(var bad in new[]{edit with{PublicShopPriceRate=.99f},edit with{PublicShopPriceRate=10.01f},edit with{MaxIP=0},edit with{MaxUser=65536},edit with{DropRate=0},edit with{DropRate=100.01f},edit with{ExpRate=1000.01f},edit with{ExpRate=float.NaN},edit with{SaveDelay=0},edit with{MonsterRecallCooldown=99}})
+            foreach(var bad in new[]{edit with{MaxAccountsPerIPHour=-1},edit with{MaxAccountsPerIPHour=65536},edit with{MaxCharactersPerIPHour=-1},edit with{MaxCharactersPerIPHour=65536},edit with{PublicShopPriceRate=.99f},edit with{PublicShopPriceRate=10.01f},edit with{MaxIP=0},edit with{MaxUser=65536},edit with{DropRate=0},edit with{DropRate=100.01f},edit with{ExpRate=1000.01f},edit with{ExpRate=float.NaN},edit with{SaveDelay=0},edit with{MonsterRecallCooldown=99}})
                 Reject(()=>service.Save(new(bad,saved.Version)),"非法参数被接受");
             foreach (var field in typeof(ServerSettings).GetProperties().Where(field => field.PropertyType == typeof(float)))
                 foreach (var value in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity, 0, float.MaxValue })

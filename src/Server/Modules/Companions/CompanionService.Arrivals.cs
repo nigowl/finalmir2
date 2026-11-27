@@ -28,7 +28,7 @@ public sealed partial class CompanionService
         CompanionProfile profile;
         try
         {
-            profile=PreviewBatch(new(1,settings.Nicknames,new(){Enabled=true,Scheduled=true,Schedule=settings.Arrivals.Schedule,Tags="随机加入"})).Profiles.Single();
+            profile=PreviewBatch(new(1,settings.Nicknames,new(){Enabled=true,Scheduled=true,Schedule=settings.Arrivals.Schedule,Tags="随机加入"},RandomSchedule:settings.Arrivals.RandomSchedule)).Profiles.Single();
         }
         catch(Exception error)when(error is InvalidDataException or InvalidOperationException)
         {

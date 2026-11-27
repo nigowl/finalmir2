@@ -17,5 +17,8 @@ for path in (root/'src/Admin/Components').rglob('*.razor'):
             before=text[:match.start()]
             if before.rfind('<RowTemplate')>before.rfind('</RowTemplate>'):
                 assert 'Variant="Variant.Text"' in tag,f'{path}: 表格行操作必须使用文字按钮'
+    for cell in re.finditer(r'<MudTd\b[^>]*>.*?</MudTd>',text,re.S):
+        if re.search(r'<Mud(?:Icon)?Button\b',cell.group()):
+            assert 'admin-row-actions' in cell.group().split('>',1)[0],f'{path}: 操作列缺少统一边框标记'
 assert count>100,'未覆盖管理组件的全部按钮'
 print(f'PASS {count} 个管理按钮/图标按钮的显式尺寸、变体、颜色及图标标签。')

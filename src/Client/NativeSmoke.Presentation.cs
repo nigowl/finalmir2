@@ -32,9 +32,9 @@ public partial class NativeSmoke
     private async Task VerifyInventoryPresentation()
     {
         stage = "inventory task hover, gold, weight and free slots";
-        var button = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "任务物品");
+        var button = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "材料物品");
         var bag = button.GetParent<Control>(); bag.Show();
-        if (button.Text != "任务物品" || button.GetThemeFontSize("font_size") != ClientUi.Body || button.GetThemeStylebox("normal", "Button") is not StyleBoxTexture)
+        if (button.Text != "材料物品" || button.GetThemeFontSize("font_size") != ClientUi.Body || button.GetThemeStylebox("normal", "Button") is not StyleBoxTexture)
             throw new Exception("任务入口未使用统一字体及原版棕底金边按钮。");
         var weight = bag.GetNode<Label>("BagWeight"); var free = bag.GetNode<Label>("BagFree");
         var expected = $"{State.InventoryWeight:0.##}/{State.CalculateStats()[Stat.BagWeight]}";
@@ -45,7 +45,7 @@ public partial class NativeSmoke
         GetViewport().PushInput(motion, true);
         await Screenshot("inventory-task-hover");
         var warehouse = bag.GetNode<Button>("InventoryStorage");
-        if (warehouse.Position.X <= button.Position.X || warehouse.GetRect().End.X > 289) throw new Exception("仓库物品按钮没有放在任务物品旁边。");
+        if (warehouse.Position.X <= button.Position.X || warehouse.GetRect().End.X > 289) throw new Exception("仓库物品按钮没有放在材料物品旁边。");
         warehouse.EmitSignal(BaseButton.SignalName.Pressed);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         var storage = Client.FindChildren("*", "Button", true, false).OfType<OriginalButton>().Single(button => button.TooltipText == "关闭仓库").GetParent<Control>();
@@ -68,11 +68,11 @@ public partial class NativeSmoke
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         var content = details.GetNode<HBoxContainer>("ItemComparison");
         var columns = content.GetChildren().OfType<VBoxContainer>().Select(column => column.GetChildren().OfType<RichTextLabel>().First()).ToArray();
-        if (columns.Length != 2 || !columns[0].GetParsedText().Contains("攻击 3–9") || !columns[0].GetParsedText().Contains("魔法 2–5") ||
+        if (columns.Length != 2 || !columns[0].GetParsedText().Contains("攻击：3 - 9") || !columns[0].GetParsedText().Contains("魔法：2 - 5") ||
             columns[0].GetParsedText().Contains("×1") || !columns[1].GetParsedText().Contains("已装备") || wrapper.GetRect().End.X > 1024)
             throw new Exception("装备对比缺少区间、已有装备或超出逻辑画布。");
         if (content.GetChildren().OfType<VSeparator>().Count() != 1 || details.FindChildren("*", "HSeparator", true, false).Count != 1 ||
-            details.FindChild("ComparisonDifference", true, false) is not RichTextLabel diff || !diff.GetParsedText().Contains("换上左侧装备后"))
+            details.FindChild("ComparisonDifference", true, false) is not RichTextLabel diff || !diff.GetParsedText().Contains("对比"))
             throw new Exception("装备对比列间或底部差异缺少独立分隔线。");
         await Screenshot("equipment-comparison"); wrapper.QueueFree();
         await VerifyItemTooltipScroll(item);

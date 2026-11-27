@@ -47,11 +47,11 @@ internal static class QuestInventoryChecks
             foreach (var packet in player.Packets) state.Apply(packet);
             check(state.User!.Inventory.All(item => item == null) && state.User.QuestInventory[0].Count == 2, "客户端任务回执占用了普通背包");
             for (var index = 0; index < player.Info.QuestInventory.Length; index++)
-                player.Info.QuestInventory[index] = new UserItem(quest) { UniqueID = (ulong)(400 + index), Count = 10 };
-            player.Info.QuestInventory[0].Count = 9;
-            check(!player.CanGainItems([new UserItem(quest), new UserItem(quest)]) && player.Info.QuestInventory[0].Count == 9,
+                player.Info.QuestInventory[index] = new UserItem(quest) { UniqueID = (ulong)(400 + index), Count = quest.StackSize };
+            player.Info.QuestInventory[0].Count = (ushort)(quest.StackSize - 1);
+            check(!player.CanGainItems([new UserItem(quest), new UserItem(quest)]) && player.Info.QuestInventory[0].Count == quest.StackSize - 1,
                 "批量任务奖励复用了同一份合堆容量或预检查修改了资产");
-            player.Info.QuestInventory[0].Count = 10;
+            player.Info.QuestInventory[0].Count = quest.StackSize;
             var blocked = new UserItem(quest) { UniqueID = 500 };
             player.Info.Inventory[0] = blocked; player.Packets.Clear(); player.OrganizeQuestInventory();
             check(player.Info.Inventory[0] == blocked && player.Packets.OfType<S.Chat>().Any(packet => packet.Message.Contains("保留在背包")) &&

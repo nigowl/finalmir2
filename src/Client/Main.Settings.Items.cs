@@ -11,7 +11,7 @@ public partial class Main
     private void BuildItemSettings(Control page)
     {
         autoSell = SettingToggle(page, "自动回收（手动、挂机均生效）", 2); autoSell.Name = "AutoRecycle";
-        autoSell.TooltipText = "自动将背包中勾选的物品按标准售价的一半兑换金币，不需要靠近商人。任务、绑定、强化等物品保留。";
+        autoSell.TooltipText = "按标准售价的一半回收，无须商人。未鉴定装备仅明确勾选后按普通属性计价，可能失去隐藏品质；已鉴定高品质及任务、绑定、强化物品保留。";
         itemRuleSearch = new LineEdit { Name = "ItemRuleSearch", Position = new Vector2(10, 32), Size = new Vector2(214, 25), PlaceholderText = "搜索物品名称" };
         page.AddChild(itemRuleSearch); itemRuleSearch.TextChanged += _ => FillItemRuleRows();
         itemRuleOwnedOnly = new CheckBox { Name = "ItemRuleOwnedOnly", Text = "仅显示背包物品", Position = new Vector2(230, 31), Size = new Vector2(170, 28), FocusMode = FocusModeEnum.None };
@@ -50,7 +50,7 @@ public partial class Main
     private void FillItemRuleRows()
     {
         if (itemRuleTable == null) return;
-        var owned = State.User?.Inventory.Where(item => item?.Info != null).Select(item => item.Info.FriendlyName).ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+        var owned = State.User?.Inventory.Concat(State.User.QuestInventory).Where(item => item?.Info != null).Select(item => item.Info.FriendlyName).ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
         itemRuleTable.Clear();
         var root = itemRuleTable.CreateItem();
         var names = (itemRuleOwnedOnly.ButtonPressed ? owned : new[] { "金币" }.Concat(Assets.ItemCatalog.Select(item => item.Name)))

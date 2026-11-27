@@ -57,9 +57,9 @@ internal static class PublicSupplyChecks
         check(ItemPresentation.Details(amulet).Contains("剩余次数 100") && !ItemPresentation.Details(amulet).Contains("耐久") &&
             !ItemPresentation.Name(amulet).Contains('×'), "毒符详情仍把次数当耐久/件数");
         check(ItemPresentation.Details(stone).Contains("99,960/100,000") && !ItemPresentation.Stats(stone).Any(), "魔血石储量显示不正确");
-        var potion = new ItemInfo { Index = 100, Type = ItemType.Potion, StackSize = 20, Stats = new Stats { [Stat.HP] = 10 } };
-        var batch = Enumerable.Range(0, 5).Select(_ => new UserItem(potion) { Count = 20 }).ToArray();
-        check(InventoryStacks.CanAdd(new UserItem[5], batch) && !InventoryStacks.CanAdd(new UserItem[4], batch), "100件采购跨堆叠格位预检错误");
+        var potion = new ItemInfo { Index = 100, Type = ItemType.Potion, StackSize = 999, Stats = new Stats { [Stat.HP] = 10 } };
+        UserItem[] batch=[new(potion){Count=999},new(potion){Count=1}];
+        check(InventoryStacks.CanAdd(new UserItem[2], batch) && !InventoryStacks.CanAdd(new UserItem[1], batch), "1000件采购跨999堆叠格位预检错误");
         check(PublicShopRules.GroupName(potion) == "金创药" && PublicShopRules.Category(new ItemInfo { Type = ItemType.Potion }) == -1,
             "普通恢复药分组或空药品白名单错误");
     }

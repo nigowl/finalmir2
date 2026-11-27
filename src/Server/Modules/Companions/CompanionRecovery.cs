@@ -7,19 +7,25 @@ namespace Server.ConsoleHost;
 
 public static class CompanionRecovery
 {
-    public static KnownGoal? Choose(PlayerObject player, Map[] maps, NPCObject[] npcs,
+    public static KnownGoal? Choose(PlayerObject player, CompanionProfile profile, Map[] maps, NPCObject[] npcs,
         Dictionary<int, KnownExit?> routes, ISet<string>? blocked)
     {
         var questItems = player.CurrentQuests.SelectMany(q => q.Info.ItemTasks.Concat(q.Info.CarryItems)).Select(t => t.Item.Index).ToHashSet();
         var meat = player.Info.Inventory.Any(item => CompanionInventoryRules.PlainMeat(item, questItems, player.Level));
+        bool CanBuyWeapon(NPCObject npc, UserItem item)
+        {
+            if (item.Info.Type != ItemType.Weapon || !CompanionSupplyRules.Usable(item.Info, player.Class, player.Gender, player.Level) ||
+                CompanionInventoryRules.DevelopmentCount(item, player.Info.Inventory, player.Info.Equipment, player.Class, player.Gender,
+                    player.Level, player.Info.Magics.Select(m => m.Spell).ToHashSet()) == 0 || !player.CanEquipItem(item, (int)EquipmentSlot.Weapon) ||
+                !player.Info.Inventory.Any(entry => entry == null) || item.Info.UnitWeight > player.Stats[Stat.BagWeight] - player.CurrentBagWeight) return false;
+            var unit = item.Clone(); unit.Count = 1;
+            return CompanionSupplyRules.PurchaseLimit(item, unit.BuyPrice() * (double)NPCScript.PriceRate(player, npc), player.Account.Gold,
+                profile.Traits.Frugality, CompanionSupplyRules.Count(player.Info.Inventory, Stat.HP)) > 0;
+        }
         var vendor = npcs.Where(npc =>
         {
             var script = NPCScript.Get(npc.ScriptID);
-            return meat ? script.Types.Contains(ItemType.Meat) : script.Goods.Any(item => item.Info.Type == ItemType.Weapon &&
-                item.Info.RequiredType == RequiredType.Level && item.Info.RequiredAmount <= player.Level &&
-                item.Info.RequiredClass.HasFlag((RequiredClass)(1 << (int)player.Class)) &&
-                item.Info.RequiredGender.HasFlag((RequiredGender)(1 << (int)player.Gender)) &&
-                item.Price() > 0 && item.Price() * 6L <= player.Account.Gold);
+            return meat ? script.Types.Contains(ItemType.Meat) : CompanionSupplies.Sells(script) && script.Goods.Any(item => CanBuyWeapon(npc, item));
         }).OrderBy(npc => npc.CurrentMap == player.CurrentMap ? Functions.MaxDistance(player.CurrentLocation, npc.CurrentLocation) : 10000)
             .FirstOrDefault(npc => blocked?.Contains($"service/{npc.ObjectID}") != true);
         if (vendor != null)

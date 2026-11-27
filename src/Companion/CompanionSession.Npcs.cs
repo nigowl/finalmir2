@@ -15,6 +15,7 @@ public sealed partial class CompanionSession
     private float repairRate=1;
     private ulong repairItem;
     private int repairSlot=-1;
+    private MirGridType repairGrid=MirGridType.Inventory;
     private readonly Dictionary<uint,(long Until,uint Gold)> visited=[];
     private readonly HashSet<int> acceptedQuests=[],finishedQuests=[];
     private long npcSent;
@@ -29,7 +30,7 @@ public sealed partial class CompanionSession
         await connection.Send(new C.CallNPC{ObjectID=id,Key=key}); nextAction=npcSent+500;
     }
     private int PotionCount(bool hp)=>CompanionSupplyRules.Count(state.User!.Inventory,hp?Stat.HP:Stat.MP);
-    private int PotionTarget(bool hp)=>CompanionSupplyRules.Target(hp?Stat.HP:Stat.MP,state.User!.Class,Profile.Traits.Frugality);
+    private int PotionTarget(bool hp)=>CompanionSupplyRules.Target(hp?Stat.HP:Stat.MP,state.User!.Class,Profile.Traits.Frugality,state.User.Level);
     private int TownScrollCount()=>CompanionSupplyRules.TownCount(state.User!.Inventory,state.User.Class,state.User.Gender,state.User.Level);
     private bool NeedsRepair(UserItem? item)=>CompanionSupplyRules.NeedsRepair(item,state.User!.Gold) && !refused.Contains(item!.UniqueID);
     private bool Trades(ItemInfo item) =>
@@ -46,13 +47,13 @@ public sealed partial class CompanionSession
         if(CompanionSupplyRules.IsPotion(item,Stat.HP) && PotionCount(true)==0)return -1;
         if(item.Info.Type!=ItemType.Potion)return CompanionSupplyRules.IsTownScroll(item)?2:3;
         var stat=item.Info.Stats[Stat.HP]>0?Stat.HP:Stat.MP;
-        return CompanionSupplyRules.IsPotion(item,stat) && CompanionSupplyRules.NeedsRefill(state.User!.Inventory,stat,state.User.Class,Profile.Traits.Frugality)?0:1;
+        return CompanionSupplyRules.IsPotion(item,stat) && CompanionSupplyRules.NeedsRefill(state.User!.Inventory,stat,state.User.Class,Profile.Traits.Frugality,state.User.Level)?0:1;
     }
     private async Task<bool> BuySupplies()
     {
         var shop=goods!;var user=state.User!;
         // 最后容量须先补低于储备线的药品，不能被便宜药的补满占掉。
-        foreach(var item in shop.List.Where(i=>i.Info!=null && (Usable(i.Info) || HeroDevelopmentCount(i) > 0)).OrderBy(SupplyPriority).ThenBy(i=>i.Price()))
+        foreach(var item in shop.List.Where(i=>i.Info!=null && (Usable(i.Info) || HeroDevelopmentCount(i) > 0)).OrderBy(SupplyPriority).ThenBy(i=>i.BuyPrice()))
         {
             if(Funding && !CompanionSupplyRules.IsPotion(item,Stat.HP))continue;
             var missing=1;
@@ -69,14 +70,16 @@ public sealed partial class CompanionSession
             }
             else
             {
-                if(CompanionSupplyRules.NeedsRefill(user.Inventory,Stat.HP,user.Class,Profile.Traits.Frugality))continue;
+                // 缺武器的基础恢复不能与缺红药互锁，仍逐项遵守真实价格和人格预算。
+                if(CompanionSupplyRules.NeedsRefill(user.Inventory,Stat.HP,user.Class,Profile.Traits.Frugality,user.Level) &&
+                    !(user.Equipment[(int)EquipmentSlot.Weapon]==null && item.Info.Type==ItemType.Weapon))continue;
                 missing=CompanionInventoryRules.DevelopmentCount(item,user.Inventory,user.Equipment,user.Class,user.Gender,
                     user.Level,user.Magics.Select(m=>m.Spell).ToHashSet());
                 if(missing==0)missing=HeroDevelopmentCount(item);
                 if(missing==0)continue;
             }
             var unit=item.Clone();unit.Count=1;
-            var price=unit.Price()*(double)shop.Rate;
+            var price=unit.BuyPrice()*(double)shop.Rate;
             if(missing<=0||!user.Inventory.Any(x=>x==null))continue;
             var limit=CompanionSupplyRules.PurchaseLimit(item,price,user.Gold,Profile.Traits.Frugality,PotionCount(true));
             var count=(ushort)Math.Min(Math.Min(missing,item.Info.StackSize),Math.Min(item.Count,limit));
@@ -93,6 +96,8 @@ public sealed partial class CompanionSession
         if(pendingNpc!=0)
         { if(now-npcSent<3000)return true; visited[pendingNpc]=(now+60000,user.Gold); pendingNpc=0; }
         if(await CreateGuild(now))return true;
+        if(await RegisterSiege(now))return true;
+        if(await AppraiseEquipment())return true;
         if(await UseStorage(now))return true;
         if(sellPage && await SellSurplus())return true;
         if(goods!=null)
@@ -106,10 +111,15 @@ public sealed partial class CompanionSession
             // 主动修理只处理已穿装备及刚卸下的同一件，不能先修整包备用品耗尽药钱。
             var worn=user.Inventory.FirstOrDefault(i=>RepairHere(i) && (repairOnly?i!.UniqueID==repairItem:repairItem==0||i!.UniqueID==repairItem));
             if(worn!=null){repairItem=worn.UniqueID;await Asset(new C.RepairItem{UniqueID=worn.UniqueID},"repair",worn.UniqueID);return true;}
-            var equipped=user.Equipment.FirstOrDefault(RepairHere);
+            var equipped=user.Equipment.Concat(state.Hero?.Equipment ?? []).FirstOrDefault(item=>RepairHere(item) && !heroRefused.Contains(item!.UniqueID));
             var empty=Array.IndexOf(user.Inventory,null);
             if(equipped!=null && empty>=0)
-            {repairItem=equipped.UniqueID;repairSlot=Array.IndexOf(user.Equipment,equipped);await Asset(new C.RemoveItem{Grid=MirGridType.Inventory,UniqueID=equipped.UniqueID,To=empty},"remove",equipped.UniqueID);return true;}
+            {
+                repairItem=equipped.UniqueID;var heroWorn=state.Hero?.Equipment.Contains(equipped)==true;
+                repairGrid=heroWorn?MirGridType.HeroInventory:MirGridType.Inventory;
+                repairSlot=Array.IndexOf(heroWorn?state.Hero!.Equipment:user.Equipment,equipped);
+                await Asset(new C.RemoveItem{Grid=repairGrid,UniqueID=equipped.UniqueID,To=empty},heroWorn?"hero-remove":"remove",equipped.UniqueID);return true;
+            }
             repairPage=false;repairItem=0;repairSlot=-1;
             if(npcId!=0 && !repairOnly){await Call(npcId,"[@MAIN]");return true;}
         }
@@ -162,7 +172,7 @@ public sealed partial class CompanionSession
                 links.Any(link => link.Equals("CREATEHERO", StringComparison.OrdinalIgnoreCase)))
             { await Call(npcId, "[@CREATEHERO]"); return true; }
             var service=links.FirstOrDefault(l=>!repairOnly && (l.Equals("SELL",StringComparison.OrdinalIgnoreCase)||l.Equals("BUYSELL",StringComparison.OrdinalIgnoreCase)) && SaleItem(true)!=null) ??
-                links.FirstOrDefault(l=>l.Equals("REPAIR",StringComparison.OrdinalIgnoreCase) && user.Inventory.Concat(user.Equipment).Any(RepairHere)) ??
+                links.FirstOrDefault(l=>l.Equals("REPAIR",StringComparison.OrdinalIgnoreCase) && user.Inventory.Concat(user.Equipment).Concat(state.Hero?.Equipment ?? []).Any(RepairHere)) ??
                 links.FirstOrDefault(l=>!repairOnly && (l.Equals("BUY",StringComparison.OrdinalIgnoreCase)||l.Equals("BUYSELL",StringComparison.OrdinalIgnoreCase)) && (Knowledge?.Goal?.Key.StartsWith("develop/",StringComparison.Ordinal)==true||user.Equipment[0]==null||PotionCount(true)<PotionTarget(true)||PotionCount(false)<PotionTarget(false)||TownScrollCount()==0));
             if(service!=null){await Call(npcId,"[@"+service+"]");return true;}
         }

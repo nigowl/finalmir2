@@ -5,6 +5,8 @@ public sealed partial record ServerSettings
 {
     public int MaxUser { get; set; } = 50;
     public int MaxIP { get; set; } = 5;
+    public int MaxAccountsPerIPHour { get; set; } = 3;
+    public int MaxCharactersPerIPHour { get; set; } = 5;
     public bool AllowNewAccount { get; set; } = true;
     public bool AllowChangePassword { get; set; } = true;
     public bool AllowLogin { get; set; } = true;

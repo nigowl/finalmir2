@@ -10,7 +10,7 @@ public sealed partial class CompanionSession
         if(kind?.StartsWith("storage-",StringComparison.Ordinal)!=true)return false;
         bool? success=packet switch
         {
-            S.StorageUnlockResult p when kind=="storage-unlock"=>p.Result==0,
+            S.StorageUnlockResult p when kind=="storage-unlock"=>p.Result is 0 or 4,
             S.StoragePasswordResult p when kind=="storage-password"&&!p.Removing=>p.Result==4,
             S.StoreItem p when kind=="storage-store"&&p.From==storageFrom&&p.To==storageTo=>p.Success,
             S.TakeBackItem p when kind=="storage-take"&&p.From==storageFrom&&p.To==storageTo=>p.Success,

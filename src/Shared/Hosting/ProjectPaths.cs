@@ -35,11 +35,7 @@ public sealed class ProjectPaths
         Directory.CreateDirectory(Runtime);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Runtime, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var configured = Environment.GetEnvironmentVariable("MIR2_ADMIN_KEY");
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            if (configured.Length < 32) throw new InvalidDataException("MIR2_ADMIN_KEY 管理密钥至少需要 32 个字符。");
-            return configured;
-        }
+        if (!string.IsNullOrWhiteSpace(configured)) return configured;
         if (!File.Exists(AdminKeyFile))
         {
             var temporary = AdminKeyFile + "." + Guid.NewGuid() + ".tmp";
@@ -54,7 +50,7 @@ public sealed class ProjectPaths
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
         var key = File.ReadAllText(AdminKeyFile).Trim();
-        if (key.Length < 32) throw new InvalidDataException($"管理密钥无效：{AdminKeyFile}");
+        if (key.Length == 0) throw new InvalidDataException($"管理密钥不能为空：{AdminKeyFile}");
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(AdminKeyFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         return key;
     }

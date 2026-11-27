@@ -10,11 +10,14 @@ public sealed partial class CompanionSession
     private bool[]? heroClasses;
     private bool heroCreated, heroCreationBlocked;
     private int heroNameAttempts;
-    private long heroRecoveryRequested, nextHeroPotion;
+    private long heroRecoveryRequested;
+    private HeroBehaviour requestedHeroMode;
     private readonly HashSet<ulong> heroRefused = [];
 
     private async Task HeroPacket(Packet packet)
     {
+        if(pendingAsset=="hero-mode"&&packet is S.UpdateHeroSpawnState{State:not HeroSpawnState.Summoned})
+        {pendingAsset=null;await report(new("hero-mode-cancelled",Profile.Id,Reason:"英雄已退场，取消本次战斗模式等待"));}
         if (packet is S.HeroCreateRequest request && Knowledge?.Goal is { } goal &&
             goal.Key.StartsWith("hero-create/", StringComparison.Ordinal) && goal.NpcId == npcId)
         { heroClasses = request.CanCreateClass; pendingNpc = 0; }
@@ -55,10 +58,17 @@ public sealed partial class CompanionSession
             return true;
         }
         if (state.HeroState != HeroSpawnState.Summoned || state.Hero is not { HP: > 0 } hero) return false;
-        if (await HealHero(now, hero)) return true;
+        var mode=CompanionHeroRules.CombatMode(hero.HP,state.CalculateHeroStats()[Stat.HP],user.HeroBehaviour);
+        if(mode!=user.HeroBehaviour)
+        {
+            requestedHeroMode=mode;
+            await Status("管理英雄",mode==HeroBehaviour.Follow?"英雄生命不足，先跟随恢复":"英雄状态恢复，参与正常战斗");
+            await Asset(new C.SetHeroBehaviour{Behaviour=mode},"hero-mode",0);return true;
+        }
         foreach (var item in user.Inventory.Where(item => item?.Info != null && !heroRefused.Contains(item.UniqueID)))
         {
-            if (!CompanionHeroRules.Usable(item, hero.Class, hero.Gender, hero.Level)) continue;
+            if (!CompanionHeroRules.Usable(item, hero.Class, hero.Gender, hero.Level) ||
+                item.UniqueID==Knowledge.Goal?.AppraisalItemId && EquipmentAppraisal.Pending(item)) continue;
             var slot = CompanionInventoryRules.UpgradeSlot(item, hero.Equipment, hero.Class, CompanionInventoryRules.Caster(hero.Magics.Select(magic => magic.Spell)));
             if (slot >= 0 && item.CurrentDura > 0)
             {
@@ -99,27 +109,6 @@ public sealed partial class CompanionSession
             await Status("英雄创建中", $"通过当前英雄使者创建{job.ToLocalizedString()}英雄");
             await Asset(new C.NewHero { Name = name, Class = job, Gender = user.Gender }, "hero-create", 0);
             return true;
-        }
-        return false;
-    }
-
-    private async Task<bool> HealHero(long now, S.HeroInformation hero)
-    {
-        var user = state.User!;
-        if (Knowledge?.NoDrug == false && now >= nextHeroPotion)
-        {
-            var stats = state.CalculateHeroStats();
-            foreach (var stat in new[] { Stat.HP, Stat.MP })
-            {
-                if ((stat == Stat.HP ? hero.HP : hero.MP) * 100L > stats[stat] * (stat == Stat.HP ? 65L : 35L) || stats[stat] <= 0 ||
-                    CompanionSupplyRules.Count(user.Inventory, stat) <= (PotionTarget(stat == Stat.HP) + 1) / 2) continue;
-                var potion = user.Inventory.FirstOrDefault(item => CompanionSupplyRules.IsPotion(item, stat) &&
-                    CompanionHeroRules.Usable(item!, hero.Class, hero.Gender, hero.Level) && !heroRefused.Contains(item!.UniqueID));
-                if (potion == null) continue;
-                nextHeroPotion = now + 3000;
-                await Asset(new C.UseItem { Grid = MirGridType.HeroInventory, UniqueID = potion.UniqueID }, "hero-use", potion.UniqueID);
-                return true;
-            }
         }
         return false;
     }

@@ -2138,7 +2138,7 @@ namespace Server.MirObjects
 
                         var info = Envir.GetItemInfo(param[0]);
 
-                        foreach (var item in (info?.Type == ItemType.Quest ? player.Info.QuestInventory : player.Info.Inventory).Where(item => item != null && item.Info == info))
+                        foreach (var item in player.CarriedItems.Where(item => item.Info == info))
                         {
                             if (checkDura)
                                 if (item.CurrentDura < (dura * 1000)) continue;
@@ -2712,10 +2712,7 @@ namespace Server.MirObjects
                                 break;
                             }
 
-                            if (player.MyGuild != null)
-                                failed = (Conquest.GuildInfo.AttackerID != -1);
-                            else
-                                failed = true;
+                            failed = !ConquestRegistration.Available(player, Conquest);
                         }
                         catch (ArgumentException)
                         {
@@ -3329,33 +3326,14 @@ namespace Server.MirObjects
                                 break;
                             }
 
-                            var inventory = info.Type == ItemType.Quest ? player.Info.QuestInventory : player.Info.Inventory;
-                            for (int j = 0; j < inventory.Length; j++)
+                            if (count == 0) break;
+                            foreach (var item in player.CarriedItems.Where(item => item.Info == info).ToArray())
                             {
-                                UserItem item = inventory[j];
-                                if (item == null) continue;
-                                if (item.Info != info) continue;
-
-                                if (checkDura)
-                                {
-                                    if (item.CurrentDura < (dura * 1000)) continue;
-                                }
-
-                                if (count > item.Count)
-                                {
-                                    player.Enqueue(info.Type == ItemType.Quest ? new S.DeleteQuestItem { UniqueID = item.UniqueID, Count = item.Count } : new S.DeleteItem { UniqueID = item.UniqueID, Count = item.Count });
-                                    inventory[j] = null;
-
-                                    count -= item.Count;
-                                    continue;
-                                }
-
-                                player.Enqueue(info.Type == ItemType.Quest ? new S.DeleteQuestItem { UniqueID = item.UniqueID, Count = count } : new S.DeleteItem { UniqueID = item.UniqueID, Count = count });
-                                if (count == item.Count)
-                                    inventory[j] = null;
-                                else
-                                    item.Count -= count;
-                                break;
+                                if (checkDura && item.CurrentDura < dura * 1000) continue;
+                                var used = (ushort)Math.Min(count, item.Count);
+                                player.ConsumeCarriedItem(item, used);
+                                count -= used;
+                                if (count == 0) break;
                             }
                             player.RefreshStats();
                         }
@@ -4241,10 +4219,7 @@ namespace Server.MirObjects
                             var conquest = Envir.Conquests.FirstOrDefault(z => z.Info.Index == tempInt);
                             if (conquest == null) return;
 
-                            if (player.MyGuild != null && player.MyGuild.Guildindex != conquest.GuildInfo.Owner && !conquest.WarIsOn)
-                            {
-                                conquest.GuildInfo.AttackerID = player.MyGuild.Guildindex;
-                            }
+                            ConquestRegistration.Register(player, conquest);
                         }
                         break;
                     case ActionType.OpenGate:

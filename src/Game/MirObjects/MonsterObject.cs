@@ -1121,7 +1121,7 @@ namespace Server.MirObjects
 
                     foreach (var dropItem in reward.Items)
                     {
-                        UserItem item = Envir.CreateDropItem(dropItem);
+                        UserItem item = Envir.CreateDropItem(dropItem, appraisable: true);
 
                         if (item == null) continue;
 

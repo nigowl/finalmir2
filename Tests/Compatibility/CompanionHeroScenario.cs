@@ -23,7 +23,7 @@ internal static class CompanionHeroScenario
             {
                 var hero = role.Heroes.SingleOrDefault(hero => hero != null);
                 Write(new { Role = role.Index, role.AccountInfo.Gold, role.CompletedQuests, Heroes = role.Heroes.Count(hero => hero != null),
-                    Hero = hero == null ? null : new { hero.Index, hero.Name, Class = hero.Class.ToString(), hero.HP, hero.Level, hero.ReviveAtUtc,
+                    Hero = hero == null ? null : new { hero.Index, hero.Name, Class = hero.Class.ToString(), hero.HP, hero.MP, hero.Level, hero.ReviveAtUtc,
                         Spells = hero.Magics.Select(magic => magic.Spell.ToString()).ToArray(), Equipment = hero.Equipment.Where(item => item != null).Select(item => new { item.ItemIndex, item.UniqueID }).ToArray() },
                     Seals = role.Inventory.Count(item => item?.Info.Type == ItemType.SealedHero),
                     Inventory = role.Inventory.Concat(role.Equipment).Where(item => item != null).Select(item => new { item.ItemIndex, item.UniqueID, item.Count }).ToArray() });
@@ -34,8 +34,18 @@ internal static class CompanionHeroScenario
                 var hero = role.Heroes.Single(hero => hero != null); hero.HP = 0; hero.ReviveAtUtc = DateTime.UtcNow.AddSeconds(60);
                 role.HeroSpawned = false; world.SaveAccounts(); Write(new { hero.Index, hero.ReviveAtUtc }); return;
             }
+            if (mode == "medicine")
+            {
+                var hero = role.Heroes.Single(hero => hero != null); hero.HP = hero.MP = 1;
+                hero.Equipment[(int)EquipmentSlot.Torch] = null; role.HeroSpawned = true;
+                role.HP = role.MP = 10000;
+                for (var i = 0; i < role.Inventory.Length; i++)
+                    if (MagicBloodStone.IsStone(role.Inventory[i]?.Info)) role.Inventory[i] = null;
+                foreach (var map in world.MapInfoList) map.Respawns.Clear();
+                world.SaveDB(); world.SaveAccounts(); Write(new { hero.Index }); return;
+            }
             if (mode is not ("prepare" or "tier40")) throw new ArgumentException("未知夹具模式。");
-            var npc = world.NPCInfoList.Single(npc => npc.Name == "盟重日常使者");
+            var npc = world.NPCInfoList.Single(npc => npc.FileName == "MongchonProvince/MudWall/盟重日常委托");
             var townInfo = world.MapInfoList.Single(map => map.Index == npc.MapIndex);
             Settings.MapPath = Path.Combine(paths.Assets, "maps"); var town = new Map(townInfo);
             if (!town.Load()) throw new InvalidDataException("隔离日常地图加载失败。");
@@ -45,7 +55,7 @@ internal static class CompanionHeroScenario
             {
                 if (role.Heroes.Any(hero => hero != null)) throw new InvalidOperationException("测试角色已有英雄，拒绝覆盖。");
                 role.CurrentQuests.Clear(); role.CompletedQuests.Clear(); role.Magics.Clear(); role.QuestInventory = new UserItem[40];
-                role.Inventory = new UserItem[80]; role.Equipment = new UserItem[14]; role.Heroes = new HeroInfo[1]; role.CurrentHeroIndex = 0;
+                role.Inventory = new UserItem[80]; role.Equipment = new UserItem[14]; role.Heroes = new HeroInfo[role.MaximumHeroCount]; role.CurrentHeroIndex = 0;
                 role.AccountInfo.Gold = 1_000_000; role.HeroSpawned = false;
                 var sword = world.ItemInfoList.First(item => item.Type == ItemType.Weapon && item.Shape == 1);
                 sword.RequiredClass = RequiredClass.Warrior; sword.RequiredType = RequiredType.Level; sword.RequiredAmount = 1; sword.Weight = 0;
@@ -91,6 +101,7 @@ internal static class CompanionHeroScenario
                 MonsterIndex = targets[i % 2].Index, Location = spots[i], Count = 1, Delay = 1 });
             world.SaveDB(); world.SaveAccounts();
             Write(new { role.Level, HeroWeapon = world.ItemInfoList.Single(item => item.Name == "隔离英雄普通弓").Index,
+                PotionIds = role.Inventory.Where(item => item?.Info.Type == ItemType.Potion).Select(item => item.ItemIndex).Distinct().ToArray(),
                 DailyIds = daily.Select(quest => quest.Index).ToArray() });
         }
         finally { DatabaseStorage.Current = null; }

@@ -30,6 +30,17 @@ internal static class CompanionPublicServicesChecks
         check(Choose(development: true) is { Count: 1 } && Choose(gold: 499, development: true) == null, "护符整包报价/预算错误");
         bag[0] = null;
         check(Choose(development: true) == null, "书籍护符采购抢占红药");
+        var stone=new ItemInfo{Index=5,Type=ItemType.Torch,Durability=1,Stats=new Stats{[Stat.MagicBlood]=100000}};
+        infos.Add(5,stone);offers=[..offers,new PublicShopEntry{ItemIndex=5,Price=200000,MaxCount=1}];
+        bag[0]=new(red){Count=2};
+        check(Choose(gold:400000) is {Offer.ItemIndex:5,Count:1},"有余钱时没有优先购买魔血石");
+        check(Choose(gold:399999)?.Offer.ItemIndex!=5,"魔血石采购没有保留半数金币");
+        check(Choose(gold:400000,development:true) is {Offer.ItemIndex:5},"英雄发展分支没有采购恢复石");
+        equipment[3]=new(stone){CurrentDura=1};
+        check(CompanionInventoryRules.UpgradeSlot(new(stone),equipment,MirClass.Taoist,true)==-1,"两颗有储量魔血石反复换装");
+        check(Choose(gold:1000000)?.Offer.ItemIndex!=5,"储量充足仍重复囤积魔血石");
+        equipment[3]!.AddedStats[Stat.MagicBlood]=-99401;
+        check(Choose(gold:400000) is {Offer.ItemIndex:5},"储量低于600时没有更新恢复石");
         check(PublicShopRules.Category(book) == 4, "公共商店缺少普通职业书籍分类");
         book.Bind = BindMode.DontSell;
         check(PublicShopRules.Category(book) < 0, "特殊绑定技能书被加入商城");

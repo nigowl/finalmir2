@@ -74,7 +74,7 @@ public sealed partial class CompanionSession
             }
             if ((int)character.Class != Profile.Class || (int)character.Gender != Profile.Gender) throw new InvalidDataException("角色身份与档案不匹配。");
             await connection.Send(new C.StartGame { CharacterIndex = character.Index });
-            await Wait<S.UserInformation>(); await report(new("entered", Profile.Id));
+            await Wait<S.UserInformation>(); await connection.Send(new C.ItemPricesRequest()); await report(new("entered", Profile.Id));
             await connection.Send(new C.SwitchGroup { AllowGroup = Profile.AcceptGroup });
             await Status("运行中", "根据本人状态规划");
             using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
@@ -95,7 +95,8 @@ public sealed partial class CompanionSession
                     else if(control.Kind=="resume")Paused=false;
                     else if(control.Kind=="retire")retiring=true;
                     else if(control.Kind=="llm")LlmResult(control.Context,control.Text);
-                    else if(control.Kind=="goal")GoalResult(control.Context,control.Text);
+                    else if(control.Kind=="goal")await GoalResult(control.Context,control.Text);
+                    else if(control.Kind=="duel")DuelResult(control.Context,control.Text);
                 }
                 while (connection.Received.TryDequeue(out var packet)) await Apply(packet);
                 if(logoutConfirmed)return;
@@ -103,7 +104,7 @@ public sealed partial class CompanionSession
                 if (!connection.Connected) throw new IOException("连接已断开。");
                 var now = Environment.TickCount64;
                 if(now-lastControl>20000)throw new TimeoutException("宿主监管租约超时，已主动下线。");
-                await PendingSpeech(now);
+                await PendingDuel(now); await PendingSpeech(now);
                 if (now >= nextReport) { nextReport = now + 5000; await report(new("heartbeat", Profile.Id, lastState, lastReason)); }
                 // 保命独立于走路、施法及任务等待；不重置发展动作的原冷却。
                 if (await ProtectItems(now)) continue;
@@ -111,8 +112,14 @@ public sealed partial class CompanionSession
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
-        catch (Exception e) { await report(new("failed", Profile.Id, "已停止", e.Message, Recoverable:CompanionSafety.CanReconnect(state,e,deaths,Profile.DeathLimit,
-            pendingAsset!=null||publicPurchases.Pending||protection.PendingItem!=0||protection.Paused||repairItem!=0||guildNameRequested||logoutSent!=0,serverDisconnect))); }
+        catch (Exception e)
+        {
+            var pending=pendingAsset!=null||publicPurchases.Pending||protection.PendingItem!=0||protection.Paused||repairItem!=0||guildNameRequested||logoutSent!=0;
+            var reason=e.Message;
+            if (e is IOException && pending)
+                reason+=$"；断线时仍有未决操作（{pendingAsset??"保护/修理/退出"}，编号{assetId}），须重新登录核对，不会自动重发。";
+            await report(new("failed",Profile.Id,"已停止",reason,Recoverable:CompanionSafety.CanReconnect(state,e,deaths,Profile.DeathLimit,pending,serverDisconnect)));
+        }
         finally
         {
             connection.Dispose();cancellation.Cancel();
@@ -157,8 +164,12 @@ public sealed partial class CompanionSession
             state.QuestDefinitions.TryGetValue(removed.Quest.Id, out var repeat) && repeat.Type == QuestType.Repeatable)
         { acceptedQuests.Remove(repeat.Index); finishedQuests.Remove(repeat.Index); }
         state.Apply(packet); protection.Apply(packet, Environment.TickCount64);
+        // 死亡与喝药可能交错；已明确拒绝的普通药品没有未决资产，继续原死亡预算/复活流程。
+        var deathPotionRejection=protectionResult && packet is S.UseItem {Success:false} &&
+            protectedItem?.Info is {Type:ItemType.Potion,Shape:0 or 1} && state.Me?.Dead==true && state.User?.HP==0 && Knowledge?.NoDrug==false;
+        if(deathPotionRejection)protection.Resume();
         if(protectionResult && packet is S.UseItem {Success:false})
-            await report(new("protection-rejected",Profile.Id,Reason:protection.Notice,
+            await report(new("protection-rejected",Profile.Id,Reason:deathPotionRejection?"已确认死亡，普通药品明确拒绝；保留死亡预算，等待原回城复活。":protection.Notice,
                 Text:$"物品 {protectedItem?.ItemIndex}/{protectedItem?.Info?.Name}，唯一编号 {protectedItem?.UniqueID}，生命 {state.User?.HP}/{state.CalculateStats()[Stat.HP]}，魔法 {state.User?.MP}，地图 {state.Map?.MapIndex}，坐标 {state.User?.Location}，已死亡 {state.Me?.Dead}，禁药 {Knowledge?.NoDrug}，禁回城 {Knowledge?.NoTownTeleport}，禁随机 {Knowledge?.NoRandom}"));
         await SkillPacket(packet);
         if(await RetirementPacket(packet))return;

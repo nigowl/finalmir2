@@ -16,7 +16,7 @@ internal static class CompanionStorageChecks
             i=>i.SealedInfo=new SealedInfo(),i=>i.SoulBoundId=1,i=>i.GMMade=true,i=>i.AddedStats[Stat.MaxDC]=1,
             i=>i.Info.Grade=ItemGrade.Rare,i=>i.Info.RequiredAmount=11,i=>i.Info.NeedIdentify=true,
             i=>i.Awake.Type=AwakeType.DC,i=>i.GemCount=1,i=>i.Info.Type=ItemType.Weapon,i=>i.Info.Weight=0,
-            i=>i.Info.StackSize=10,i=>i.Info.Price=0,i=>i.Cursed=true};
+            i=>i.Count=1000,i=>i.Info.Price=0,i=>i.Cursed=true};
         foreach(var protect in protections){var item=Material();protect(item);check(!CompanionInventoryRules.StorageMaterial(item,excluded,10),"仓库放行了受保护/异常/非材料资产");}
         var food=Material();food.Info.Type=ItemType.Food;
         check(CompanionInventoryRules.StorageMaterial(food,excluded,10),"普通食品无法按相同保护暂存");

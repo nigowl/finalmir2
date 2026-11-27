@@ -11,6 +11,13 @@ public sealed partial class CompanionSession
     private string reportedBlockedGoal="";
     private long arrivedAt;
 
+    private async Task DeclineCombat(KnownGoal goal,int monster,string reason)
+    {
+        combatTarget=0;combatProgress.Decline(goal.Key,Environment.TickCount64);
+        await report(new("combat-blocked",Profile.Id,"战斗降级",reason,goal.Key,MonsterId:monster));
+        await Status("降级打怪中",reason);
+    }
+
     private int MonsterId(Crystal.Native.Actor actor) => Knowledge?.Enemies?.FirstOrDefault(enemy => enemy.ObjectId == actor.Id)?.MonsterId ??
         Knowledge?.Spawns.FirstOrDefault(spawn => spawn.Name == actor.Name)?.MonsterId ?? 0;
 
@@ -21,7 +28,7 @@ public sealed partial class CompanionSession
         if (remote && goal.NextExit == null)
         { if(travelOnly)return false; await Status("待目标", "目标地图没有可用的公开步行入口"); nextAction = now + 3000; return true; }
         var point = remote ? new Point(goal.NextExit!.X, goal.NextExit.Y) : new Point(goal.X, goal.Y);
-        var near = remote || goal.Kind == "guild-siege" ? 0 : goal.Kind is "accept" or "turn-in" or "service" or "guild-create" or "party" ? 3 : 1;
+        var near = remote || goal.Kind == "guild-siege" ? 0 : goal.Kind is "accept" or "turn-in" or "service" or "guild-create" or "guild-register" or "guild-rally" or "party" ? 3 : 1;
         var key = $"{Knowledge.MapId}/{goal.Kind}/{goal.MapId}/{goal.QuestId}/{goal.NpcId}/{string.Join(',', goal.MonsterIds ?? [])}";
         var distance = Distance(state.User!.Location, point);
         if (key != progressGoal) { progressGoal = key; bestGoalDistance = distance; arrivedAt=0; }

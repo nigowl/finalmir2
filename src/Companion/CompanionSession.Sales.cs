@@ -26,12 +26,12 @@ public sealed partial class CompanionSession
         var caster=user.Magics.Any(magic=>Crystal.Native.ClientAutomation.IsSingleSkill(magic.Spell)&&magic.Spell!=Spell.None&&!Crystal.Native.ClientAutomation.IsAttackSkill(magic.Spell));
         var spare=CompanionInventoryRules.SurplusArmour(user.Inventory,user.Equipment[1],protectedItems,user.Level)
             .Concat(CompanionInventoryRules.SurplusWeapons(user.Inventory,user.Equipment[0],user.Class,user.Gender,user.Level,caster,protectedItems))
-            .Select(item=>new KnownSale(item.UniqueID,item.Count)).Concat(CompanionInventoryRules.SurplusMaterials(user.Inventory,protectedItems,user.Level))
-            .Concat(user.Inventory.Where(item=>CompanionInventoryRules.PlainMeat(item,protectedItems,user.Level)).Select(item=>new KnownSale(item.UniqueID,item.Count)))
+            .Select(item=>new KnownSale(item.UniqueID,item.Count)).Concat(CompanionInventoryRules.SurplusMaterials(user.Inventory.Concat(user.QuestInventory),protectedItems,user.Level))
+            .Concat(user.Inventory.Concat(user.QuestInventory).Where(item=>CompanionInventoryRules.PlainMeat(item,protectedItems,user.Level)).Select(item=>new KnownSale(item.UniqueID,item.Count)))
             .ToDictionary(sale=>sale.UniqueId,sale=>sale.Count);
         foreach(var sale in Knowledge?.Goal?.SellItems??[])
         {
-            var item=user.Inventory.FirstOrDefault(item=>item?.UniqueID==sale.UniqueId);
+            var item=user.Inventory.Concat(user.QuestInventory).FirstOrDefault(item=>item?.UniqueID==sale.UniqueId);
             if(item==null||item.UniqueID==repairItem||refused.Contains(item.UniqueID)||atNpc&&!Trades(item.Info)||!spare.TryGetValue(item.UniqueID,out var count))continue;
             var copy=item.Clone();copy.Count=Math.Min(count,sale.Count);if(copy.Count>0)return copy;
         }

@@ -26,6 +26,7 @@ internal static class CompanionKnowledgeChecks
             check(await Read()==(short)ClientPacketIds.StartGame,"地图快照检查没有进入原角色");
             await Send(new S.UserInformation{ObjectID=1,Name=profile.Name,HP=100,MP=100,
                 Inventory=new UserItem[46],Equipment=new UserItem[14],QuestInventory=[],Magics=[]});
+            check(await Read()==(short)ClientPacketIds.ItemPricesRequest,"陪玩未请求当前版本价格");
             check(await Read()==(short)ClientPacketIds.SwitchGroup,"地图快照检查缺少组队设置");
             var first=Knowledge(1);await Control(first,"first");var exposedBeforeMap=session.Knowledge!=null;
             await Barrier(new S.MapInformation{MapIndex=1,FileName="First"});

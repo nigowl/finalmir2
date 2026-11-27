@@ -56,6 +56,8 @@ public static class CompanionValidation
         if(s.Models==null||s.Models.Length>20||s.Models.Any(m=>m==null)||s.Models.Select(m=>m.Id).Distinct().Count()!=s.Models.Length)
             throw new InvalidDataException("模型最多20个且编号不能重复。");
         if(s.Nicknames==null||s.Nicknames.Length>1000||s.Nicknames.Any(n=>n==null||n.Length>40))throw new InvalidDataException("昵称池最多1000项，每项最多40字符。");
+        if (s.Nicknames.Where(n => n.Trim().Length > 0).Any(n => !Envir.IsCharacterNameValid(n.Trim())))
+            throw new InvalidDataException("昵称池含有不符合角色命名规则的昵称。");
         foreach(var model in s.Models)Model(model);
         if(s.DefaultModelId!=Guid.Empty&&!s.Models.Any(m=>m.Id==s.DefaultModelId&&m.Enabled))throw new InvalidDataException("默认模型必须存在且已启用。");
         if(edit.ModelKeys?.Any(k=>k==null||k.Key?.Length>4096||!s.Models.Any(m=>m.Id==k.Id))==true||edit.ModelKeys?.Select(k=>k.Id).Distinct().Count()!=edit.ModelKeys?.Length)
@@ -66,6 +68,13 @@ public static class CompanionValidation
         if(m==null||m.Id==Guid.Empty||string.IsNullOrWhiteSpace(m.Name)||m.Name.Length>60||string.IsNullOrWhiteSpace(m.Model)||m.Model.Length>200||m.Endpoint==null||m.Endpoint.Length>2048||
             !Uri.TryCreate(m.Endpoint,UriKind.Absolute,out var uri)||uri.Scheme is not("http"or"https")||uri.UserInfo.Length>0)
             throw new InvalidDataException("请填写模型名称、模型标识及无内嵌凭据的完整 http/https 接口地址。");
+    }
+    public static void SchedulePreset(CompanionSchedulePreset p)
+    {
+        if (p == null || p.Id == Guid.Empty || string.IsNullOrWhiteSpace(p.Name) || p.Name.Length > 40 ||
+            p.Name != p.Name.Trim() || p.Name.Any(char.IsControl) || p.Schedule == null)
+            throw new InvalidDataException("日程预设名称须为1–40个字符，且必须有有效日程。");
+        CompanionScheduling.Validate(p.Schedule);
     }
     public static void Preset(PersonalityPreset p, CompanionStore store)
     {

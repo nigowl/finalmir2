@@ -5,6 +5,7 @@ namespace Server.MirObjects.Monsters
     public class Deer : HarvestMonster
     {
         private bool _runAway;
+        public bool RunsAway => _runAway;
 
         protected override bool CanAttack
         {

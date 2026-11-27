@@ -25,10 +25,21 @@ public static class CompanionModels
         foreach(var model in edit.Settings.Models)
         {
             var replacement=edit.ModelKeys?.SingleOrDefault(k=>k.Id==model.Id);
+            if (replacement?.Clear != true && replacement?.Key == null) SavedKey(old, model.Id, model.Endpoint);
             keys[model.Id]=replacement?.Clear==true?"":replacement?.Key??old.ModelKeys?.GetValueOrDefault(model.Id)??"";
         }
-        return new(edit.Settings with{Version="",LlmEndpoint="",LlmModel="",HasLlmKey=false,Models=edit.Settings.Models.Select(m=>m with{HasKey=false}).ToArray()},
+        return new(edit.Settings with{Version="",LlmEndpoint="",LlmModel="",HasLlmKey=false,Nicknames=CompanionNames.Normalize(edit.Settings.Nicknames),Models=edit.Settings.Models.Select(m=>m with{HasKey=false}).ToArray()},
             "",instance,old.LlmDay,old.LlmCalls,keys,old.Arrivals);
+    }
+    public static string SavedKey(CompanionConfiguration configuration, Guid id, string endpoint)
+    {
+        var key = configuration.ModelKeys?.GetValueOrDefault(id) ?? "";
+        if (key.Length == 0) return key;
+        var model = configuration.Settings.Models.SingleOrDefault(m => m.Id == id);
+        // 已保存的凭据不能随草稿地址变化发给另一接口。
+        if (model == null || CompanionModelEndpoints.Chat(model.Endpoint) != CompanionModelEndpoints.Chat(endpoint))
+            throw new InvalidDataException("API地址已变更，请重新输入密钥或勾选清除密钥。");
+        return key;
     }
     public static CompanionModelConnection? Select(CompanionConfiguration configuration,Guid modelId)
     {

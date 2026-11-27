@@ -12,8 +12,8 @@ public static class CompanionSupplies
     {
         if (player.Account.Gold == 0 || !player.Info.Inventory.Any(item => item == null)) return null;
         // 回店路上也会消耗药品，节俭只能影响预算，不能等到只剩一瓶才返程。
-        var hp = CompanionSupplyRules.NeedsRefill(player.Info.Inventory, Stat.HP, player.Class, profile.Traits.Frugality);
-        var mp = CompanionSupplyRules.NeedsRefill(player.Info.Inventory, Stat.MP, player.Class, profile.Traits.Frugality);
+        var hp = CompanionSupplyRules.NeedsRefill(player.Info.Inventory, Stat.HP, player.Class, profile.Traits.Frugality, player.Level);
+        var mp = CompanionSupplyRules.NeedsRefill(player.Info.Inventory, Stat.MP, player.Class, profile.Traits.Frugality, player.Level);
         var town = !player.CurrentMap.Info.NoTownTeleport && CompanionSupplyRules.TownCount(player.Info.Inventory, player.Class, player.Gender, player.Level)==0;
         if (!hp && !mp && !town) return null;
         var publicItems = player.PublicShopOffers().Select(offer => Envir.Main.GetItemInfo(offer.ItemIndex))
@@ -60,7 +60,8 @@ public static class CompanionSupplies
 
     public static bool NeedsFunds(PlayerObject player, CompanionProfile profile, NPCObject[] npcs)
     {
-        if (!CompanionSupplyRules.NeedsRefill(player.Info.Inventory, Stat.HP, player.Class, profile.Traits.Frugality) ||
+        if (MagicBloodStone.Remaining(player.Info.Equipment[(int)EquipmentSlot.Torch])>600) return false;
+        if (!CompanionSupplyRules.NeedsRefill(player.Info.Inventory, Stat.HP, player.Class, profile.Traits.Frugality, player.Level) ||
             !player.Info.Inventory.Any(item => item == null)) return false;
         var publicPrices = player.PublicShopOffers().Where(offer => Envir.Main.GetItemInfo(offer.ItemIndex) is { } info &&
                 CompanionSupplyRules.IsPotion(new UserItem(info), Stat.HP) &&
@@ -82,7 +83,7 @@ public static class CompanionSupplies
     private static double Price(PlayerObject player, NPCObject npc, UserItem goods)
     {
         var unit = goods.Clone(); unit.Count = 1;
-        return unit.Price() * (double)NPCScript.PriceRate(player, npc);
+        return unit.BuyPrice() * (double)NPCScript.PriceRate(player, npc);
     }
 
     private static bool Affordable(PlayerObject player, CompanionProfile profile, NPCObject npc, UserItem goods)

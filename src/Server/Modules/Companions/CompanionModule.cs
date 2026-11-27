@@ -12,6 +12,19 @@ public static class CompanionModule
         group.MapGet("/overview",(GameRuntime runtime,CompanionService service,CancellationToken token)=>runtime.Invoke(service.Overview,token));
         group.MapGet("",(GameRuntime runtime,CompanionService service,int? page,string? search,int? pageSize,string? status,CancellationToken token)=>runtime.Invoke(()=>service.List(page??0,search,pageSize??20,status),token));
         group.MapGet("/{id:guid}",(GameRuntime runtime,CompanionService service,Guid id,CancellationToken token)=>runtime.Invoke(()=>service.Detail(id),token));
+        group.MapPost("/selected-command", (GameRuntime runtime, CompanionService service, CompanionSelectedCommand value, CancellationToken token) =>
+            runtime.Invoke(() => new ActionResult($"已为 {service.CommandSelected(value)} 个选中角色保存{(value.Action == "start" ? "上线意愿；仍遵守总开关、日程、休息与名额" : "下线意愿；本次窗口内不自动重连")}。"), token));
+        group.MapPost("/selected-schedule", (GameRuntime runtime, CompanionService service, CompanionSelectedSchedule value, CancellationToken token) =>
+            runtime.Invoke(() => new ActionResult($"已更新 {service.ScheduleSelected(value)} 个选中角色的日程，历史用量与当前会话计划保留。"), token));
+        group.MapPost("/selected-llm", (GameRuntime runtime, CompanionService service, CompanionSelectedLlm value, CancellationToken token) =>
+            runtime.Invoke(() => new ActionResult($"已更新 {service.LlmSelected(value)} 个选中角色的LLM设置。"), token));
+        group.MapGet("/schedules", (GameRuntime runtime, CompanionStore store, CancellationToken token) => runtime.Invoke(() => store.Schedules, token));
+        group.MapPost("/schedules", (GameRuntime runtime, CompanionStore store, CompanionSchedulePreset value, CancellationToken token) =>
+            runtime.Invoke(() => { store.SaveSchedule(value, true); return new ActionResult("日程预设已保存。"); }, token));
+        group.MapPut("/schedules/{id:guid}", (GameRuntime runtime, CompanionStore store, Guid id, CompanionSchedulePreset value, CancellationToken token) =>
+            runtime.Invoke(() => { if (id != value.Id) throw new InvalidDataException("日程预设编号不匹配。"); store.SaveSchedule(value, false); return new ActionResult("日程预设已保存。"); }, token));
+        group.MapPost("/schedules/{id:guid}/delete", (GameRuntime runtime, CompanionStore store, Guid id, CompanionCommand value, CancellationToken token) =>
+            runtime.Invoke(() => { if (value.Action != "delete") throw new InvalidDataException("未知日程操作。"); store.DeleteSchedule(id, value.Version); return new ActionResult("日程预设已删除，角色已复制的参数不变。"); }, token));
         group.MapPost("",(GameRuntime runtime,CompanionService service,CompanionProfile value,CancellationToken token)=>runtime.Invoke(()=>service.Create(value),token));
         group.MapPut("/{id:guid}",(GameRuntime runtime,CompanionService service,Guid id,CompanionProfile value,CancellationToken token)=>runtime.Invoke(()=>
         {if(id!=value.Id)throw new InvalidDataException("陪玩编号不匹配。");return service.Save(value);},token));
@@ -20,6 +33,7 @@ public static class CompanionModule
         group.MapPut("/settings",async(GameRuntime runtime,CompanionStore store,CompanionSettingsEdit value,CancellationToken token)=>
         {await runtime.Invoke(()=>{CompanionValidation.Settings(value);store.SaveSettings(value);return true;},token);return new ActionResult("本版本陪玩设置已备份并保存。");});
         group.MapPost("/models/test",(CompanionService service,CompanionLlmTest value,CancellationToken token)=>service.TestModel(value,token));
+        group.MapPost("/models/discover", (CompanionService service, CompanionModelDiscovery value, CancellationToken token) => service.DiscoverModels(value, token));
         group.MapPost("/batch-preview",(GameRuntime runtime,CompanionService service,CompanionBatchPlan value,CancellationToken token)=>runtime.Invoke(()=>service.PreviewBatch(value),token));
         group.MapPost("/batch",(GameRuntime runtime,CompanionService service,CompanionBatchCreate value,CancellationToken token)=>runtime.Invoke(()=>service.CreateBatch(value),token));
         group.MapPost("/presets",async(GameRuntime runtime,CompanionStore store,PersonalityPreset value,CancellationToken token)=>

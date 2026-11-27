@@ -1224,6 +1224,7 @@ namespace Server.MirObjects
             {
                 var quest = CurrentQuests[i];
                 quest.Init(this);
+                RefreshQuestMaterials(quest);
                 SendUpdateQuest(quest, QuestState.Add);
             }
 
@@ -1848,7 +1849,9 @@ namespace Server.MirObjects
                         if (ob.Race == ObjectType.Player || ob.Race == ObjectType.Monster || ob.Race == ObjectType.Hero)
                         {
                             ob.SendHealth(this);
+                            if (ob is HumanObject human) human.SendEquipmentGlow(this);
                         }
+                        if (ob is ItemObject item) item.SendManualDrop(this);
                     }
                 }
             }
@@ -4972,25 +4975,6 @@ namespace Server.MirObjects
                     array = Info.Inventory;
                     break;
                 case MirGridType.Storage:
-                    if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-                    NPCObject ob = null;
-                    for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-                    {
-                        if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                        ob = CurrentMap.NPCs[i];
-                        break;
-                    }
-
-                    if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-
                     if (!CanAccessStorage())
                     {
                         Enqueue(p);
@@ -5082,7 +5066,7 @@ namespace Server.MirObjects
 
             if (CanUseItem(temp))
             {
-                if (temp.Info.NeedIdentify && !temp.Identified)
+                if (temp.Info.NeedIdentify && !temp.Identified && temp.EquipmentQuality == EquipmentGrade.Legacy)
                 {
                     temp.Identified = true;
                     Enqueue(new S.RefreshItem { Item = temp });
@@ -5150,25 +5134,6 @@ namespace Server.MirObjects
                     fromGrid = MirGridType.Equipment;
                     break;
                 case MirGridType.Storage:
-                    if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-                    NPCObject ob = null;
-                    for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-                    {
-                        if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                        ob = CurrentMap.NPCs[i];
-                        break;
-                    }
-
-                    if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-
                     if (!CanAccessStorage())
                     {
                         Enqueue(p);
@@ -5279,25 +5244,6 @@ namespace Server.MirObjects
                     array = Info.Inventory;
                     break;
                 case MirGridType.Storage:
-                    if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-                    NPCObject ob = null;
-                    for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-                    {
-                        if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                        ob = CurrentMap.NPCs[i];
-                        break;
-                    }
-
-                    if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-
                     if (!CanAccessStorage())
                     {
                         Enqueue(p);
@@ -5430,25 +5376,6 @@ namespace Server.MirObjects
                     array = Info.Inventory;
                     break;
                 case MirGridType.Storage:
-                    if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-                    NPCObject ob = null;
-                    for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-                    {
-                        if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                        ob = CurrentMap.NPCs[i];
-                        break;
-                    }
-
-                    if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-
                     if (!CanAccessStorage())
                     {
                         Enqueue(p);
@@ -5513,32 +5440,16 @@ namespace Server.MirObjects
         {
             S.StoreItem p = new S.StoreItem { From = from, To = to, Success = false };
 
-            if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-            {
-                Enqueue(p);
-                return;
-            }
-            NPCObject ob = null;
-            for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-            {
-                if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                ob = CurrentMap.NPCs[i];
-                break;
-            }
-
-            if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-            {
-                Enqueue(p);
-                return;
-            }
-
             if (!CanAccessStorage())
             {
                 Enqueue(p);
                 return;
             }
 
-            if (from < 0 || from >= Info.Inventory.Length)
+            // 负数来源以按位取反表示材料栏格位，保留原普通背包正数格位与包布局。
+            var inventory = from < 0 ? Info.QuestInventory : Info.Inventory;
+            var source = from < 0 ? ~from : from;
+            if ((uint)source >= inventory.Length)
             {
                 Enqueue(p);
                 return;
@@ -5556,7 +5467,7 @@ namespace Server.MirObjects
                 return;
             }
 
-            UserItem temp = Info.Inventory[from];
+            UserItem temp = inventory[source];
 
             if (temp == null)
             {
@@ -5579,10 +5490,10 @@ namespace Server.MirObjects
             if (Account.Storage[to] == null)
             {
                 Account.Storage[to] = temp;
-                Info.Inventory[from] = null;
+                inventory[source] = null;
                 RefreshBagWeight();
 
-                Report.ItemMoved(temp, MirGridType.Inventory, MirGridType.Storage, from, to);
+                Report.ItemMoved(temp, from < 0 ? MirGridType.QuestInventory : MirGridType.Inventory, MirGridType.Storage, source, to);
 
                 p.Success = true;
                 Enqueue(p);
@@ -5593,25 +5504,6 @@ namespace Server.MirObjects
         public void TakeBackItem(int from, int to)
         {
             S.TakeBackItem p = new S.TakeBackItem { From = from, To = to, Success = false };
-
-            if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-            {
-                Enqueue(p);
-                return;
-            }
-            NPCObject ob = null;
-            for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-            {
-                if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                ob = CurrentMap.NPCs[i];
-                break;
-            }
-
-            if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-            {
-                Enqueue(p);
-                return;
-            }
 
             if (!CanAccessStorage())
             {
@@ -5631,7 +5523,7 @@ namespace Server.MirObjects
                 return;
             }
 
-            if (to < 0 || to >= Info.Inventory.Length)
+            if (to < -1 || to >= Info.Inventory.Length)
             {
                 Enqueue(p);
                 return;
@@ -5645,6 +5537,17 @@ namespace Server.MirObjects
                 return;
             }
 
+            var material = Helpers.MaterialInventoryRules.Contains(temp.Info, Envir);
+            if (material && !CanGainQuestItem(temp)) { Enqueue(p); return; }
+            if (to == -1)
+            {
+                if (!material) { Enqueue(p); return; }
+                Account.Storage[from] = null;
+                GainQuestItem(temp);
+                p.Success = true;
+                Enqueue(p);
+                return;
+            }
             if (Info.Inventory[to] == null)
             {
                 Info.Inventory[to] = temp;
@@ -5704,24 +5607,6 @@ namespace Server.MirObjects
                     array = Info.Inventory;
                     break;
                 case MirGridType.Storage:
-                    if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-                    NPCObject ob = null;
-                    for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-                    {
-                        if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                        ob = CurrentMap.NPCs[i];
-                        break;
-                    }
-
-                    if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
                     if (!CanAccessStorage())
                     {
                         Enqueue(p);
@@ -5799,7 +5684,7 @@ namespace Server.MirObjects
 
             if (actor.CanEquipItem(temp, to))
             {
-                if (temp.Info.NeedIdentify && !temp.Identified)
+                if (temp.Info.NeedIdentify && !temp.Identified && temp.EquipmentQuality == EquipmentGrade.Legacy)
                 {
                     temp.Identified = true;
                     Enqueue(new S.RefreshItem { Item = temp });
@@ -5848,12 +5733,13 @@ namespace Server.MirObjects
         {
             S.UseItem p = new S.UseItem { UniqueID = id, Grid = MirGridType.Inventory, Success = false };
 
+            var inventory = Info.QuestInventory.Any(item => item?.UniqueID == id) ? Info.QuestInventory : Info.Inventory;
             UserItem item = null;
             int index = -1;
 
-            for (int i = 0; i < Info.Inventory.Length; i++)
+            for (int i = 0; i < inventory.Length; i++)
             {
-                item = Info.Inventory[i];
+                item = inventory[i];
                 if (item == null || item.UniqueID != id) continue;
                 index = i;
                 break;
@@ -5941,6 +5827,8 @@ namespace Server.MirObjects
                     }
                     break;
                 case ItemType.Scroll:
+                    if (EquipmentAppraisal.IsScroll(item.Info))
+                    { ReceiveChat("请双击鉴定卷轴后选择待鉴定装备。", ChatType.Hint); Enqueue(p); return; }
                     UserItem temp;
                     switch (item.Info.Shape)
                     {
@@ -6171,7 +6059,7 @@ namespace Server.MirObjects
                             case 21://BlackStone
                                 {
                                     if (item.Count > 1) item.Count--;
-                                    else Info.Inventory[index] = null;
+                                    else inventory[index] = null;
                                     RefreshBagWeight();
                                     p.Success = true;
                                     Enqueue(p);
@@ -6236,7 +6124,7 @@ namespace Server.MirObjects
                                 {
                                     byte boxtype = item.Info.Effect;
                                     if (item.Count > 1) item.Count--;
-                                    else Info.Inventory[index] = null;
+                                    else inventory[index] = null;
                                     RefreshBagWeight();
                                     p.Success = true;
                                     Enqueue(p);
@@ -6371,7 +6259,7 @@ namespace Server.MirObjects
             }
 
             if (item.Count > 1) item.Count--;
-            else Info.Inventory[index] = null;
+            else inventory[index] = null;
             RefreshBagWeight();
 
             Report.ItemChanged(item, 1, 1);
@@ -6398,24 +6286,6 @@ namespace Server.MirObjects
                     array = Info.Inventory;
                     break;
                 case MirGridType.Storage:
-                    if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-                    NPCObject ob = null;
-                    for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-                    {
-                        if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                        ob = CurrentMap.NPCs[i];
-                        break;
-                    }
-
-                    if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
                     if (!CanAccessStorage())
                     {
                         Enqueue(p);
@@ -6536,24 +6406,6 @@ namespace Server.MirObjects
                     arrayFrom = Info.Inventory;
                     break;
                 case MirGridType.Storage:
-                    if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-                    NPCObject ob = null;
-                    for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-                    {
-                        if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                        ob = CurrentMap.NPCs[i];
-                        break;
-                    }
-
-                    if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
                     if (!CanAccessStorage())
                     {
                         Enqueue(p);
@@ -6600,24 +6452,6 @@ namespace Server.MirObjects
                     arrayTo = Info.Inventory;
                     break;
                 case MirGridType.Storage:
-                    if (NPCPage == null || !String.Equals(NPCPage.Key, NPCScript.StorageKey, StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
-                    NPCObject ob = null;
-                    for (int i = 0; i < CurrentMap.NPCs.Count; i++)
-                    {
-                        if (CurrentMap.NPCs[i].ObjectID != NPCObjectID) continue;
-                        ob = CurrentMap.NPCs[i];
-                        break;
-                    }
-
-                    if (ob == null || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange))
-                    {
-                        Enqueue(p);
-                        return;
-                    }
                     if (!CanAccessStorage())
                     {
                         Enqueue(p);
@@ -7448,11 +7282,12 @@ namespace Server.MirObjects
                 return;
             }
 
+            var inventory = Info.QuestInventory.Any(item => item?.UniqueID == id) ? Info.QuestInventory : Info.Inventory;
             UserItem temp = null;
             int index = -1;
-            for (int i = 0; i < Info.Inventory.Length; i++)
+            for (int i = 0; i < inventory.Length; i++)
             {
-                temp = Info.Inventory[i];
+                temp = inventory[i];
                 if (temp == null || temp.UniqueID != id) continue;
                 index = i;
                 break;
@@ -7480,13 +7315,13 @@ namespace Server.MirObjects
             if (temp.Count == count)
             {
                 if (!temp.Info.Bind.HasFlag(BindMode.DestroyOnDrop))
-                    if (!DropItem(temp))
+                    if (!DropItem(temp, manual: true))
                     {
                         Enqueue(p);
                         return;
                     }
 
-                Info.Inventory[index] = null;
+                inventory[index] = null;
 
             }
             else
@@ -7495,7 +7330,7 @@ namespace Server.MirObjects
                 temp2.UniqueID = Envir.CreateFreshItem(temp.Info).UniqueID;
                 temp2.Count = count;
                 if (!temp.Info.Bind.HasFlag(BindMode.DestroyOnDrop))
-                    if (!DropItem(temp2))
+                    if (!DropItem(temp2, manual: true))
                     {
                         Enqueue(p);
                         return;
@@ -7512,9 +7347,10 @@ namespace Server.MirObjects
         {
             if (Account.Gold < gold) return;
 
-            ItemObject ob = new ItemObject(this, gold);
+            ItemObject ob = new ItemObject(this, gold) { ManualDropperId = Info.Index };
 
             if (!ob.Drop(5)) return;
+            ob.SendManualDrop(this);
             Account.Gold -= gold;
             Enqueue(new S.LoseGold { Gold = gold });
         }
@@ -7764,7 +7600,7 @@ namespace Server.MirObjects
         }
         public bool CheckQuestItem(UserItem uItem, ushort count)
         {
-            foreach (var item in Info.QuestInventory.Where(item => item != null && item.Info == uItem.Info))
+            foreach (var item in CarriedItems.Where(item => item.Info == uItem.Info))
             {
                 if (count > item.Count)
                 {
@@ -7781,26 +7617,8 @@ namespace Server.MirObjects
         }
         public bool CanGainQuestItem(UserItem item)
         {
-            if (FreeSpace(Info.QuestInventory) > 0) return true;
-
-            if (item.Info.StackSize > 1)
-            {
-                ushort count = item.Count;
-
-                for (int i = 0; i < Info.QuestInventory.Length; i++)
-                {
-                    UserItem bagItem = Info.QuestInventory[i];
-
-                    if (!item.CanStackWith(bagItem) || bagItem.Count >= bagItem.Info.StackSize) continue;
-
-                    if (bagItem.Count + count <= bagItem.Info.StackSize) return true;
-
-                    count -= (ushort)(bagItem.Info.StackSize - bagItem.Count);
-                }
-            }
-
-            ReceiveChat(GameLanguage.ServerTextMap.GetLocalization(ServerTextKeys.CannotCarryMoreQuestItems), ChatType.System);
-
+            if (Helpers.InventoryStacks.CanAdd(Info.QuestInventory, new[] { item })) return true;
+            ReceiveChat("材料物品栏已满，无法放入新物品。", ChatType.System);
             return false;
         }
         public void GainQuestItem(UserItem item)
@@ -7812,32 +7630,17 @@ namespace Server.MirObjects
             Enqueue(new S.GainedQuestItem { Item = clonedItem });
 
             AddQuestItem(item);
+            QuestInventoryDirty = true;
         }
         public void TakeQuestItem(ItemInfo uItem, ushort count)
         {
-            QuestInventoryDirty = true;
-            for (int o = 0; o < Info.QuestInventory.Length; o++)
+            if (count == 0) return;
+            foreach (var item in CarriedItems.Where(item => item.Info == uItem).ToArray())
             {
-                UserItem item = Info.QuestInventory[o];
-                if (item == null) continue;
-                if (item.Info != uItem) continue;
-
-                if (count > item.Count)
-                {
-                    Enqueue(new S.DeleteQuestItem { UniqueID = item.UniqueID, Count = item.Count });
-                    Info.QuestInventory[o] = null;
-
-                    count -= item.Count;
-                    continue;
-                }
-
-                Enqueue(new S.DeleteQuestItem { UniqueID = item.UniqueID, Count = count });
-
-                if (count == item.Count)
-                    Info.QuestInventory[o] = null;
-                else
-                    item.Count -= count;
-                break;
+                var used = (ushort)Math.Min(count, item.Count);
+                ConsumeCarriedItem(item, used);
+                count -= used;
+                if (count == 0) break;
             }
         }
 
@@ -8051,12 +7854,13 @@ namespace Server.MirObjects
                 if (ob.ObjectID != NPCObjectID) continue;
                 if (!Functions.InRange(ob.CurrentLocation, CurrentLocation, Globals.DataRange)) return;
 
+                var inventory = Info.QuestInventory.Any(item => item?.UniqueID == uniqueID) ? Info.QuestInventory : Info.Inventory;
                 UserItem temp = null;
                 int index = -1;
 
-                for (int i = 0; i < Info.Inventory.Length; i++)
+                for (int i = 0; i < inventory.Length; i++)
                 {
-                    temp = Info.Inventory[i];
+                    temp = inventory[i];
                     if (temp == null || temp.UniqueID != uniqueID) continue;
                     index = i;
                     break;
@@ -8096,7 +7900,7 @@ namespace Server.MirObjects
                     item.UniqueID = Envir.CreateFreshItem(temp.Info).UniqueID;
                     item.Count = count;
 
-                    if (!CanGainGold(item.Price() / 2))
+                    if (!CanGainGold(item.SellPrice()))
                     {
                         Enqueue(p);
                         return;
@@ -8107,12 +7911,12 @@ namespace Server.MirObjects
                 }
                 else
                 {
-                    if (!CanGainGold(temp.Price() / 2))
+                    if (!CanGainGold(temp.SellPrice()))
                     {
                         Enqueue(p);
                         return;
                     }
-                    Info.Inventory[index] = null;
+                    inventory[index] = null;
                 }
 
                 script.Sell(this, temp);
@@ -8135,7 +7939,7 @@ namespace Server.MirObjects
 
                 p.Success = true;
                 Enqueue(p);
-                GainGold(temp.Price() / 2);
+                GainGold(temp.SellPrice());
                 RefreshBagWeight();
 
                 return;
@@ -8261,9 +8065,7 @@ namespace Server.MirObjects
 
         private bool CanAccessStorage()
         {
-            if (!Settings.RequireStoragePassword) return true;
-
-            return Account == null || !Account.HasStoragePassword || StorageUnlocked;
+            return CanOpenStorage && (!Settings.RequireStoragePassword || !Account.HasStoragePassword || StorageUnlocked);
         }
 
         private bool IsAtNPC(string pageKey)
@@ -9092,6 +8894,8 @@ namespace Server.MirObjects
                             newItem.SoulBoundId = item.SoulBoundId;
                             newItem.WeddingRing = item.WeddingRing;
                             newItem.Identified = item.Identified;
+                            newItem.EquipmentQuality = item.EquipmentQuality;
+                            if (newItem.EquipmentQuality != EquipmentGrade.Legacy && newItem.Identified) newItem.AddedStats.Add(EquipmentAppraisal.Bonuses(newItem));
                             newItem.Cursed = item.Cursed;
 
                             Info.Inventory[i] = newItem;
@@ -9831,32 +9635,17 @@ namespace Server.MirObjects
                     {
                         ushort count = (ushort)Math.Min(Required.Amount, ushort.MaxValue);
 
-                        for (int o = 0; o < Info.Inventory.Length; o++)
+                        foreach (var item in CarriedItems.Where(item => item.Info == Required.Item).ToArray())
                         {
-                            UserItem item = Info.Inventory[o];
-                            if (item == null) continue;
-                            if (item.Info != Required.Item) continue;
-
-                            if ((Required.Item.Type == ItemType.Ore) && (item.CurrentDura / 1000 > Required.Amount))
+                            if (Required.Item.Type == ItemType.Ore && item.CurrentDura / 1000 > Required.Amount)
                             {
-                                Enqueue(new S.DeleteItem { UniqueID = item.UniqueID, Count = item.Count });
-                                Info.Inventory[o] = null;
+                                ConsumeCarriedItem(item, item.Count);
                                 break;
                             }
-                            if (count > item.Count)
-                            {
-                                Enqueue(new S.DeleteItem { UniqueID = item.UniqueID, Count = item.Count });
-                                Info.Inventory[o] = null;
-                                count -= item.Count;
-                                continue;
-                            }
-
-                            Enqueue(new S.DeleteItem { UniqueID = item.UniqueID, Count = (ushort)count });
-                            if (count == item.Count)
-                                Info.Inventory[o] = null;
-                            else
-                                item.Count -= (ushort)count;
-                            break;
+                            var used = (ushort)Math.Min(count, item.Count);
+                            ConsumeCarriedItem(item, used);
+                            count -= used;
+                            if (count == 0) break;
                         }
                     }
                 }
@@ -11418,13 +11207,13 @@ namespace Server.MirObjects
                             item.Count = item.Info.StackSize;
                         }
 
-                        if (!CanGainQuestItem(item))
+                        if (!CanGainItem(item))
                         {
                             RecalculateQuestBag(info);
                             return;
                         }
 
-                        GainQuestItem(item);
+                        GainItem(item);
 
                         Report.ItemChanged(item, item.Count, 2);
                     }
@@ -11434,6 +11223,7 @@ namespace Server.MirObjects
             QuestProgressInfo quest = new QuestProgressInfo(index);
 
             quest.Init(this);
+            RefreshQuestMaterials(quest);
 
             SendUpdateQuest(quest, QuestState.Add, true);
 
@@ -11444,7 +11234,9 @@ namespace Server.MirObjects
         {
             QuestProgressInfo quest = CurrentQuests.FirstOrDefault(e => e.Info.Index == questIndex);
 
-            if (quest == null || !quest.Completed) return;
+            if (quest == null) return;
+            RefreshQuestMaterials(quest);
+            if (!quest.CheckCompleted()) return;
 
             NPCObject npc = null;
 
@@ -11645,12 +11437,12 @@ namespace Server.MirObjects
             foreach (QuestProgressInfo quest in CurrentQuests.
                 Where(e => e.ItemTaskCount.Count > 0).
                 Where(e => e.NeedItem(item.Info)).
-                Where(e => CanGainQuestItem(item)))
+                Where(e => CanGainItem(item)))
             {
                 if (gainItem)
                 {
-                    GainQuestItem(item);
-                    quest.ProcessItem(Info.QuestInventory);
+                    GainItem(item);
+                    quest.ProcessItem(CarriedItems.ToArray());
 
                     Enqueue(new S.SendOutputMessage { Message = GameLanguage.ServerTextMap.GetLocalization((ServerTextKeys.YouFound), item.FriendlyName), Type = OutputMessageType.Quest });
 
@@ -11700,7 +11492,7 @@ namespace Server.MirObjects
             {
                 UserItem itm = Info.QuestInventory[i];
 
-                if (itm == null) continue;
+                if (itm == null || itm.Info.Type != ItemType.Quest) continue;
 
                 bool itemRequired = false;
                 bool isCarryItem = false;

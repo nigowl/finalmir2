@@ -7,7 +7,7 @@ using Server.MirEnvir;
 
 internal static class CompanionFundingScenario
 {
-    public static void Prepare(ProjectPaths paths,int characterId,bool noSource,bool harvestSource=false,bool evasiveSource=false,bool harvestGround=false,bool remoteDelivery=false,bool unarmed=false,bool crowdedSource=false,bool caster=false,bool blockedExit=false,bool blockedRoute=false,bool friendlyGuard=false)
+    public static void Prepare(ProjectPaths paths,int characterId,bool noSource,bool harvestSource=false,bool evasiveSource=false,bool harvestGround=false,bool remoteDelivery=false,bool unarmed=false,bool crowdedSource=false,bool caster=false,bool blockedExit=false,bool blockedRoute=false,bool friendlyGuard=false,bool passiveNeighbours=false)
     {
         if(!paths.Data.Contains("mir2-companions-funding-",StringComparison.Ordinal))throw new InvalidOperationException("只允许修改本筹资测试的隔离版本。");
         using var ownership=new FileStream(Path.Combine(paths.Data,".server.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -41,6 +41,14 @@ internal static class CompanionFundingScenario
             new MonsterInfo{Index=2,Name="NativeFundingQuest",Image=Monster.Hen,Level=1,AI=0,ViewRange=0,
                 MoveSpeed=ushort.MaxValue,AttackSpeed=2500,Experience=10,Stats=new Stats{[Stat.HP]=400,[Stat.MinDC]=5,[Stat.MaxDC]=5},DropPath="NativeFundingQuest"}];
         world.MonsterIndex=2;
+        if(passiveNeighbours)
+        {
+            world.MonsterInfoList[0].Stats[Stat.HP]=1000;
+            world.MonsterInfoList[0].Experience=9;
+            world.MonsterInfoList.Add(new MonsterInfo{Index=++world.MonsterIndex,Name="隔离被动鹿",Image=Monster.Deer,AI=2,Level=50,ViewRange=8,
+                MoveSpeed=ushort.MaxValue,Stats=new Stats{[Stat.HP]=10000,[Stat.MinDC]=1000,[Stat.MaxDC]=1000}});
+            local.Respawns.Add(new RespawnInfo{MonsterIndex=world.MonsterIndex,Location=Functions.PointMove(start,MirDirection.Down,3),Count=1,Delay=600});
+        }
         if(friendlyGuard)
         {
             world.MonsterInfoList[0].AI=2;

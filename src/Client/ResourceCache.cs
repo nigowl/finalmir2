@@ -46,6 +46,8 @@ public sealed partial class ResourceCache : IDisposable
     public bool SupportsQuestNavigation { get; private set; }
     public bool SupportsCharacterLocation { get; private set; }
     public bool SupportsHealthDisplay { get; private set; }
+    public bool SupportsEquipmentGlow { get; private set; }
+    public bool SupportsItemPrices { get; private set; }
     public bool SupportsHeroRecovery { get; private set; }
     public bool SupportsHeroDeletion { get; private set; }
     public bool SupportsItemRecycling { get; private set; }
@@ -110,6 +112,8 @@ public sealed partial class ResourceCache : IDisposable
         SupportsHeroRecovery = manifest.RootElement.TryGetProperty("heroRecovery", out var recovery) && recovery.ValueKind == JsonValueKind.True;
         SupportsHeroDeletion = manifest.RootElement.TryGetProperty("heroDeletion", out var deletion) && deletion.ValueKind == JsonValueKind.True;
         SupportsHealthDisplay = manifest.RootElement.TryGetProperty("healthDisplay", out var health) && health.ValueKind == JsonValueKind.True;
+        SupportsItemPrices = manifest.RootElement.TryGetProperty("itemPrices", out var itemPrices) && itemPrices.ValueKind == JsonValueKind.True;
+        SupportsEquipmentGlow = manifest.RootElement.TryGetProperty("equipmentGlow", out var equipmentGlow) && equipmentGlow.ValueKind == JsonValueKind.True;
         SupportsItemRecycling = manifest.RootElement.TryGetProperty("itemRecycling", out var recycling) && recycling.ValueKind == JsonValueKind.True;
         if (!manifest.RootElement.TryGetProperty("playerMoveMilliseconds", out var move) || !move.TryGetInt32(out var milliseconds))
             throw new InvalidDataException("服务端未提供有效的走跑间隔，请更新服务端。");

@@ -334,15 +334,16 @@ namespace Server.MirObjects
         {
             S.UseItem p = new S.UseItem { UniqueID = id, Grid = MirGridType.HeroInventory, Success = false };
 
+            var inventory = Owner.Info.QuestInventory.Any(item => item?.UniqueID == id) ? Owner.Info.QuestInventory : Owner.Info.Inventory;
             UserItem item = null;
             int index = -1;
 
             if (Owner.Dead || Owner.TradePartner != null || Owner.ItemRentalPartner != null)
             { Owner.Enqueue(p); return; }
 
-            for (int i = 0; i < Owner.Info.Inventory.Length; i++)
+            for (int i = 0; i < inventory.Length; i++)
             {
-                item = Owner.Info.Inventory[i];
+                item = inventory[i];
                 if (item == null || item.UniqueID != id) continue;
                 index = i;
                 break;
@@ -502,17 +503,11 @@ namespace Server.MirObjects
                     }
                     break;
                 case ItemType.Book:
-                    UserMagic magic = new UserMagic((Spell)item.Info.Shape);
-
-                    if (magic.Info == null)
+                    if (!LearnSkill((Spell)item.Info.Shape))
                     {
                         Owner.Enqueue(p);
                         return;
                     }
-
-                    Info.Magics.Add(magic);
-                    SendMagicInfo(magic);
-                    RefreshStats();
                     break;
                 case ItemType.Food:
                     temp = Info.Equipment[(int)EquipmentSlot.Mount];
@@ -611,7 +606,7 @@ namespace Server.MirObjects
             }
 
             if (item.Count > 1) item.Count--;
-            else Owner.Info.Inventory[index] = null;
+            else inventory[index] = null;
             Owner.RefreshBagWeight();
 
             Report?.ItemChanged(item, 1, 1);
@@ -707,6 +702,7 @@ namespace Server.MirObjects
             base.LevelUp();
 
             Owner.Enqueue(new S.HeroLevelChanged { Level = Level, Experience = Experience, MaxExperience = MaxExperience });
+            AutoLearnSelectedSkills();
         }
         protected override void SendHealthChanged()
         {
@@ -819,28 +815,29 @@ namespace Server.MirObjects
 
         protected void ProcessAutoPot()
         {
-            if (Envir.Time < AutoPotTime) return;
+            if (Envir.Time < AutoPotTime || Dead || Owner == null || Owner.Dead || CurrentMap == null ||
+                CurrentMap.Info.NoDrug || Owner.TradePartner != null || Owner.ItemRentalPartner != null) return;
 
             AutoPotTime = Envir.Time + AutoPotDelay;
-
-            if (PercentHealth < AutoHPPercent && HPItemIndex > 0 && PotHealthAmount <= 0)
-                TryAutoPot(HPItemIndex);
-
-            if (PercentMana < AutoMPPercent && MPItemIndex > 0 && PotManaAmount <= 0)
-                TryAutoPot(MPItemIndex);
+            var stone = MagicBloodStone.Remaining(Info.Equipment[(int)EquipmentSlot.Torch]) >= 60;
+            // 未配置旧版自动药品也能使用共用包；有魔血石时只在紧急阈值补药。
+            if (PercentHealth <= (stone ? 35 : AutoHPPercent > 0 ? AutoHPPercent : 65) && PotHealthAmount <= 0 &&
+                TryAutoPot(HPItemIndex, Stat.HP, Stats[Stat.HP] - HP, 2)) return;
+            if (Stats[Stat.MP] > 0 && PercentMana <= (stone ? 10 : AutoMPPercent > 0 ? AutoMPPercent : 35) && PotManaAmount <= 0)
+                TryAutoPot(MPItemIndex, Stat.MP, Stats[Stat.MP] - MP, 1);
         }
 
-        protected void TryAutoPot(int ItemIndex)
+        protected bool TryAutoPot(int itemIndex, Stat stat, int missing, int reserve)
         {
-            for (int i = 0; i < Owner.Info.Inventory.Length; i++)
-            {
-                UserItem item = Owner.Info.Inventory[i];
-                if (item == null) continue;
-                if (item.Info.Index != ItemIndex) continue;
-
-                UseItem(item.UniqueID);
-                return;
-            }
+            var potions = Owner.Info.Inventory.Where(item => item?.Info is { Type: ItemType.Potion, Shape: 0 or 1 } &&
+                item.Count > 0 && item.Info.Stats[stat] > 0 && !item.Info.Bind.HasFlag(BindMode.NoHero)).ToArray();
+            if (potions.Sum(item => (int)item.Count) <= reserve) return false;
+            var potion = potions.OrderBy(item => item.Info.Index == itemIndex ? 0 : 1)
+                .ThenByDescending(item => Math.Min(item.Info.Stats[stat], missing)).ThenBy(item => item.Info.Stats[stat])
+                .FirstOrDefault(CanUseItem);
+            if (potion == null) return false;
+            UseItem(potion.UniqueID);
+            return true;
         }
 
         protected void ProcessAI() 

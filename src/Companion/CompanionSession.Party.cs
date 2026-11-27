@@ -42,7 +42,7 @@ public sealed partial class CompanionSession
         var user=state.User!;
         var ally=state.Actors.Values.Where(a=>a.Kind==ObjectType.Player&&!a.Hidden&&!a.Dead&&a.Id!=user.ObjectID&&
             state.GroupMembers.Contains(a.Name)&&Distance(user.Location,a.Location)<=7&&
-            a.Health<(Profile.Goal=="协助队友"||goalHint=="help"?85:Profile.Traits.Helpfulness>=60?70:45)).OrderBy(a=>a.Health).FirstOrDefault();
+            a.Health<(Profile.Goal=="协助队友"?85:Profile.Traits.Helpfulness>=60?70:45)).OrderBy(a=>a.Health).FirstOrDefault();
         var heal=user.Magics.FirstOrDefault(m=>m.Spell==Spell.Healing&&now>=m.CastTime+Math.Max(m.Delay,5000)&&ClassSkillRules.Ready(state,m,now));
         if(skillsPaused||ally==null||heal==null||!await SendSkill(heal.Spell,ally,true,now))return false;
         heal.CastTime=now;await Status("辅助中","治疗当前实际低血队友："+ally.Name);return true;

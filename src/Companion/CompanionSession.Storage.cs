@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Mir2.Companions;
 using Crystal.Native;
 using C = ClientPackets;
@@ -15,8 +13,7 @@ public sealed partial class CompanionSession
     private long storageActivity;
     private string storageRevision="";
     // 独立于登录密码且不依赖目录/昵称；完整复制版本后仍可解锁，不新增浏览器或存档密钥。
-    private string StoragePassword()=>Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(start.Password),
-        Encoding.UTF8.GetBytes("Mir2.Companion.Storage/v1:"+start.Account)))[..14];
+    private string StoragePassword()=>CompanionStorageRules.Password(start.Account,start.Password);
     private bool AtStorage()=>state.StorageActive&&state.User!=null&&state.Me?.Dead==false&&!state.Trading&&
         state.Actors.GetValueOrDefault(npcId) is {Kind:ObjectType.Merchant,Hidden:false} npc&&Distance(state.User.Location,npc.Location)<=Globals.DataRange;
     private void CloseStorage(bool completed=false)
@@ -63,7 +60,7 @@ public sealed partial class CompanionSession
             return await StorageTransfer(item,false);
         }
         if(!CompanionInventoryRules.StorageMaterial(item,quests,user.Level))return false;
-        var count=user.Inventory.Where(i=>i?.ItemIndex==item.ItemIndex).Sum(i=>(int)i.Count);
+        var count=user.Inventory.Concat(user.QuestInventory).Where(i=>i?.ItemIndex==item.ItemIndex).Sum(i=>(int)i.Count);
         var amount=(ushort)Math.Min(Math.Min(move.Count,item.Count),Math.Max(0,5-count));
         var room=Math.Max(0,state.CalculateStats()[Stat.BagWeight]*.8m-state.InventoryWeight);
         amount=(ushort)Math.Min(amount,room/item.Info.UnitWeight);

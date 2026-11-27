@@ -8,6 +8,24 @@ public static class DevelopmentModule
     public static void MapDevelopment(this RouteGroupBuilder management)
     {
         var group = management.MapGroup("/development");
+        group.MapPost("/sieges/prepare", async (GameRuntime runtime, WorldDefinitions definitions, CancellationToken token) =>
+        {
+            var count = await runtime.Invoke(definitions.PrepareSiegeClerk,token);
+            if (count > 0) await runtime.Restart(CancellationToken.None);
+            return new { npcs=count };
+        });
+        group.MapPost("/appraisal-scroll/prepare", async (GameRuntime runtime, WorldDefinitions definitions, SqliteDatabaseStorage storage, CancellationToken token) =>
+        {
+            var result = await runtime.Invoke(() => definitions.PrepareAppraisalScroll(storage), token);
+            if (result.Added + result.Renamed + result.Files > 0) await runtime.Restart(CancellationToken.None);
+            return result;
+        });
+        group.MapPost("/appraiser/prepare", async (GameRuntime runtime, WorldDefinitions definitions, CancellationToken token) =>
+        {
+            var count = await runtime.Invoke(definitions.PrepareEquipmentAppraiser, token);
+            if (count > 0) await runtime.Restart(CancellationToken.None);
+            return new { npcs = count };
+        });
         group.MapPost("/heroes/prepare", async (GameRuntime runtime, WorldDefinitions definitions, CancellationToken token) =>
         {
             var count = await runtime.Invoke(definitions.PrepareHeroGuide, token);

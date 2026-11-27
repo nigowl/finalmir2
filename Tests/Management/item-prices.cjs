@@ -1,0 +1,43 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {chromium}=require('playwright');
+const expect=require('playwright/test').expect.configure({timeout:20000});
+const [root,address]=process.argv.slice(2);
+if(!root.includes('/mir2-prices-'))throw new Error('只允许隔离价格数据');
+const id=JSON.parse(fs.readFileSync(path.join(root,'assets.json'),'utf8')).Items[0].ItemIndex;
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.MIR2_BROWSER_EXECUTABLE});
+ try{
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const dialog=name=>page.locator('.mud-dialog:visible').filter({has:page.getByRole('heading',{name,exact:true})});
+  const save=async scope=>{await scope.locator('.admin-dialog-save').click();await dialog('确认保存').getByRole('button',{name:'保存',exact:true}).click();await expect(scope).toHaveCount(0);};
+  await page.goto(address+'/shop',{waitUntil:'networkidle'});
+  await expect(page.getByRole('tab',{name:'公共商城',exact:true})).toBeVisible();
+  await page.getByRole('tab',{name:'物品价格',exact:true}).click();
+  await page.getByLabel('搜索物品名称或编号',{exact:true}).fill(String(id));
+  const row=()=>page.getByRole('row').filter({hasText:`(#${id})`});
+  await expect(row().locator('td').nth(2)).toHaveText('100');await expect(row().locator('td').nth(3)).toHaveText('37');await expect(row().locator('td').nth(4)).toHaveText('19');
+  await expect.poll(()=>row().locator('img').evaluate(image=>image.complete&&image.naturalWidth>0)).toBe(true);
+  await require('./style.cjs')(page);
+  await row().getByRole('button',{name:'编辑',exact:true}).click();let edit=dialog('编辑物品价格');
+  await edit.getByLabel('买价',{exact:true}).fill('200');await edit.getByLabel('卖价',{exact:true}).click();
+  await edit.getByRole('button',{name:'取消',exact:true}).click();await dialog('放弃未保存修改').getByRole('button',{name:'放弃修改',exact:true}).click();
+  await expect(row().locator('td').nth(2)).toHaveText('100');
+  await row().getByRole('button',{name:'编辑',exact:true}).click();edit=dialog('编辑物品价格');await edit.getByLabel('买价',{exact:true}).fill('200');await save(edit);
+  await expect(row().locator('td').nth(2)).toHaveText('200');
+  await page.screenshot({path:path.join(root,'item-prices.png'),fullPage:true});
+  await page.reload();await page.getByRole('tab',{name:'物品价格',exact:true}).click();await page.getByLabel('搜索物品名称或编号',{exact:true}).fill(String(id));
+  await expect(row().locator('td').nth(2)).toHaveText('200');
+  await row().getByRole('button',{name:'编辑',exact:true}).click();edit=dialog('编辑物品价格');await edit.getByLabel('买价',{exact:true}).fill('100');await save(edit);
+  await page.getByRole('tab',{name:'公共商城',exact:true}).click();await expect(page.getByRole('columnheader',{name:'价格倍率',exact:true})).toBeVisible();
+  await expect(page.getByRole('cell',{name:'1.1 倍（单独设置）',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'编辑',exact:true}).click();edit=dialog('编辑商城');await expect(edit.getByLabel('商品倍率',{exact:true})).toHaveCount(1);
+  await edit.getByLabel('商品倍率',{exact:true}).fill('1.2');await save(edit);await expect(page.getByRole('cell',{name:'1.2 倍（单独设置）',exact:true})).toBeVisible();
+  await page.screenshot({path:path.join(root,'public-shop-rates.png'),fullPage:true});
+  await page.getByRole('button',{name:'编辑',exact:true}).click();edit=dialog('编辑商城');await edit.getByLabel('商品倍率',{exact:true}).fill('');await save(edit);
+  await expect(page.getByRole('cell',{name:/跟随系统/})).toBeVisible();
+  await page.reload();await expect(page.getByRole('cell',{name:/跟随系统/})).toBeVisible();
+  await page.getByRole('button',{name:'编辑',exact:true}).click();edit=dialog('编辑商城');await expect(edit.getByLabel('商品倍率',{exact:true})).toHaveValue('');
+  await edit.getByLabel('商品倍率',{exact:true}).fill('1.1');await save(edit);
+  assert.deepEqual(errors,[]);console.log('PASS 商城双页签、物品图标/三价、搜索、取消不保存、确认保存/刷新保持、商城倍率编辑、操作按钮边框与布局。');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

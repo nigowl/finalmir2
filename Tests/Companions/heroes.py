@@ -74,22 +74,38 @@ try:
     call(base+'/settings', {'settings': overview['settings'] | {'enabled': True, 'maxOnline': 1}}, 'PUT'); command('start')
     def completed30():
         role, detail = observe(); events = detail['events']
-        return role if set(tier30['DailyIds']) <= set(role['completedQuests']) and any(event['text'] == 'buy:成功' for event in events) and sum(event['text'] == 'hero-equip:成功' for event in events) >= 2 and any(event['text'] == 'hero-use:成功' for event in events) else False
+        return role if set(tier30['DailyIds']) <= set(role['completedQuests']) and any(event['text'] == 'buy:成功' for event in events) and any(event['text'] == 'hero-equip:成功' and f"定义 {tier30['HeroWeapon']}，" in event['reason'] for event in events) and any(event['text'] == 'hero-use:成功' for event in events) else False
     first = wait(completed30, 240); off(); saved30 = fixture('audit')
     assert saved30['Heroes'] == 1 and saved30['Hero']['Class'] == 'Archer' and saved30['Hero']['HP'] > 0 and saved30['Seals'] == 0, saved30
     assert 'StraightShot' in saved30['Hero']['Spells'] and saved30['Hero']['Equipment'], saved30
     assert any(item['ItemIndex'] == tier30['HeroWeapon'] for item in saved30['Hero']['Equipment']), saved30
     assert sum(item['count'] for item in first['inventory'] if item['name'] == '回城卷轴') >= 100, first
-    hero = saved30['Hero']; start(); command('start'); wait(lambda: character()['online']); command('pause')
-    wait(lambda: call(base+'/'+ident)['row']['state'] == '已暂停'); off(); same = fixture('audit')
+    hero = saved30['Hero']; start(); assert not character()['online']; stop(); same = fixture('audit')
     assert all(same['Hero'][key] == hero[key] for key in ['Index', 'Name', 'Class', 'Spells', 'Equipment']), (saved30, same)
-    assert same['CompletedQuests'] == saved30['CompletedQuests'] and same['Inventory'] == saved30['Inventory'] and same['Gold'] == saved30['Gold'], (saved30, same)
+    def totals(items):
+        result = {}
+        for item in items: result[item['ItemIndex']] = result.get(item['ItemIndex'], 0) + item['Count']
+        return result
+    def separate(items): return [item for item in items if item['ItemIndex'] not in tier30['PotionIds']]
+    assert same['CompletedQuests'] == saved30['CompletedQuests'] and totals(same['Inventory']) == totals(saved30['Inventory']) and separate(same['Inventory']) == separate(saved30['Inventory']) and same['Gold'] == saved30['Gold'], (saved30, same)
     tier40 = fixture('tier40'); start(); command('start')
     def completed40():
         role, detail = observe(); return role if set(tier40['DailyIds']) <= set(role['completedQuests']) else False
     second = wait(completed40, 240); off(); saved40 = fixture('audit')
     assert saved40['Gold']-saved30['Gold'] == 1_000_000, (saved30['Gold'], saved40['Gold'])
     assert saved40['Heroes'] == 1 and saved40['Hero']['Index'] == hero['Index'] and saved40['Hero']['Spells'] == hero['Spells'], saved40
+    fixture('medicine'); start(); before_medicine = character()
+    medicine = {item['uniqueId']: item['count'] for item in before_medicine['inventory'] if item['itemId'] in tier30['PotionIds']}
+    assert len(medicine) == 2, '隔离共用红蓝药品缺失'
+    command('start'); wait(lambda: character()['online']); command('pause')
+    wait(lambda: call(base+'/'+ident)['row']['state'] == '已暂停')
+    paused_gold = character()['gold']
+    def hero_medicine():
+        current = {item['uniqueId']: item['count'] for item in character()['inventory']}
+        return all(current.get(uid, 0) < count for uid, count in medicine.items())
+    wait(hero_medicine, 30); time.sleep(3); off(); healed = fixture('audit')
+    assert healed['Hero']['HP'] > 1 and healed['Hero']['MP'] > 1, healed
+    assert healed['Gold'] == paused_gold, '暂停发展期间英雄自动恢复不应采购或消耗金币'
     death = fixture('dead'); revive_at = datetime.datetime.fromisoformat(death['ReviveAtUtc'].replace('Z', '+00:00')).timestamp()
     start(); command('start')
     def recovered():
@@ -101,9 +117,9 @@ try:
         return False
     wait(recovered, 90); off(); recovered_state = fixture('audit')
     assert recovered_state['Heroes'] == 1 and recovered_state['Hero']['Index'] == hero['Index'] and recovered_state['Hero']['HP'] > 0, recovered_state
-    assert recovered_state['Hero']['Equipment'] == saved40['Hero']['Equipment'] and recovered_state['Hero']['Spells'] == hero['Spells'], recovered_state
+    assert recovered_state['Hero']['Equipment'] == healed['Hero']['Equipment'] and recovered_state['Hero']['Spells'] == hero['Spells'], recovered_state
     with sqlite3.connect(data/'runtime/mir2.sqlite3') as db: assert db.execute('pragma integrity_check').fetchone()[0] == 'ok'
-    (root/'result.json').write_text(json.dumps({'tier30': saved30, 'tier40': saved40, 'recovered': recovered_state}, ensure_ascii=False, indent=2))
-    print('PASS 原TCP弓箭英雄创建/封印激活/共用包购装/普通学书，30/40档真实材料交付奖励，保存重启不重复与60秒恢复；'+str(root), flush=True)
+    (root/'result.json').write_text(json.dumps({'tier30': saved30, 'tier40': saved40, 'healed': healed, 'recovered': recovered_state}, ensure_ascii=False, indent=2))
+    print('PASS 原TCP弓箭英雄创建/封印激活/共用包购装/普通学书/自动血蓝，30/40档真实材料交付奖励，保存重启不重复与60秒恢复；'+str(root), flush=True)
 finally:
     if process is not None: stop()

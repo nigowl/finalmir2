@@ -871,6 +871,9 @@ namespace Server.MirObjects
                 return;
             }
 
+            if (EquipmentAppraiser.TryCall(player, objectID, key)) return;
+            if (ConquestRegistration.TryCall(player, objectID, key)) return;
+
             for (int i = 0; i < NPCPages.Count; i++)
             {
                 NPCPage page = NPCPages[i];
@@ -924,6 +927,12 @@ namespace Server.MirObjects
 
             switch (key)
             {
+                case ConquestRegistration.Page:
+                    ConquestRegistration.Show(player);
+                    break;
+                case EquipmentAppraisal.Page:
+                    EquipmentAppraiser.Show(player);
+                    break;
                 case BuyKey:
                 case BuySellKey:
                     var sentGoods = new List<UserItem>(Goods);
@@ -1189,11 +1198,11 @@ namespace Server.MirObjects
             UserItem pricedItem = goods.Clone();
             pricedItem.Count = count;
 
-            double totalCost = pricedItem.Price() * (double)PriceRate(player);
+            double totalCost = pricedItem.BuyPrice() * (double)PriceRate(player);
             if (totalCost < 0 || totalCost > uint.MaxValue || double.IsNaN(totalCost))
             { player.ReceiveChat("购买失败：总价超出允许范围。", ChatType.System); return; }
             uint cost = (uint)totalCost;
-            uint baseCost = (uint)Math.Clamp(pricedItem.Price() * (double)PriceRate(player, true), 0, uint.MaxValue);
+            uint baseCost = (uint)Math.Clamp(pricedItem.BuyPrice() * (double)PriceRate(player, true), 0, uint.MaxValue);
 
             if (player.NPCPage.Key.ToUpper() == PearlBuyKey)//pearl currency
             {
@@ -1208,8 +1217,8 @@ namespace Server.MirObjects
 
             if (!player.CanGainItem(item))
             {
-                var bag = item.Info.Type == ItemType.Quest ? player.Info.QuestInventory : player.Info.Inventory;
-                player.ReceiveChat($"购买失败：{(item.Info.Type == ItemType.Quest ? "任务物品栏" : "背包")}空间不足（已用 {bag.Count(slot => slot != null)}/{bag.Length} 格），且无法合堆。", ChatType.System);
+                var bag = Server.Helpers.MaterialInventoryRules.Contains(item.Info, Envir) ? player.Info.QuestInventory : player.Info.Inventory;
+                player.ReceiveChat($"购买失败：{(Server.Helpers.MaterialInventoryRules.Contains(item.Info, Envir) ? "材料物品栏" : "背包")}空间不足（已用 {bag.Count(slot => slot != null)}/{bag.Length} 格），且无法合堆。", ChatType.System);
                 return;
             }
 
@@ -1277,6 +1286,10 @@ namespace Server.MirObjects
                 return;
             }
 
+            var inventory = player.Info.Inventory.Concat(player.Info.QuestInventory).ToArray();
+            slots = slots.Concat(Enumerable.Range(player.Info.Inventory.Length, player.Info.QuestInventory.Length)
+                .Where(slot => inventory[slot] != null)).ToArray();
+
             UserItem goods = recipe.Item;
 
             if (goods == null || goods.Count == 0 || count == 0 || count > goods.Info.StackSize)
@@ -1306,9 +1319,9 @@ namespace Server.MirObjects
 
                     if (usedSlots.Contains(slot)) continue;
 
-                    if (slot < 0 || slot >= player.Info.Inventory.Length) continue;
+                    if (slot < 0 || slot >= inventory.Length) continue;
 
-                    UserItem item = player.Info.Inventory[slot];
+                    UserItem item = inventory[slot];
 
                     if (item == null || item.Info != tool.Info) continue;
 
@@ -1348,9 +1361,9 @@ namespace Server.MirObjects
 
                     if (usedSlots.Contains(slot)) continue;
 
-                    if (slot < 0 || slot >= player.Info.Inventory.Length) continue;
+                    if (slot < 0 || slot >= inventory.Length) continue;
 
-                    UserItem item = player.Info.Inventory[slot];
+                    UserItem item = inventory[slot];
 
                     if (item == null || item.Info != ingredient.Info || item.RentalInformation != null) continue;
 
@@ -1411,9 +1424,9 @@ namespace Server.MirObjects
 
                     if (usedSlots2.Contains(slot)) continue;
 
-                    if (slot < 0 || slot >= player.Info.Inventory.Length) continue;
+                    if (slot < 0 || slot >= inventory.Length) continue;
 
-                    UserItem item = player.Info.Inventory[slot];
+                    UserItem item = inventory[slot];
 
                     if (item == null || item.Info != tool.Info) continue;
 
@@ -1436,9 +1449,9 @@ namespace Server.MirObjects
 
                     if (usedSlots2.Contains(slot)) continue;
 
-                    if (slot < 0 || slot >= player.Info.Inventory.Length) continue;
+                    if (slot < 0 || slot >= inventory.Length) continue;
 
-                    UserItem item = player.Info.Inventory[slot];
+                    UserItem item = inventory[slot];
 
                     if (item == null || item.Info != ingredient.Info || item.RentalInformation != null) continue;
 
@@ -1446,15 +1459,14 @@ namespace Server.MirObjects
 
                     if (item.Count > amount)
                     {
-                        player.Enqueue(new S.DeleteItem { UniqueID = item.UniqueID, Count = amount });
-                        player.Info.Inventory[slot].Count -= amount;
+                        player.ConsumeCarriedItem(item, amount);
                         break;
                     }
                     else
                     {
-                        player.Enqueue(new S.DeleteItem { UniqueID = item.UniqueID, Count = item.Count });
-                        amount -= item.Count;
-                        player.Info.Inventory[slot] = null;
+                        var used = item.Count;
+                        player.ConsumeCarriedItem(item, used);
+                        amount -= used;
                     }
 
                     break;

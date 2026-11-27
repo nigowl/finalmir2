@@ -34,6 +34,8 @@
                     <MudGrid Spacing="2" Class="my-2">
                         <MudItem xs="12" sm="6"><MudNumericField T="int" Label="最大在线连接数" Min="1" Max="65535" @bind-Value="draft.MaxUser" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" HelperText="包含登录和选角连接，对应 MaxUser" /></MudItem>
                         <MudItem xs="12" sm="6"><MudNumericField T="int" Label="同 IP 最大连接数" Min="1" Max="65535" @bind-Value="draft.MaxIP" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" HelperText="陪玩共用本机 IP，对应 MaxIP" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudNumericField T="int" Label="同 IP 每小时注册次数" Min="0" Max="65535" @bind-Value="draft.MaxAccountsPerIPHour" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" HelperText="0为不限；按过去一小时的注册请求计数" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudNumericField T="int" Label="同 IP 每小时建角次数" Min="0" Max="65535" @bind-Value="draft.MaxCharactersPerIPHour" Margin="Margin.Dense" Variant="Variant.Outlined" Immediate="true" HelperText="0为不限；按过去一小时的建角请求计数" /></MudItem>
                         <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许注册账户" @bind-Value="draft.AllowNewAccount" /></MudItem>
                         <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许登录" @bind-Value="draft.AllowLogin" /></MudItem>
                         <MudItem xs="6"><MudCheckBox T="bool" Dense="true" Label="允许修改密码" @bind-Value="draft.AllowChangePassword" /></MudItem>

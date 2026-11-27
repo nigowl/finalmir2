@@ -1,6 +1,7 @@
 using System.Globalization;
 using Mir2.Management;
 using Server.MirEnvir;
+using Server.Helpers;
 
 namespace Server.ConsoleHost;
 
@@ -17,6 +18,7 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
         Validate(edit.Values);
         var document = files.Read(Setup);
         AdminChanges.Match(Version(document, Current()), edit.Version);
+        PublicShopCatalogRules.Validate(PublicShopCatalogRules.Current(Envir.Main), Envir.Main, loading: true, defaultPriceRate: (decimal)edit.Values.PublicShopPriceRate);
         var restart = edit.Values.SafeZoneBorder != Settings.SafeZoneBorder || edit.Values.SafeZoneHealing != Settings.SafeZoneHealing || edit.Values.SkillCooldownRate != Settings.SkillCooldownRate ||
             edit.Values.PlayerMoveMilliseconds != Settings.PlayerTiming.MoveMilliseconds ||
             edit.Values.PlayerActionSpeedPercent != Settings.PlayerTiming.ActionSpeedPercent;
@@ -29,6 +31,7 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
     private static ServerSettings Current() => WithBalance(new()
     {
         MaxUser = Settings.MaxUser, MaxIP = Settings.MaxIP,
+        MaxAccountsPerIPHour = Settings.MaxAccountsPerIPHour, MaxCharactersPerIPHour = Settings.MaxCharactersPerIPHour,
         AllowNewAccount = Settings.AllowNewAccount, AllowChangePassword = Settings.AllowChangePassword,
         AllowLogin = Settings.AllowLogin, AllowNewCharacter = Settings.AllowNewCharacter, AllowDeleteCharacter = Settings.AllowDeleteCharacter,
         AllowCreateWarrior = Settings.AllowCreateWarrior, AllowCreateWizard = Settings.AllowCreateWizard, AllowCreateTaoist = Settings.AllowCreateTaoist,
@@ -46,11 +49,14 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
     private static void Apply(ServerSettings s)
     {
         Settings.MaxUser = (ushort)s.MaxUser; Settings.MaxIP = (ushort)s.MaxIP;
+        Settings.MaxAccountsPerIPHour = (ushort)s.MaxAccountsPerIPHour; Settings.MaxCharactersPerIPHour = (ushort)s.MaxCharactersPerIPHour;
         Settings.AllowNewAccount = s.AllowNewAccount; Settings.AllowChangePassword = s.AllowChangePassword;
         Settings.AllowLogin = s.AllowLogin; Settings.AllowNewCharacter = s.AllowNewCharacter; Settings.AllowDeleteCharacter = s.AllowDeleteCharacter;
         Settings.AllowCreateWarrior = s.AllowCreateWarrior; Settings.AllowCreateWizard = s.AllowCreateWizard; Settings.AllowCreateTaoist = s.AllowCreateTaoist;
         Settings.AllowCreateAssassin = s.AllowCreateAssassin; Settings.AllowCreateArcher = s.AllowCreateArcher; Settings.RequireStoragePassword = s.RequireStoragePassword;
+        var shopRateChanged = Settings.PublicShopPriceRate != s.PublicShopPriceRate;
         Settings.PublicShopPriceRate = s.PublicShopPriceRate;
+        if (shopRateChanged) foreach (var player in Envir.Main.Players) player.InvalidatePublicShop();
         Settings.ExpRate = s.ExpRate; Settings.DropRate = s.DropRate; Settings.SaveDelay = s.SaveDelay;
         Settings.ItemTimeOut = s.ItemTimeOut; Settings.PlayerDiedItemTimeOut = s.PlayerDiedItemTimeOut; Settings.PKDelay = s.PKDelay;
         Settings.SafeZoneBorder = s.SafeZoneBorder; Settings.SafeZoneHealing = s.SafeZoneHealing; Settings.ExpMobLevelDifference = s.ExpMobLevelDifference;
@@ -71,6 +77,7 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
     {
         if (s is null) throw new InvalidDataException("缺少系统设置。");
         Range(s.MaxUser, 1, 65535, "最大在线连接数"); Range(s.MaxIP, 1, 65535, "同 IP 最大连接数");
+        Range(s.MaxAccountsPerIPHour, 0, 65535, "同 IP 每小时注册次数"); Range(s.MaxCharactersPerIPHour, 0, 65535, "同 IP 每小时建角次数");
         if (!float.IsFinite(s.ExpRate) || s.ExpRate < .01f || s.ExpRate > 1000)
             throw new InvalidDataException("经验倍率须为 0.01–1000。");
         if (!float.IsFinite(s.DropRate) || s.DropRate < .01f || s.DropRate > 100)
@@ -87,7 +94,8 @@ public sealed partial class SystemSettings(DevelopmentFiles files)
     { if (value < min || value > max) throw new InvalidDataException($"{name}须为 {min}–{max}。"); }
     private static Dictionary<string, Dictionary<string, string>> Entries(ServerSettings s) => WithBalanceEntries(new()
     {
-        ["Network"] = new() { ["MaxUser"] = s.MaxUser.ToString(), ["MaxIP"] = s.MaxIP.ToString() },
+        ["Network"] = new() { ["MaxUser"] = s.MaxUser.ToString(), ["MaxIP"] = s.MaxIP.ToString(),
+            ["MaxAccountsPerIPHour"] = s.MaxAccountsPerIPHour.ToString(), ["MaxCharactersPerIPHour"] = s.MaxCharactersPerIPHour.ToString() },
         ["Permission"] = new()
         {
             ["AllowNewAccount"] = s.AllowNewAccount.ToString(), ["AllowChangePassword"] = s.AllowChangePassword.ToString(), ["AllowLogin"] = s.AllowLogin.ToString(),
